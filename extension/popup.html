@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>JobCopilot Analyzer</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: -apple-system, system-ui, sans-serif;
+      background: #f9fafb;
+      margin: 0;
+    }
+    .header {
+      font-weight: bold;
+      font-size: 16px;
+      color: #1e3a8a;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status {
+      font-size: 13px;
+      color: #4b5563;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    #error {
+      color: #dc2626;
+      font-size: 12px;
+      margin-top: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span>🤖</span> JobCopilot
+  </div>
+  <div class="status" id="status">
+    Ready to extract this page and send it to your JobCopilot AI for analysis.
+  </div>
+  <button id="analyzeBtn">Analyze Job Fit</button>
+  <div id="error"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

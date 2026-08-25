@@ -1,0 +1,36 @@
+from app.services.llm_client import get_completion
+
+ANTI_AI_PROMPT = """
+You are an expert at writing highly effective, non-robotic cold emails and cover letters for software engineering roles at startups.
+Your goal is to write a short, punchy message to a founder or hiring manager.
+
+RULES (CRITICAL):
+1. THE BANNED WORD LIST: You MUST NOT use ANY of the following words or phrases under any circumstances:
+   - delve, thrilled, leverage, testament, seamless, foster, hone, eager, synergy, profound interest, navigate, pivotal, dynamic, landscape, robust.
+2. TONE: Write this like a Slack message or a cold email from one engineer to another. Do NOT use "Dear Hiring Manager," or "To whom it may concern," or "I hope this finds you well." Start directly with "Hi team," or a direct hook.
+3. THE PROOF RULE: You MUST extract at least one concrete metric or specific project from the resume provided to prove competence. Do not make vague claims like "I am a hard worker" or "I am highly motivated."
+4. THE SNIPER HOOK: Connect a specific tech requirement from the JD to the user's past experience.
+5. LENGTH: MAXIMUM 150 words. 3-4 sentences total. Be extremely concise. Recruiters skim.
+6. CLOSING: Close with a low-friction call to action, like "Would love to chat for 10 mins about your engineering roadmap." and sign off with "Best,".
+
+INPUT DATA:
+Here is the Job Description:
+{raw_jd}
+
+Here is the Candidate's Resume Summary:
+{resume_summary}
+
+OUTPUT INSTRUCTIONS:
+Output ONLY the final text of the email. Do not include any explanations, preambles, or formatting placeholders like "[Your Name]". Just the raw message.
+"""
+
+def generate_cover_letter(raw_jd: str, resume_summary: str, use_groq: bool = False) -> str:
+    prompt = ANTI_AI_PROMPT.format(raw_jd=raw_jd, resume_summary=resume_summary)
+    
+    # We will use get_completion from llm_client, which handles Gemini or Groq
+    try:
+        response_text = get_completion(prompt, use_groq=use_groq)
+        return response_text.strip()
+    except Exception as e:
+        print(f"Error generating cover letter: {e}")
+        return "Error generating cover letter. Please try again."

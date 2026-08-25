@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "JobCopilot Link Finder & Analyzer",
+  "version": "1.0",
+  "description": "Send any job posting directly to JobCopilot for instant AI analysis.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.greenhouse.io/*",
+        "*://jobs.lever.co/*"
+      ],
+      "js": ["content-scripts/auto_apply.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
