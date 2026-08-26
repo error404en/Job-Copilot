@@ -93,3 +93,103 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
         })
         
     return jobs
+
+def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
+    if not target_keywords:
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
+    
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{board_token}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        print(f"Failed to fetch Ashby board {board_token}: {e}")
+        return []
+
+    jobs = []
+    for job in data.get("jobs", []):
+        title = job.get("title", "")
+        if target_keywords and not any(kw.lower() in title.lower() for kw in target_keywords):
+            continue
+            
+        desc = job.get("descriptionHtml", "")
+        full_jd = f"{title}\nLocation: {job.get('location', '')}\n\n{clean_html(desc)}"
+        
+        jobs.append({
+            "source": "ashby",
+            "company": board_token,
+            "role_title": title,
+            "url": job.get("jobUrl"),
+            "location": job.get("location", ""),
+            "raw_jd": full_jd
+        })
+    return jobs
+
+def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -> list:
+    if not target_keywords:
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
+    
+    url = f"https://api.smartrecruiters.com/v1/companies/{board_token}/postings"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except Exception as e:
+        print(f"Failed to fetch SmartRecruiters board {board_token}: {e}")
+        return []
+
+    jobs = []
+    for job in data.get("content", []):
+        title = job.get("name", "")
+        if target_keywords and not any(kw.lower() in title.lower() for kw in target_keywords):
+            continue
+        
+        detail_url = f"https://api.smartrecruiters.com/v1/companies/{board_token}/postings/{job.get('id')}"
+        try:
+            d_res = requests.get(detail_url, timeout=5)
+            d_data = d_res.json()
+            job_desc = d_data.get("jobAd", {}).get("sections", {})
+            full_jd = f"{title}\n"
+            for section in job_desc.values():
+                if section and section.get("text"):
+                    full_jd += f"\n{clean_html(section['text'])}"
+        except:
+            full_jd = title
+            
+        jobs.append({
+            "source": "smartrecruiters",
+            "company": board_token,
+            "role_title": title,
+            "url": f"https://jobs.smartrecruiters.com/{board_token}/{job.get('id')}",
+            "location": job.get("location", {}).get("city", ""),
+            "raw_jd": full_jd
+        })
+    return jobs
+
+def fetch_generic_fallback(url: str, target_keywords: list = None) -> list:
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for script in soup(["script", "style", "nav", "footer", "header"]):
+            script.extract()
+        text = soup.get_text(separator='\n')
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+        
+        return [{
+            "source": "generic_scraper",
+            "company": "Unknown",
+            "role_title": "Extracted from URL",
+            "url": url,
+            "location": "",
+            "raw_jd": text
+        }]
+    except Exception as e:
+        print(f"Failed generic fallback for {url}: {e}")
+        return []

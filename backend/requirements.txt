@@ -5,3 +5,8 @@ supabase
 google-genai
 groq
 python-dotenv
+PyPDF2
+beautifulsoup4
+requests
+apscheduler
+duckduckgo-search

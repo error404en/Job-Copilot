@@ -20,20 +20,39 @@ if GEMINI_API_KEY:
 
 def get_completion(prompt: str, use_groq=False) -> str:
     if use_groq and groq_client:
-        response = groq_client.chat.completions.create(
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-            temperature=0.7
-        )
-        return response.choices[0].message.content
+        try:
+            response = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192",
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Groq routing failed: {e}. Falling back to Gemini.")
+            if gemini_client:
+                response = gemini_client.models.generate_content(
+                    model='gemini-3.6-flash',
+                    contents=prompt,
+                )
+                return response.text
+            raise e
     elif gemini_client:
-        response = gemini_client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=prompt,
-        )
-        return response.text
+        try:
+            response = gemini_client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt,
+            )
+            return response.text
+        except Exception as e:
+            print(f"Gemini routing failed: {e}. Falling back to Groq.")
+            if groq_client:
+                response = groq_client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama3-70b-8192",
+                    temperature=0.7
+                )
+                return response.choices[0].message.content
+            raise e
     else:
         raise ValueError("No LLM API keys configured.")
 
@@ -45,7 +64,7 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq=False) -> T
         f"Schema:\n{schema_class.model_json_schema()}"
     )
 
-    if use_groq and groq_client:
+    def _call_groq():
         response = groq_client.chat.completions.create(
             messages=[
                 {"role": "system", "content": "You are a precise data extraction assistant that outputs only valid JSON."},
@@ -55,8 +74,9 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq=False) -> T
             response_format={"type": "json_object"},
             temperature=0.0
         )
-        raw_json = response.choices[0].message.content
-    elif gemini_client:
+        return response.choices[0].message.content
+
+    def _call_gemini():
         response = gemini_client.models.generate_content(
             model='gemini-3.6-flash',
             contents=full_prompt,
@@ -65,7 +85,27 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq=False) -> T
                 temperature=0.0,
             ),
         )
-        raw_json = response.text
+        return response.text
+
+    raw_json = None
+    if use_groq and groq_client:
+        try:
+            raw_json = _call_groq()
+        except Exception as e:
+            print(f"Groq structured routing failed: {e}. Falling back to Gemini.")
+            if gemini_client:
+                raw_json = _call_gemini()
+            else:
+                raise e
+    elif gemini_client:
+        try:
+            raw_json = _call_gemini()
+        except Exception as e:
+            print(f"Gemini structured routing failed: {e}. Falling back to Groq.")
+            if groq_client:
+                raw_json = _call_groq()
+            else:
+                raise e
     else:
         raise ValueError("No LLM API keys configured.")
 
@@ -111,7 +151,7 @@ def extract_text_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -
     prompt = "Please extract all text from this image. This is a screenshot of a job posting. Transcribe all text accurately, preserving the structure, bullet points, and headers as much as possible. Do not hallucinate or add any commentary. Return only the extracted text."
     
     response = gemini_client.models.generate_content(
-        model='gemini-1.5-flash',
+        model='gemini-3.6-flash',
         contents=[
             prompt,
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type)

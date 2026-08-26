@@ -6,9 +6,10 @@ from bs4 import BeautifulSoup
 from app.db.supabase_client import supabase
 from app.services.jd_parser import parse_job_description
 from app.services.match_scorer import score_match
-from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs
+from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback
 from app.services.application_prep import generate_cover_letter
 from app.services.llm_client import extract_text_from_image
+from app.services.company_researcher import research_company
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ class ParseRequest(BaseModel):
     raw_jd: str
     source: str = "manual"
     url: Optional[str] = None
+    company_name: Optional[str] = None
     use_groq: bool = False
 
 class FetchAtsRequest(BaseModel):
@@ -107,6 +109,10 @@ def parse_and_score_job(req: ParseRequest):
 
     # 3. Parse JD
     parsed_job = parse_job_description(req.raw_jd, use_groq=req.use_groq)
+    
+    # Override company if explicitly provided
+    if req.company_name:
+        parsed_job.company = req.company_name
 
     # 4. Score Match
     fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=req.use_groq)
@@ -162,6 +168,19 @@ def parse_and_score_job(req: ParseRequest):
     if fit_report.culture_assessment:
         final_reasoning += f"\n\n🏢 Company Culture Estimate:\n{fit_report.culture_assessment}"
 
+    # 7. Add Analysis
+    # Let's check if we already have company_info for this company to avoid re-researching
+    existing_info_res = supabase.table("jobs").select("job_analyses(company_info)").eq("company", parsed_job.company).execute()
+    company_info = None
+    if existing_info_res.data:
+        for row in existing_info_res.data:
+            if row.get("job_analyses") and row["job_analyses"][0].get("company_info"):
+                company_info = row["job_analyses"][0]["company_info"]
+                break
+                
+    if not company_info:
+        company_info = research_company(parsed_job.company)
+
     analysis_insert = {
         "job_id": job_id,
         "match_score": fit_report.match_score,
@@ -173,7 +192,8 @@ def parse_and_score_job(req: ParseRequest):
         "goal_alignment_note": fit_report.goal_alignment_note,
         "verdict": fit_report.verdict,
         "reasoning": final_reasoning,
-        "recommended_resume_version_id": best_resume_id
+        "recommended_resume_version_id": best_resume_id,
+        "company_info": company_info
     }
     
     supabase.table("job_analyses").insert(analysis_insert).execute()
@@ -214,6 +234,12 @@ def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTask
                 jobs_to_process.extend(fetch_greenhouse_jobs(token, req.target_keywords))
             elif req.system == "lever":
                 jobs_to_process.extend(fetch_lever_jobs(token, req.target_keywords))
+            elif req.system == "ashby":
+                jobs_to_process.extend(fetch_ashby_jobs(token, req.target_keywords))
+            elif req.system == "smartrecruiters":
+                jobs_to_process.extend(fetch_smartrecruiters_jobs(token, req.target_keywords))
+            elif req.system == "generic":
+                jobs_to_process.extend(fetch_generic_fallback(token, req.target_keywords))
                 
         # Send them to parse_and_score_job logic
         for job_data in jobs_to_process:
@@ -271,3 +297,26 @@ def create_application_draft(job_id: str, req: DraftRequest):
     insert_res = supabase.table("application_drafts").insert(draft_insert).execute()
     
     return insert_res.data[0]
+
+class JobUpdateRequest(BaseModel):
+    deadline: Optional[str] = None
+    is_bookmarked: Optional[bool] = None
+
+@router.patch("/{job_id}")
+def update_job(job_id: str, req: JobUpdateRequest):
+    update_data = {}
+    # Check explicitly if it was set in the request, allowing None for deadline to clear it
+    if "deadline" in req.model_dump(exclude_unset=True):
+        update_data["deadline"] = req.deadline
+    if "is_bookmarked" in req.model_dump(exclude_unset=True):
+        update_data["is_bookmarked"] = req.is_bookmarked
+        
+    if not update_data:
+        return {"message": "No updates requested"}
+        
+    res = supabase.table("jobs").update(update_data).eq("id", job_id).execute()
+    
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    return res.data[0]

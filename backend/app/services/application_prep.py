@@ -12,25 +12,18 @@ RULES (CRITICAL):
 4. THE SNIPER HOOK: Connect a specific tech requirement from the JD to the user's past experience.
 5. LENGTH: MAXIMUM 150 words. 3-4 sentences total. Be extremely concise. Recruiters skim.
 6. CLOSING: Close with a low-friction call to action, like "Would love to chat for 10 mins about your engineering roadmap." and sign off with "Best,".
-
-INPUT DATA:
-Here is the Job Description:
-{raw_jd}
-
-Here is the Candidate's Resume Summary:
-{resume_summary}
-
-OUTPUT INSTRUCTIONS:
-Output ONLY the final text of the email. Do not include any explanations, preambles, or formatting placeholders like "[Your Name]". Just the raw message.
 """
 
 def generate_cover_letter(raw_jd: str, resume_summary: str, use_groq: bool = False) -> str:
-    prompt = ANTI_AI_PROMPT.format(raw_jd=raw_jd, resume_summary=resume_summary)
+    # Use f-strings directly to prevent .format() from crashing on stray { } in scraped raw_jd
+    prompt = f"{ANTI_AI_PROMPT}\n\nINPUT DATA:\nHere is the Job Description:\n{raw_jd}\n\nHere is the Candidate's Resume Summary:\n{resume_summary}\n\nOUTPUT INSTRUCTIONS:\nOutput ONLY the final text of the email. Do not include any explanations, preambles, or formatting placeholders like '[Your Name]'. Just the raw message."
     
     # We will use get_completion from llm_client, which handles Gemini or Groq
     try:
         response_text = get_completion(prompt, use_groq=use_groq)
         return response_text.strip()
     except Exception as e:
-        print(f"Error generating cover letter: {e}")
-        return "Error generating cover letter. Please try again."
+        print(f"🔥 Error generating cover letter: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Error generating cover letter. Please try again. ({str(e)})"
