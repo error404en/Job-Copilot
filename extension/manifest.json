@@ -3,7 +3,12 @@
   "name": "JobCopilot Link Finder & Analyzer",
   "version": "1.0",
   "description": "Send any job posting directly to JobCopilot for instant AI analysis.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "*://*.greenhouse.io/*",
+    "*://jobs.lever.co/*"
+  ],
   "action": {
     "default_popup": "popup.html"
   },
@@ -14,6 +19,16 @@
         "*://jobs.lever.co/*"
       ],
       "js": ["content-scripts/auto_apply.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.linkedin.com/*",
+        "*://*.indeed.com/*",
+        "*://*.glassdoor.com/*",
+        "*://*.naukri.com/*"
+      ],
+      "js": ["content-scripts/capture.js"],
       "run_at": "document_idle"
     }
   ]

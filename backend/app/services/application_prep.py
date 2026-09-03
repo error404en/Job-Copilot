@@ -23,7 +23,7 @@ def generate_cover_letter(raw_jd: str, resume_summary: str, use_groq: bool = Fal
         response_text = get_completion(prompt, use_groq=use_groq)
         return response_text.strip()
     except Exception as e:
-        print(f"🔥 Error generating cover letter: {str(e)}")
+        print(f"[CoverLetter] Error generating cover letter: {str(e)}")
         import traceback
         traceback.print_exc()
         return f"Error generating cover letter. Please try again. ({str(e)})"

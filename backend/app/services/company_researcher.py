@@ -13,7 +13,7 @@ class CompanyIntelligence(BaseModel):
     overall_sentiment: Optional[str] = "Neutral"
 
 def research_company(company_name: str) -> dict:
-    print(f"🕵️‍♂️ Researching company: {company_name}")
+    print(f"[Research] Researching company: {company_name}")
     try:
         # 1. Gather raw search context from DDG
         queries = [

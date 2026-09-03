@@ -39,6 +39,46 @@ def get_jobs():
         .execute()
     return response.data
 
+@router.get("/digest")
+def get_digest():
+    """
+    Returns jobs from the last 24 hours where:
+    - verdict is 'apply' or 'stretch'
+    - pay_floor_pass is true
+    Sorted by match_score descending.
+    """
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # Fetch jobs from last 24h with their analyses
+    response = supabase.table("jobs") \
+        .select("*, job_analyses(*)") \
+        .gte("fetched_at", cutoff) \
+        .order("fetched_at", desc=True) \
+        .execute()
+
+    all_jobs = response.data or []
+
+    # Filter: only jobs with an analysis that passed the bar
+    digest_jobs = []
+    for job in all_jobs:
+        analyses = job.get("job_analyses") or []
+        if not analyses:
+            continue
+        analysis = analyses[0]
+        if (
+            analysis.get("verdict") in ("apply", "stretch")
+            and analysis.get("pay_floor_pass") is True
+        ):
+            digest_jobs.append(job)
+
+    # Sort by match_score descending
+    digest_jobs.sort(
+        key=lambda j: (j.get("job_analyses") or [{}])[0].get("match_score", 0),
+        reverse=True
+    )
+    return digest_jobs
+
 # IMPORTANT: This must come BEFORE the /{id} route so FastAPI doesn't
 # treat "scrape-url" as a job ID.
 @router.post("/scrape-url")
@@ -93,6 +133,13 @@ def get_job(id: str):
 
 @router.post("/parse")
 def parse_and_score_job(req: ParseRequest):
+    # 0. Check if URL already exists to prevent duplicate analysis (per PRD)
+    target_url = req.url.strip() if req.url else None
+    if target_url:
+        existing_res = supabase.table("jobs").select("id").eq("url", target_url).limit(1).execute()
+        if existing_res.data:
+            return {"job_id": existing_res.data[0]["id"], "is_duplicate": True}
+
     # 1. Get user profile
     profile_resp = supabase.table("user_profile").select("*").limit(1).execute()
     if not profile_resp.data:
@@ -139,9 +186,10 @@ def parse_and_score_job(req: ParseRequest):
             break
 
     # 6. Save to DB
+    resolved_url = target_url or parsed_job.apply_link
     job_insert = {
         "source": req.source,
-        "url": req.url or parsed_job.apply_link,
+        "url": resolved_url,
         "company": parsed_job.company,
         "role_title": parsed_job.role_title,
         "raw_jd": req.raw_jd,
@@ -161,7 +209,12 @@ def parse_and_score_job(req: ParseRequest):
         job_resp = supabase.table("jobs").insert(job_insert).execute()
         job_id = job_resp.data[0]["id"]
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to insert job. Might be a duplicate URL. {str(e)}")
+        # If it's a duplicate URL collision, gracefully fetch existing job
+        if resolved_url:
+            existing_match = supabase.table("jobs").select("id").eq("url", resolved_url).limit(1).execute()
+            if existing_match.data:
+                return {"job_id": existing_match.data[0]["id"], "is_duplicate": True}
+        raise HTTPException(status_code=400, detail=f"Failed to insert job: {str(e)}")
 
     # Append Culture Assessment to reasoning so it appears in the UI without DB schema changes
     final_reasoning = fit_report.reasoning

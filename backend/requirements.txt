@@ -3,6 +3,7 @@ uvicorn
 pydantic
 supabase
 google-genai
+Pillow
 groq
 python-dotenv
 PyPDF2

@@ -10,7 +10,7 @@ def fetch_latest_jobs_task():
     """
     Background task to auto-fetch new jobs from saved companies.
     """
-    print("⏳ Running scheduled job fetcher...")
+    print("[Scheduler] Running scheduled job fetcher...")
     try:
         # Get unique combinations of company and source
         res = supabase.table("jobs").select("company, source").execute()
@@ -58,10 +58,10 @@ def fetch_latest_jobs_task():
             print(f"Finished {company}: added {new_count} new roles.")
             
     except Exception as e:
-        print(f"❌ Error in scheduled job fetcher: {e}")
+        print(f"[Scheduler] Error in scheduled job fetcher: {e}")
 
 def start_scheduler():
     # Run every 12 hours
     scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=12)
     scheduler.start()
-    print("⏰ Background scheduler started!")
+    print("[Scheduler] Background scheduler started!")
