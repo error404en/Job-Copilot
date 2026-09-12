@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 import io
 import PyPDF2
 from typing import List
@@ -7,6 +7,7 @@ from datetime import datetime
 
 from app.db.supabase_client import supabase
 from app.services.llm_client import parse_resume_with_llm
+from app.middleware.auth import get_current_user
 
 router = APIRouter()
 
@@ -18,13 +19,13 @@ class ResumeVersionResponse(BaseModel):
     skills_summary: str
     created_at: str
 
-@router.get("/", response_model=List[ResumeVersionResponse])
-def list_resumes():
-    res = supabase.table("resume_versions").select("*").order("created_at", desc=True).execute()
+@router.get("", response_model=List[ResumeVersionResponse])
+def list_resumes(user_id: str = Depends(get_current_user)):
+    res = supabase.table("resume_versions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
     return res.data
 
 @router.post("/upload")
-async def upload_resume(file: UploadFile = File(...)):
+async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
@@ -58,7 +59,8 @@ async def upload_resume(file: UploadFile = File(...)):
         "file_path": file_path_placeholder,
         "title": extraction.title,
         "target_type": extraction.target_type,
-        "skills_summary": extraction.skills_summary
+        "skills_summary": extraction.skills_summary,
+        "user_id": user_id
     }
     
     res = supabase.table("resume_versions").insert(insert_data).execute()
@@ -69,8 +71,8 @@ async def upload_resume(file: UploadFile = File(...)):
     return res.data[0]
 
 @router.delete("/{resume_id}")
-def delete_resume(resume_id: str):
-    res = supabase.table("resume_versions").delete().eq("id", resume_id).execute()
+def delete_resume(resume_id: str, user_id: str = Depends(get_current_user)):
+    res = supabase.table("resume_versions").delete().eq("id", resume_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Resume not found")
     return {"status": "success"}

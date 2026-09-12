@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 from app.db.supabase_client import supabase
+from app.middleware.auth import get_current_user
 
 router = APIRouter()
 
@@ -19,23 +20,23 @@ class UserProfileUpdate(BaseModel):
     github_url: Optional[str] = ""
     portfolio_url: Optional[str] = ""
 
-@router.get("/")
-def get_profile():
-    # Fetch the single user profile (assuming one row exists)
-    response = supabase.table("user_profile").select("*").limit(1).execute()
+@router.get("")
+def get_profile(user_id: str = Depends(get_current_user)):
+    # Fetch the single user profile scoped to user_id
+    response = supabase.table("user_profile").select("*").eq("user_id", user_id).limit(1).execute()
     if not response.data:
         raise HTTPException(status_code=404, detail="Profile not found")
     return response.data[0]
 
-@router.put("/")
-def update_profile(profile_data: UserProfileUpdate):
-    # Fetch the single profile to get its ID
-    response = supabase.table("user_profile").select("id").limit(1).execute()
+@router.put("")
+def update_profile(profile_data: UserProfileUpdate, user_id: str = Depends(get_current_user)):
+    # Fetch the single profile to get its ID, scoped to user_id
+    response = supabase.table("user_profile").select("id").eq("user_id", user_id).limit(1).execute()
     if not response.data:
         raise HTTPException(status_code=404, detail="Profile not found")
     
     profile_id = response.data[0]["id"]
     
     # Update it
-    update_response = supabase.table("user_profile").update(profile_data.model_dump()).eq("id", profile_id).execute()
+    update_response = supabase.table("user_profile").update(profile_data.model_dump()).eq("id", profile_id).eq("user_id", user_id).execute()
     return update_response.data[0]

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 import requests
@@ -10,6 +10,7 @@ from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fe
 from app.services.application_prep import generate_cover_letter
 from app.services.llm_client import extract_text_from_image
 from app.services.company_researcher import research_company
+from app.middleware.auth import get_current_user
 
 router = APIRouter()
 
@@ -25,22 +26,24 @@ class FetchAtsRequest(BaseModel):
     target_keywords: Optional[List[str]] = None
     system: str = "greenhouse" # greenhouse or lever
     use_groq: bool = False
+    subscribe: bool = False
 
 class DraftRequest(BaseModel):
     resume_version_id: Optional[str] = None
     use_groq: bool = False
 
-@router.get("/")
-def get_jobs():
+@router.get("")
+def get_jobs(user_id: str = Depends(get_current_user)):
     # Fetch all jobs joined with their analyses
     response = supabase.table("jobs") \
         .select("*, job_analyses(*)") \
+        .eq("user_id", user_id) \
         .order("fetched_at", desc=True) \
         .execute()
     return response.data
 
 @router.get("/digest")
-def get_digest():
+def get_digest(user_id: str = Depends(get_current_user)):
     """
     Returns jobs from the last 24 hours where:
     - verdict is 'apply' or 'stretch'
@@ -53,6 +56,7 @@ def get_digest():
     # Fetch jobs from last 24h with their analyses
     response = supabase.table("jobs") \
         .select("*, job_analyses(*)") \
+        .eq("user_id", user_id) \
         .gte("fetched_at", cutoff) \
         .order("fetched_at", desc=True) \
         .execute()
@@ -82,7 +86,7 @@ def get_digest():
 # IMPORTANT: This must come BEFORE the /{id} route so FastAPI doesn't
 # treat "scrape-url" as a job ID.
 @router.post("/scrape-url")
-def scrape_job_url(url: str):
+def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
     """
     Generic scraper for standard company job pages.
     Will not work on heavy SPA anti-bot sites like LinkedIn/Indeed.
@@ -111,9 +115,9 @@ def scrape_job_url(url: str):
         raise HTTPException(status_code=400, detail=f"Failed to scrape URL. It may be blocking bots. Error: {str(e)}")
 
 @router.get("/{id}")
-def get_job(id: str):
+def get_job(id: str, user_id: str = Depends(get_current_user)):
     # Fetch job joined with analyses and drafts
-    res = supabase.table("jobs").select("*, job_analyses(*, resume_versions(title)), application_drafts(*)").eq("id", id).execute()
+    res = supabase.table("jobs").select("*, job_analyses(*, resume_versions(title)), application_drafts(*)").eq("id", id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Job not found")
         
@@ -131,23 +135,27 @@ def get_job(id: str):
             
     return job
 
-@router.post("/parse")
-def parse_and_score_job(req: ParseRequest):
+def _parse_and_score_job(req: ParseRequest, user_id: str, background_tasks: BackgroundTasks = None):
     # 0. Check if URL already exists to prevent duplicate analysis (per PRD)
     target_url = req.url.strip() if req.url else None
     if target_url:
-        existing_res = supabase.table("jobs").select("id").eq("url", target_url).limit(1).execute()
+        existing_res = supabase.table("jobs").select("id, job_analyses(id)").eq("url", target_url).eq("user_id", user_id).limit(1).execute()
         if existing_res.data:
-            return {"job_id": existing_res.data[0]["id"], "is_duplicate": True}
+            job_record = existing_res.data[0]
+            if job_record.get("job_analyses") and len(job_record["job_analyses"]) > 0:
+                return {"job_id": job_record["id"], "is_duplicate": True}
+            else:
+                # Delete the orphaned job record so we can recreate it with a fresh analysis
+                supabase.table("jobs").delete().eq("id", job_record["id"]).eq("user_id", user_id).execute()
 
     # 1. Get user profile
-    profile_resp = supabase.table("user_profile").select("*").limit(1).execute()
+    profile_resp = supabase.table("user_profile").select("*").eq("user_id", user_id).limit(1).execute()
     if not profile_resp.data:
         raise HTTPException(status_code=500, detail="User profile not found in DB")
     user_profile = profile_resp.data[0]
 
     # 2. Get all resumes to find the best match
-    resumes_resp = supabase.table("resume_versions").select("*").execute()
+    resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
     if not resumes_resp.data:
         raise HTTPException(status_code=500, detail="No resume versions found in DB. Please upload a resume first at /resumes.")
         
@@ -161,31 +169,7 @@ def parse_and_score_job(req: ParseRequest):
     if req.company_name:
         parsed_job.company = req.company_name
 
-    # 4. Score Match
-    fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=req.use_groq)
-
-    # 5. Determine which resume to recommend
-    best_resume_id = resumes_resp.data[0]["id"]
-    role_lower = parsed_job.role_title.lower()
-    
-    # Smart resume matching based on role keywords
-    type_keywords = {
-        "backend": ["backend", "server", "api", "microservice", "distributed"],
-        "frontend": ["frontend", "front-end", "react", "angular", "vue", "ui"],
-        "fullstack": ["fullstack", "full-stack", "full stack"],
-        "genai": ["ai", "ml", "machine learning", "llm", "genai", "nlp", "data science"],
-        "data": ["data engineer", "data analyst", "analytics", "etl", "pipeline"],
-    }
-    
-    for resume_type, keywords in type_keywords.items():
-        if any(kw in role_lower for kw in keywords):
-            for r in resumes_resp.data:
-                if r["target_type"] == resume_type:
-                    best_resume_id = r["id"]
-                    break
-            break
-
-    # 6. Save to DB
+    # 6. Save to DB First (Fast)
     resolved_url = target_url or parsed_job.apply_link
     job_insert = {
         "source": req.source,
@@ -201,62 +185,105 @@ def parse_and_score_job(req: ParseRequest):
         "pay_confidence": parsed_job.pay_confidence,
         "seniority_required": parsed_job.seniority_required,
         "required_skills": parsed_job.required_skills,
-        "nice_to_have_skills": parsed_job.nice_to_have_skills
+        "nice_to_have_skills": parsed_job.nice_to_have_skills,
+        "user_id": user_id
     }
     
-    # Try inserting job
     try:
         job_resp = supabase.table("jobs").insert(job_insert).execute()
         job_id = job_resp.data[0]["id"]
     except Exception as e:
-        # If it's a duplicate URL collision, gracefully fetch existing job
         if resolved_url:
-            existing_match = supabase.table("jobs").select("id").eq("url", resolved_url).limit(1).execute()
+            existing_match = supabase.table("jobs").select("id").eq("url", resolved_url).eq("user_id", user_id).limit(1).execute()
             if existing_match.data:
                 return {"job_id": existing_match.data[0]["id"], "is_duplicate": True}
         raise HTTPException(status_code=400, detail=f"Failed to insert job: {str(e)}")
 
-    # Append Culture Assessment to reasoning so it appears in the UI without DB schema changes
-    final_reasoning = fit_report.reasoning
-    if fit_report.culture_assessment:
-        final_reasoning += f"\n\n🏢 Company Culture Estimate:\n{fit_report.culture_assessment}"
+    def run_analysis():
+        try:
+            # 4. Score Match
+            fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=req.use_groq)
 
-    # 7. Add Analysis
-    # Let's check if we already have company_info for this company to avoid re-researching
-    existing_info_res = supabase.table("jobs").select("job_analyses(company_info)").eq("company", parsed_job.company).execute()
-    company_info = None
-    if existing_info_res.data:
-        for row in existing_info_res.data:
-            if row.get("job_analyses") and row["job_analyses"][0].get("company_info"):
-                company_info = row["job_analyses"][0]["company_info"]
-                break
-                
-    if not company_info:
-        company_info = research_company(parsed_job.company)
+            # 5. Determine which resume to recommend
+            best_resume_id = resumes_resp.data[0]["id"]
+            role_lower = parsed_job.role_title.lower()
+            
+            type_keywords = {
+                "backend": ["backend", "server", "api", "microservice", "distributed"],
+                "frontend": ["frontend", "front-end", "react", "angular", "vue", "ui"],
+                "fullstack": ["fullstack", "full-stack", "full stack"],
+                "genai": ["ai", "ml", "machine learning", "llm", "genai", "nlp", "data science"],
+                "data": ["data engineer", "data analyst", "analytics", "etl", "pipeline"],
+            }
+            
+            for resume_type, keywords in type_keywords.items():
+                if any(kw in role_lower for kw in keywords):
+                    for r in resumes_resp.data:
+                        if r["target_type"] == resume_type:
+                            best_resume_id = r["id"]
+                            break
+                    break
 
-    analysis_insert = {
-        "job_id": job_id,
-        "match_score": fit_report.match_score,
-        "matched_keywords": fit_report.matched_keywords,
-        "missing_keywords": fit_report.missing_keywords,
-        "pay_floor_pass": fit_report.pay_floor_pass,
-        "relocation_required": fit_report.relocation_required,
-        "seniority_fit": fit_report.seniority_fit,
-        "goal_alignment_note": fit_report.goal_alignment_note,
-        "verdict": fit_report.verdict,
-        "reasoning": final_reasoning,
-        "recommended_resume_version_id": best_resume_id,
-        "company_info": company_info
-    }
-    
-    supabase.table("job_analyses").insert(analysis_insert).execute()
+            final_reasoning = fit_report.reasoning
+            if fit_report.culture_assessment:
+                final_reasoning += f"\n\n🏢 Company Culture Estimate:\n{fit_report.culture_assessment}"
+
+            # 7. Add Analysis
+            existing_info_res = supabase.table("jobs").select("job_analyses(company_info)").eq("company", parsed_job.company).eq("user_id", user_id).execute()
+            company_info = None
+            if existing_info_res.data:
+                for row in existing_info_res.data:
+                    if row.get("job_analyses") and row["job_analyses"][0].get("company_info"):
+                        company_info = row["job_analyses"][0]["company_info"]
+                        break
+                        
+            if not company_info:
+                company_info = research_company(parsed_job.company)
+
+            analysis_insert = {
+                "job_id": job_id,
+                "match_score": fit_report.match_score,
+                "matched_keywords": fit_report.matched_keywords,
+                "missing_keywords": fit_report.missing_keywords,
+                "pay_floor_pass": fit_report.pay_floor_pass,
+                "relocation_required": fit_report.relocation_required,
+                "seniority_fit": fit_report.seniority_fit,
+                "goal_alignment_note": fit_report.goal_alignment_note,
+                "verdict": fit_report.verdict,
+                "reasoning": final_reasoning,
+                "recommended_resume_version_id": best_resume_id,
+                "company_info": company_info,
+                "user_id": user_id
+            }
+            
+            supabase.table("job_analyses").insert(analysis_insert).execute()
+        except Exception as e:
+            print(f"Background analysis failed for job {job_id}: {e}")
+            failed_analysis_insert = {
+                "job_id": job_id,
+                "match_score": 0,
+                "verdict": "skip",
+                "reasoning": f"AI Analysis Failed: {str(e)}\n\nThis was likely caused by a timeout or model error.",
+                "user_id": user_id
+            }
+            supabase.table("job_analyses").insert(failed_analysis_insert).execute()
+
+    if background_tasks:
+        background_tasks.add_task(run_analysis)
+    else:
+        run_analysis()
 
     return {"job_id": job_id}
 
+@router.post("/parse")
+def parse_and_score_job_route(req: ParseRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    return _parse_and_score_job(req, user_id, background_tasks)
+
+
 @router.post("/parse-image")
-async def parse_and_score_image(file: UploadFile = File(...)):
+async def parse_and_score_image(background_tasks: BackgroundTasks, file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     """
-    Accepts an uploaded image screenshot, extracts the text via Gemini, and parses the job.
+    Accepts an uploaded image screenshot, extracts the text via Gemini Vision, and parses the job.
     """
     # 1. Read the image bytes
     contents = await file.read()
@@ -266,21 +293,55 @@ async def parse_and_score_image(file: UploadFile = File(...)):
     try:
         extracted_text = extract_text_from_image(contents, mime_type)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to extract text from image: {str(e)}")
+        err_str = str(e)
+        # Detect quota exhaustion and surface a friendly message
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="Gemini free-tier rate limit reached (20 image requests/day). Please wait a few minutes and try again, or upgrade your Gemini API plan."
+            )
+        raise HTTPException(status_code=400, detail=f"Failed to extract text from image: {err_str}")
         
     # 3. Use the existing parse_and_score_job logic
+    # Do NOT hardcode a garbage URL — let the JD parser extract apply_link if present,
+    # otherwise url will be None and the UI will show the '+ Add Link' button.
     req = ParseRequest(
         raw_jd=f"[Extracted from Screenshot]\n{extracted_text}",
         source="screenshot",
-        url="Screenshot Upload",
-        use_groq=False # Force Gemini since Groq lacks vision capabilities for the initial part anyway
+        url=None,  # Will be set from parsed apply_link inside parse_and_score_job if found
+        use_groq=False
     )
     
-    return parse_and_score_job(req)
+    return _parse_and_score_job(req, user_id, background_tasks)
+
+@router.get("/subscriptions/list")
+def get_subscriptions(user_id: str = Depends(get_current_user)):
+    res = supabase.table("ats_subscriptions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+    return res.data
+
+@router.delete("/subscriptions/{sub_id}")
+def delete_subscription(sub_id: str, user_id: str = Depends(get_current_user)):
+    res = supabase.table("ats_subscriptions").delete().eq("id", sub_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return {"status": "deleted"}
 
 @router.post("/fetch-ats")
-def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTasks):
-    def process_jobs():
+def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    if req.subscribe:
+        keywords_str = ",".join(req.target_keywords) if req.target_keywords else ""
+        for token in req.company_tokens:
+            try:
+                supabase.table("ats_subscriptions").insert({
+                    "company_token": token,
+                    "ats_system": req.system,
+                    "target_keywords": keywords_str,
+                    "user_id": user_id
+                }).execute()
+            except Exception as e:
+                print(f"Failed to subscribe {token}: {e}") # Likely a duplicate
+
+    def process_jobs(user_id: str = user_id):
         jobs_to_process = []
         for token in req.company_tokens:
             if req.system == "greenhouse":
@@ -303,7 +364,7 @@ def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTask
                     url=job_data["url"],
                     use_groq=req.use_groq
                 )
-                parse_and_score_job(p_req)
+                _parse_and_score_job(p_req, user_id, None)
             except Exception as e:
                 print(f"Failed to process ATS job {job_data['url']}: {e}")
 
@@ -311,9 +372,9 @@ def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTask
     return {"message": f"Started processing jobs for {len(req.company_tokens)} companies in the background."}
 
 @router.post("/{job_id}/application-draft")
-def create_application_draft(job_id: str, req: DraftRequest):
+def create_application_draft(job_id: str, req: DraftRequest, user_id: str = Depends(get_current_user)):
     # 1. Fetch Job
-    job_res = supabase.table("jobs").select("*").eq("id", job_id).execute()
+    job_res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
     if not job_res.data:
         raise HTTPException(status_code=404, detail="Job not found")
     job_data = job_res.data[0]
@@ -354,20 +415,23 @@ def create_application_draft(job_id: str, req: DraftRequest):
 class JobUpdateRequest(BaseModel):
     deadline: Optional[str] = None
     is_bookmarked: Optional[bool] = None
+    url: Optional[str] = None
 
 @router.patch("/{job_id}")
-def update_job(job_id: str, req: JobUpdateRequest):
+def update_job(job_id: str, req: JobUpdateRequest, user_id: str = Depends(get_current_user)):
     update_data = {}
     # Check explicitly if it was set in the request, allowing None for deadline to clear it
     if "deadline" in req.model_dump(exclude_unset=True):
         update_data["deadline"] = req.deadline
     if "is_bookmarked" in req.model_dump(exclude_unset=True):
         update_data["is_bookmarked"] = req.is_bookmarked
+    if "url" in req.model_dump(exclude_unset=True):
+        update_data["url"] = req.url
         
     if not update_data:
         return {"message": "No updates requested"}
         
-    res = supabase.table("jobs").update(update_data).eq("id", job_id).execute()
+    res = supabase.table("jobs").update(update_data).eq("id", job_id).eq("user_id", user_id).execute()
     
     if not res.data:
         raise HTTPException(status_code=404, detail="Job not found")

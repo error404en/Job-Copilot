@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 supabase
 google-genai
@@ -10,4 +10,6 @@ PyPDF2
 beautifulsoup4
 requests
 apscheduler
-duckduckgo-search
+ddgs
+python-multipart
+httpx

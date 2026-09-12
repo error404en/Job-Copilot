@@ -1,0 +1,77 @@
+# ========================
+# Environment / Secrets
+# ========================
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+*.env
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+pip-wheel-metadata/
+share/python-wheels/
+*.so
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ========================
+# Node / Next.js / Frontend
+# ========================
+node_modules/
+.next/
+out/
+.cache/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ========================
+# IDE / OS
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========================
+# Playwright / Testing
+# ========================
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# ========================
+# Misc
+# ========================
+implementation_plan.md
+*.log

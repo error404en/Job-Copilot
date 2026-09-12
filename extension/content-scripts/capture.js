@@ -15,20 +15,20 @@
 
   const siteConfigs = {
     'linkedin.com': {
-      titleSelector: '.jobs-details-top-card__job-title, .job-details-jobs-unified-top-card__job-title, h1',
-      contentSelector: '#job-details, .jobs-description__content',
+      titleSelector: '.jobs-details-top-card__job-title, .job-details-jobs-unified-top-card__job-title, .t-24.t-bold, h1',
+      contentSelector: '#job-details, .jobs-description__content, .jobs-description-content__text, article',
     },
     'indeed.com': {
-      titleSelector: '.jobsearch-JobInfoHeader-title',
-      contentSelector: '#jobDescriptionText',
+      titleSelector: '.jobsearch-JobInfoHeader-title, h1',
+      contentSelector: '#jobDescriptionText, .jobsearch-jobDescriptionText',
     },
     'glassdoor.com': {
       titleSelector: '.JobDetails_jobTitle__1D91E, h1',
-      contentSelector: '.JobDetails_jobDescriptionWrapper__wL3qK',
+      contentSelector: '.JobDetails_jobDescriptionWrapper__wL3qK, .jobDescriptionContent',
     },
     'naukri.com': {
       titleSelector: '.jd-header-title, h1',
-      contentSelector: '.job-desc',
+      contentSelector: '.job-desc, .styles_Jd__description__4tPsz',
     }
   };
 
@@ -80,19 +80,28 @@
       btn.disabled = true;
 
       try {
-        const res = await fetch('http://localhost:8000/api/jobs/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            raw_jd: rawText,
-            source: domain.split('.')[0],
-            url: window.location.href
-          })
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({
+            action: 'fetchBackend',
+            url: 'http://localhost:8000/api/jobs/parse',
+            method: 'POST',
+            body: {
+              raw_jd: rawText,
+              source: domain.split('.')[0],
+              url: window.location.href
+            }
+          }, (resp) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(resp);
+            }
+          });
         });
 
-        if (!res.ok) throw new Error('Backend error');
+        if (!response || !response.success) throw new Error(response ? response.error : 'Background error');
         
-        const data = await res.json();
+        const data = response.data;
         btn.innerText = '✅ Open Dashboard';
         btn.style.background = '#16a34a';
         

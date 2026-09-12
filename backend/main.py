@@ -4,6 +4,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import jobs, profile, auto_apply, resumes, research
@@ -17,9 +18,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JobCopilot API", version="1.0.0", lifespan=lifespan)
 
+# CORS: set ALLOWED_ORIGINS env var in production (comma-separated).
+# Example: ALLOWED_ORIGINS=https://myapp.vercel.app,https://www.myapp.com
+_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")
+allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For local development
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

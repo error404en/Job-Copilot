@@ -1,125 +1,357 @@
-# JobCopilot üöÄ
+# ?? JobCopilot ó AI-Powered Job Application Platform
 
-**One inbox for every job posting, scored against your actual resume and goals ‚Äî before you waste a click applying.**
+> Analyze job postings, score your resume match, track applications, and auto-discover roles ó all in one place.
 
-JobCopilot is a personal job-hunting assistant designed to eliminate the wasted time of reading irrelevant job descriptions. It automatically analyzes job postings, scores them against your specific profile (pay floor, seniority, location, required skills), and tells you whether to **Apply**, **Stretch**, or **Skip**.
-
----
-
-## ‚ú® Features
-
-- **Instant Fit Analysis**: Paste a job URL or raw text, and get a structured analysis in seconds.
-- **Auto-Rejection Guardrails**: Automatically flags roles that are under your pay floor or require more seniority than you have.
-- **Smart Resume Recommendation**: Maintains multiple versions of your resume (e.g., GenAI, Backend, Full-stack) and recommends the best one for each specific job.
-- **Company Intelligence**: Automatically researches the company's work culture, work-life balance, compensation estimates, and perks using DuckDuckGo and LLM analysis.
-- **Application Prep**: Drafts highly tailored, human-sounding cover letters based on the selected resume and the job description.
-- **Chrome Extension (In Progress)**: Capture JDs from pages you're already viewing and get instant analysis without leaving the page. 
+![Stack](https://img.shields.io/badge/Next.js-16-black?logo=next.js) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green?logo=fastapi) ![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?logo=supabase) ![Gemini](https://img.shields.io/badge/Gemini-AI-4285F4?logo=google) ![Groq](https://img.shields.io/badge/Groq-LLaMA-F55036)
 
 ---
 
-## üõ†Ô∏è Tech Stack
+## ?? Table of Contents
 
-**Frontend**
-- Next.js 14 (App Router)
-- React 19
-- TypeScript
-- Tailwind CSS
-- TanStack Query
-
-**Backend**
-- Python 3.10+
-- FastAPI
-- Supabase (PostgreSQL)
-- LLM Providers: Anthropic (Claude), Google (Gemini), Groq
-- Web scraping & research: BeautifulSoup, DuckDuckGo Search
+- [Features](#features)
+- [Architecture](#architecture)
+- [Local Development Setup](#local-development-setup)
+- [Environment Variables](#environment-variables)
+- [Supabase Database Setup](#supabase-database-setup)
+- [Running the App](#running-the-app)
+- [Deployment](#deployment)
+- [LLM Fallback System](#llm-fallback-system)
+- [API Reference](#api-reference)
+- [Contributing](#contributing)
 
 ---
 
-## üöÄ Setup Instructions (For Any Device)
+## ? Features
 
-Follow these step-by-step instructions to get JobCopilot running locally on a new machine from scratch.
-
-### Step 1: Prerequisites
-Ensure you have the following installed on your machine:
-1. **Node.js** (v18 or higher): [Download here](https://nodejs.org/)
-2. **Python** (3.10 or higher): [Download here](https://www.python.org/downloads/)
-3. **Git**: [Download here](https://git-scm.com/downloads)
-
-### Step 2: Database Setup (Supabase)
-JobCopilot uses Supabase for a hosted PostgreSQL database.
-1. Create a free account at [Supabase](https://supabase.com/).
-2. Click **"New Project"** and give it a name (e.g., JobCopilot).
-3. Wait for the database to provision.
-4. Go to **Project Settings > API**. You will need two values from here:
-   - **Project URL** (This is your `SUPABASE_URL`)
-   - **service_role secret** (This is your `SUPABASE_SERVICE_ROLE_KEY`. *Do not share this!*)
-5. Go to the **SQL Editor** in the left sidebar of your Supabase dashboard.
-6. You must execute the following SQL migration files in this exact order to set up your tables and seed data. Open each file, copy the contents, paste them into the SQL Editor, and click "Run":
-   - `backend/supabase/migrations/01_initial_schema.sql`
-   - `backend/supabase/migrations/02_seed.sql` (Populates initial mock data/resumes)
-   - `backend/supabase/migrations/03_add_application_data.sql`
-   - `backend/04_add_deadlines_bookmarks.sql`
-   - `backend/05_add_company_info.sql`
-
-### Step 3: API Keys
-You need API keys for the AI models used in the tool:
-- **Gemini (Google)**: [Get API key from Google AI Studio](https://aistudio.google.com/app/apikey)
-- **Groq**: [Get API key from Groq Console](https://console.groq.com/keys)
-- **Anthropic** *(Optional for v1, but good to have)*: [Get API key here](https://console.anthropic.com/)
-
-### Step 4: Backend Setup
-1. Open a terminal and clone the repository (if you haven't already).
-2. Navigate to the backend folder:
-   ```bash
-   cd "Apply Tool"/backend
-   ```
-3. Create a virtual environment:
-   ```bash
-   python -m venv .venv
-   ```
-4. Activate the virtual environment:
-   - On **Windows**: `.venv\Scripts\activate`
-   - On **Mac/Linux**: `source .venv/bin/activate`
-5. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-6. Create an environment variables file. Inside the `backend/` folder, create a new file named `.env` and add your keys:
-   ```env
-   SUPABASE_URL=your_supabase_project_url_here
-   SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
-   GEMINI_API_KEY=your_gemini_api_key_here
-   GROQ_API_KEY=your_groq_api_key_here
-   ANTHROPIC_API_KEY=your_anthropic_api_key_here
-   ```
-7. Start the backend server:
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
-   *The API will now be running on `http://localhost:8000`.*
-
-### Step 5: Frontend Setup
-1. Open a **new terminal window** (keep the backend server running in the first one).
-2. Navigate to the frontend folder:
-   ```bash
-   cd "Apply Tool"/frontend
-   ```
-3. Install frontend dependencies:
-   ```bash
-   npm install
-   ```
-4. Start the frontend development server:
-   ```bash
-   npm run dev
-   ```
-5. Open your browser and go to [http://localhost:3000](http://localhost:3000) to use JobCopilot!
+| Feature | Description |
+|---|---|
+| **JD Analysis** | Paste any job description ? AI extracts skills, pay, seniority, remote type |
+| **Resume Match Scoring** | 0ñ100 score against your resume + verdict (Apply / Stretch / Skip) |
+| **Screenshot Upload** | Upload a job screenshot ? OCR via Gemini Vision ? instant analysis |
+| **URL Scrape** | Paste a job URL ? auto-fetches and analyzes the posting |
+| **Company Deep Dive** | 3-tier discovery: known ATS API ? ATS search ? careers page scrape |
+| **ATS Subscriptions** | Subscribe to Greenhouse/Lever/Ashby boards ? daily digest of new roles |
+| **Application Drafts** | AI-generated cover letters tailored to each role |
+| **Dashboard** | All analyzed jobs with match scores, verdicts, apply links |
+| **Daily Digest** | Top matches from the last 24h, sorted by score |
+| **Resume Manager** | Upload multiple tailored resumes; AI extracts skills for matching |
+| **Job Bookmarking** | Bookmark roles for later review |
 
 ---
 
-## ‚ö†Ô∏è Important Note on Scraping
-This tool is built strictly as a **personal assistant** to read job pages you are already viewing. **It does not perform bulk automated scraping** of platforms like LinkedIn, Indeed, or Glassdoor, as this violates their Terms of Service and leads to account bans. The tool is designed exclusively for single-page DOM capture or manual text pasting.
+## ??? Architecture
+
+```
+Frontend (Next.js 16)
+  +-- /api/* proxy rewrite ? Backend (FastAPI)
+                                +-- JD Parser (LLM)
+                                +-- Match Scorer (LLM)
+                                +-- Job Fetcher (Greenhouse/Lever/Ashby/Scraper)
+                                +-- Company Researcher (LLM + DDG)
+                                +-- Application Prep (LLM)
+                                +-- Scheduler (APScheduler ó daily digest)
+
+LLM Waterfall (6 models, never crashes):
+  Gemini 2.0 Flash ? Gemini 1.5 Flash ? Gemini 1.5 Flash-8B
+    ? llama-3.1-8b-instant ? llama3-70b-8192 ? mixtral-8x7b-32768
+
+Data Layer:
+  Supabase PostgreSQL (jobs, analyses, resumes, profile, subscriptions)
+```
+
+### Key Design Decisions
+
+- **6-model LLM waterfall**: Falls through Gemini and Groq models automatically on rate limits or errors.
+- **Next.js rewrite proxy**: All frontend calls go to `/api/*` ó point `NEXT_PUBLIC_BACKEND_URL` to any backend URL without touching code.
+- **3-tier job discovery**: Direct ATS API ? DDG search for ATS ? Generic careers page scrape + LLM extraction.
 
 ---
 
-## üìù License
-This is a personal, single-user project. Not intended for commercial multi-tenant deployment.
+## ??? Local Development Setup
+
+### Prerequisites
+
+| Tool | Version |
+|---|---|
+| Python | 3.10+ |
+| Node.js | 18+ |
+| Git | Any |
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/apply-tool.git
+cd apply-tool
+```
+
+### 2. Set Up the Backend
+
+```bash
+cd backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate it
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Configure Environment Variables
+
+```bash
+# Copy the example file
+cp .env.example .env
+# Then edit .env with your API keys (see Environment Variables below)
+```
+
+### 4. Set Up the Frontend
+
+```bash
+cd ../frontend
+npm install
+```
+
+---
+
+## ?? Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Required | Description | Where to get it |
+|---|---|---|---|
+| `SUPABASE_URL` | ? | Supabase project URL | Supabase ? Project Settings ? API |
+| `SUPABASE_SERVICE_ROLE_KEY` | ? | Service role secret key | Supabase ? Project Settings ? API |
+| `GEMINI_API_KEY` | ? | Google Gemini API key | [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| `GROQ_API_KEY` | ? | Groq API key (LLM fallback) | [Groq Console](https://console.groq.com/keys) |
+| `GEMINI_MODEL` | ? | Override primary Gemini model | Default: `gemini-2.0-flash` |
+| `GEMINI_VISION_MODEL` | ? | Override vision model | Default: `gemini-2.0-flash` |
+| `GROQ_MODEL` | ? | Override primary Groq model | Default: `llama-3.1-8b-instant` |
+| `ALLOWED_ORIGINS` | ? | CORS origins (comma-separated) | Default: `http://localhost:3000` |
+
+**Example `backend/.env`:**
+```env
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIs...
+GEMINI_API_KEY=AIzaSy...
+GROQ_API_KEY=gsk_...
+```
+
+### Frontend (`frontend/.env.local`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_BACKEND_URL` | ? | Backend URL. Default: `http://localhost:8000` |
+
+---
+
+## ??? Supabase Database Setup
+
+### Step 1: Create a Supabase Project
+
+1. Go to [supabase.com](https://supabase.com) ? New Project
+2. Copy your **Project URL** and **Service Role Key** into `backend/.env`
+
+### Step 2: Run SQL Migrations
+
+Open **Supabase SQL Editor** and run each file in order:
+
+```
+backend/supabase/migrations/01_initial_schema.sql   ? Core tables (jobs, resumes, analyses)
+backend/supabase/migrations/02_seed.sql             ? Creates initial profile row
+backend/supabase/migrations/03_add_application_data.sql
+backend/04_add_deadlines_bookmarks.sql
+backend/05_add_company_info.sql
+backend/06_add_personal_info.sql
+backend/07_add_ats_subscriptions.sql
+```
+
+### Step 3: Verify Tables
+
+After running, you should see these tables:
+
+| Table | Purpose |
+|---|---|
+| `user_profile` | Preferences (pay floor, location, target roles) |
+| `resume_versions` | Uploaded resumes with AI-extracted skills summary |
+| `jobs` | Every analyzed job posting |
+| `job_analyses` | Match scores, verdicts, keyword analysis per job |
+| `application_drafts` | AI-generated cover letters |
+| `applications` | Application status tracking |
+| `ats_subscriptions` | Saved company ATS board subscriptions |
+
+---
+
+## ?? Running the App
+
+### Start the Backend
+
+```bash
+cd backend
+# Ensure venv is active
+uvicorn main:app --reload --port 8000
+```
+
+- API running at: `http://localhost:8000`
+- Interactive docs: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/health`
+
+### Start the Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+- App running at: `http://localhost:3000`
+
+---
+
+## ?? Deployment
+
+### Frontend ? Vercel
+
+1. Push code to GitHub
+2. Import the repo at [vercel.com](https://vercel.com) (set root to `frontend/`)
+3. Add environment variable:
+   ```
+   NEXT_PUBLIC_BACKEND_URL = https://your-backend.railway.app
+   ```
+4. Deploy ?
+
+### Backend ? Railway
+
+1. New project at [railway.app](https://railway.app) ? connect GitHub
+2. Set root directory to `backend/`
+3. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. Add environment variables:
+   ```
+   SUPABASE_URL=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   GEMINI_API_KEY=...
+   GROQ_API_KEY=...
+   ALLOWED_ORIGINS=https://your-app.vercel.app
+   ```
+5. Deploy ?
+
+### Backend ? Render (Alternative)
+
+1. New Web Service ? root: `backend/`
+2. Build command: `pip install -r requirements.txt`
+3. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. Same environment variables as Railway
+
+---
+
+## ?? LLM Fallback System
+
+Every AI call goes through a **6-model waterfall** ó the system never crashes due to rate limits:
+
+```
+Primary chain (Gemini):
+  gemini-2.0-flash ? gemini-1.5-flash ? gemini-1.5-flash-8b
+
+Fallback chain (Groq ó activates if all Gemini fail):
+  llama-3.1-8b-instant ? llama3-70b-8192 ? mixtral-8x7b-32768
+```
+
+Vision/OCR uses only Gemini models (Groq has no vision API).
+
+**Free tier limits:**
+| Model | Requests/Day |
+|---|---|
+| Gemini 2.0 Flash | ~1,500 |
+| Gemini 1.5 Flash | ~1,500 |
+| Groq llama-3.1-8b-instant | ~14,400 |
+
+For a personal or small-team app, free tiers are more than sufficient.
+
+---
+
+## ?? API Reference
+
+All endpoints are prefixed with `/api/`. In development they go through the Next.js proxy to `localhost:8000`.
+
+### Jobs
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/jobs` | List all analyzed jobs with analyses |
+| `POST` | `/api/jobs/parse` | Analyze a job description (text) |
+| `POST` | `/api/jobs/parse-image` | Analyze from screenshot (multipart upload) |
+| `GET` | `/api/jobs/scrape-url?url=` | Fetch and analyze from URL |
+| `GET` | `/api/jobs/digest` | Top matches from last 24 hours |
+| `GET` | `/api/jobs/{id}` | Get single job with analysis |
+| `PATCH` | `/api/jobs/{id}` | Update job fields (e.g., add URL) |
+| `DELETE` | `/api/jobs/{id}` | Delete a job |
+| `PATCH` | `/api/jobs/{id}/bookmark` | Toggle bookmark |
+| `POST` | `/api/jobs/{id}/application-draft` | Generate AI cover letter |
+| `POST` | `/api/jobs/fetch-ats` | Fetch from Greenhouse/Lever/Ashby |
+| `GET` | `/api/jobs/subscriptions/list` | List ATS subscriptions |
+| `DELETE` | `/api/jobs/subscriptions/{id}` | Remove ATS subscription |
+
+### Resumes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/resumes` | List all uploaded resumes |
+| `POST` | `/api/resumes/upload` | Upload PDF resume (multipart) |
+| `DELETE` | `/api/resumes/{id}` | Delete a resume |
+
+### Profile
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/profile` | Get preferences |
+| `PUT` | `/api/profile` | Update preferences (pay floor, location, etc.) |
+
+### Research
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/research/company` | Company deep dive ó returns company info + discovered jobs |
+
+**Request body for `/api/research/company`:**
+```json
+{
+  "company_name": "Zepto",
+  "target_keywords": "backend, python, data engineering"
+}
+```
+
+---
+
+## ?? Contributing
+
+```bash
+# Fork ? clone ? create branch
+git checkout -b feat/my-feature
+
+# Make changes, then verify backend imports are clean:
+cd backend
+python -c "import sys; sys.path.insert(0,'.'); from app.api import jobs, resumes, profile, research; print('OK')"
+
+# Commit and open a PR
+git commit -m "feat: add X feature"
+git push origin feat/my-feature
+```
+
+### Rules
+- All LLM calls must go through `llm_client.py` ó never instantiate Gemini/Groq clients elsewhere.
+- All frontend API calls must use `/api/...` path ó never hardcode `localhost:8000`.
+- New tables need a corresponding SQL migration file.
+
+---
+
+## ?? License
+
+MIT ó free to use, fork, and build on.
+
+---
+
+*Built with Next.js 16, FastAPI, Supabase, Google Gemini, and Groq*

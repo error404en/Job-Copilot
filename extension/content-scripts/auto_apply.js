@@ -6,8 +6,8 @@
  */
 
 (async () => {
-  // 1. Guardrail: Ensure we are NOT on a banned domain (LinkedIn, Indeed, etc.)
-  const bannedDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'naukri.com'];
+  // 1. Guardrail: Ensure we are NOT on a banned domain
+  const bannedDomains = ['indeed.com', 'glassdoor.com', 'naukri.com'];
   if (bannedDomains.some(domain => window.location.hostname.includes(domain))) {
     console.log("JobCopilot Auto-Apply: Explicitly blocked on this domain.");
     return;
@@ -16,14 +16,26 @@
   console.log("JobCopilot Auto-Apply: Checking for profile data...");
 
   try {
-    // 2. Fetch User Profile Data & Cover Letter Draft
-    const res = await fetch(`http://localhost:8000/api/auto-apply/data?url=${encodeURIComponent(window.location.href)}`);
-    if (!res.ok) {
-      console.log("JobCopilot Auto-Apply: Could not fetch data (backend may be down).");
+    // 2. Fetch User Profile Data & Cover Letter Draft via background script
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: 'fetchBackend',
+        url: `http://localhost:8000/api/auto-apply/data?url=${encodeURIComponent(window.location.href)}`
+      }, (resp) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(resp);
+        }
+      });
+    });
+
+    if (!response || !response.success) {
+      console.log("JobCopilot Auto-Apply: Could not fetch data (backend down or not logged in).", response?.error);
       return;
     }
     
-    const data = await res.json();
+    const data = response.data;
     if (!data.enabled) {
       console.log("JobCopilot Auto-Apply: Module is disabled in settings.");
       return;
@@ -37,12 +49,16 @@
         value: data.first_name,
         selectors: [
           'input[name="job_application[first_name]"]', // Greenhouse
+          'input[autocomplete="given-name"]', // LinkedIn
+          'input[id*="firstName"]', // LinkedIn
         ]
       },
       {
         value: data.last_name,
         selectors: [
           'input[name="job_application[last_name]"]', // Greenhouse
+          'input[autocomplete="family-name"]', // LinkedIn
+          'input[id*="lastName"]', // LinkedIn
         ]
       },
       {
@@ -56,6 +72,8 @@
         selectors: [
           'input[name="job_application[email]"]', // Greenhouse
           'input[name="email"]', // Lever
+          'input[autocomplete="email"]', // LinkedIn
+          'input[id*="email"]', // LinkedIn
         ]
       },
       {
@@ -63,13 +81,16 @@
         selectors: [
           'input[name="job_application[phone]"]', // Greenhouse
           'input[name="phone"]', // Lever
+          'input[autocomplete="tel"]', // LinkedIn
+          'input[id*="phoneNumber"]', // LinkedIn
         ]
       },
       {
         value: data.linkedin_url,
         selectors: [
           'input[name="urls[LinkedIn]"]', // Lever
-          'input[autocomplete="custom-question-linkedin-profile"]' // Greenhouse common custom
+          'input[autocomplete="custom-question-linkedin-profile"]', // Greenhouse common custom
+          'input[id*="linkedin"]' // LinkedIn
         ]
       },
       {

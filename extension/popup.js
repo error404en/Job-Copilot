@@ -30,9 +30,18 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
     btn.innerText = 'Sending to backend...';
     status.innerText = `Sending ${rawText.length} characters to JobCopilot AI...`;
 
+    // Fetch the Clerk session token from the localhost cookie directly
+    const cookie = await chrome.cookies.get({ url: 'http://localhost:3000', name: '__session' });
+    if (!cookie) {
+      throw new Error('You must be signed into the JobCopilot web dashboard (http://localhost:3000) first.');
+    }
+
     const response = await fetch('http://localhost:8000/api/jobs/parse', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cookie.value}`
+      },
       body: JSON.stringify({
         raw_jd: rawText,
         source: 'extension',

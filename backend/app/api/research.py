@@ -1,10 +1,11 @@
 import re
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from app.services.company_researcher import research_company
-from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs
+from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, scrape_careers_page
+from app.middleware.auth import get_current_user
 
 router = APIRouter()
 
@@ -50,13 +51,14 @@ def discover_ats(company_name: str):
     return None
 
 @router.post("/company")
-def deep_dive_company(req: ResearchRequest):
-    # 1. Company Intelligence
+def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_user)):
+    # 1. Company Intelligence (runs in parallel conceptually, both fast)
     company_info = research_company(req.company_name)
     
-    # 2. ATS Discovery & Fetch
+    # 2. ATS Discovery & Fetch (Tier 1 + 2: known ATS APIs)
     ats_info = discover_ats(req.company_name)
     discovered_jobs = []
+    careers_url = None
     
     keywords = [k.strip() for k in req.target_keywords.split(",")] if req.target_keywords else None
     
@@ -74,9 +76,17 @@ def deep_dive_company(req: ResearchRequest):
                 discovered_jobs = fetch_smartrecruiters_jobs(token, keywords)
         except Exception as e:
             print(f"Failed to fetch jobs from discovered ATS {system} for {token}: {e}")
+    else:
+        # Tier 3: No known ATS — scrape the company's careers page directly
+        print(f"[DeepDive] No ATS found for {req.company_name}, falling back to careers page scrape")
+        result = scrape_careers_page(req.company_name, keywords)
+        discovered_jobs = result.get("jobs", [])
+        careers_url = result.get("careers_url")
             
     return {
         "company_info": company_info,
         "ats_info": ats_info,
+        "careers_url": careers_url,  # Non-null when tier-3 scrape was used
         "jobs": discovered_jobs
     }
+
