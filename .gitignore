@@ -27,7 +27,7 @@ var/
 sdist/
 develop-eggs/
 .installed.cfg
-lib/
+# (Removed lib/ here so frontend/lib can be tracked)
 lib64/
 pip-wheel-metadata/
 share/python-wheels/
