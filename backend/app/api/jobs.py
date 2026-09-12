@@ -437,3 +437,98 @@ def update_job(job_id: str, req: JobUpdateRequest, user_id: str = Depends(get_cu
         raise HTTPException(status_code=404, detail="Job not found")
         
     return res.data[0]
+
+@router.delete("/{job_id}")
+def delete_job(job_id: str, user_id: str = Depends(get_current_user)):
+    supabase.table("jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
+    return {"status": "deleted", "job_id": job_id}
+
+@router.post("/{job_id}/reanalyze")
+def reanalyze_job(job_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    from datetime import datetime, timezone
+    job_res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", user_id).limit(1).execute()
+    if not job_res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = job_res.data[0]
+
+    # Delete existing analyses
+    supabase.table("job_analyses").delete().eq("job_id", job_id).eq("user_id", user_id).execute()
+
+    # Reset fetched_at to current UTC
+    now_utc = datetime.now(timezone.utc).isoformat()
+    supabase.table("jobs").update({"fetched_at": now_utc}).eq("id", job_id).eq("user_id", user_id).execute()
+
+    profile_resp = supabase.table("user_profile").select("*").eq("user_id", user_id).limit(1).execute()
+    if not profile_resp.data:
+        raise HTTPException(status_code=500, detail="User profile not found in DB")
+    user_profile = profile_resp.data[0]
+
+    resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
+    if not resumes_resp.data:
+        raise HTTPException(status_code=500, detail="No resume versions found in DB")
+    resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
+
+    parsed_job = parse_job_description(job["raw_jd"])
+    if job.get("company"):
+        parsed_job.company = job["company"]
+
+    def run_reanalysis():
+        try:
+            fit_report = score_match(parsed_job, user_profile, resume_summaries)
+            best_resume_id = resumes_resp.data[0]["id"]
+            role_lower = parsed_job.role_title.lower()
+            type_keywords = {
+                "backend": ["backend", "server", "api", "microservice", "distributed"],
+                "frontend": ["frontend", "front-end", "react", "angular", "vue", "ui"],
+                "fullstack": ["fullstack", "full-stack", "full stack"],
+                "genai": ["ai", "ml", "machine learning", "llm", "genai", "nlp", "data science"],
+                "data": ["data engineer", "data analyst", "analytics", "etl", "pipeline"],
+            }
+            for resume_type, keywords in type_keywords.items():
+                if any(kw in role_lower for kw in keywords):
+                    for r in resumes_resp.data:
+                        if r["target_type"] == resume_type:
+                            best_resume_id = r["id"]
+                            break
+                    break
+
+            final_reasoning = fit_report.reasoning
+            if fit_report.culture_assessment:
+                final_reasoning += f"\n\n🏢 Company Culture Estimate:\n{fit_report.culture_assessment}"
+
+            company_info = research_company(parsed_job.company)
+
+            analysis_insert = {
+                "job_id": job_id,
+                "match_score": fit_report.match_score,
+                "matched_keywords": fit_report.matched_keywords,
+                "missing_keywords": fit_report.missing_keywords,
+                "pay_floor_pass": fit_report.pay_floor_pass,
+                "relocation_required": fit_report.relocation_required,
+                "seniority_fit": fit_report.seniority_fit,
+                "goal_alignment_note": fit_report.goal_alignment_note,
+                "verdict": fit_report.verdict,
+                "reasoning": final_reasoning,
+                "recommended_resume_version_id": best_resume_id,
+                "company_info": company_info,
+                "user_id": user_id
+            }
+            supabase.table("job_analyses").insert(analysis_insert).execute()
+        except Exception as e:
+            print(f"Re-analysis failed for job {job_id}: {e}")
+            failed_analysis_insert = {
+                "job_id": job_id,
+                "match_score": 0,
+                "verdict": "skip",
+                "reasoning": f"AI Analysis Failed: {str(e)}",
+                "user_id": user_id
+            }
+            supabase.table("job_analyses").insert(failed_analysis_insert).execute()
+
+    if background_tasks:
+        background_tasks.add_task(run_reanalysis)
+    else:
+        run_reanalysis()
+
+    return {"job_id": job_id, "status": "reanalyzing"}
+

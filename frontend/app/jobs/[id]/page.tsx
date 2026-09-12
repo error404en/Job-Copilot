@@ -44,6 +44,32 @@ export default function JobDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['job', jobId] })
   })
 
+  const reanalyzeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch(`/api/jobs/${jobId}/reanalyze`, {
+        method: 'POST'
+      })
+      if (!res.ok) throw new Error('Failed to re-analyze job')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job', jobId] })
+    }
+  })
+
+  const deleteJobMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch(`/api/jobs/${jobId}`, {
+        method: 'DELETE'
+      })
+      if (!res.ok) throw new Error('Failed to delete job')
+      return res.json()
+    },
+    onSuccess: () => {
+      window.location.href = '/'
+    }
+  })
+
   const toggleBookmark = () => updateJobMutation.mutate({ is_bookmarked: !job.is_bookmarked })
   const handleDeadlineChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     updateJobMutation.mutate({ deadline: e.target.value || null })
@@ -99,20 +125,46 @@ export default function JobDetailPage() {
 
   const analysis = job.job_analyses && job.job_analyses[0]
   if (!analysis) {
-    // Check if job is older than 5 minutes
-    const fetchedAt = new Date(job.fetched_at || new Date()).getTime();
-    const isTimeout = (new Date().getTime() - fetchedAt) > 5 * 60 * 1000;
+    // Parse UTC timestamp safely regardless of local browser timezone
+    const rawTime = job.fetched_at || '';
+    const dateStr = rawTime
+      ? (rawTime.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(rawTime) ? rawTime : `${rawTime}Z`)
+      : new Date().toISOString();
+    const fetchedAt = new Date(dateStr).getTime();
+    // Only consider timed out after 3 minutes of true elapsed time
+    const isTimeout = (Date.now() - fetchedAt) > 3 * 60 * 1000;
 
     if (isTimeout) {
       return (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Analysis missing or failed</h2>
-          <p className="text-zinc-400 mb-8 max-w-md">
-            This job was saved, but the AI analysis didn't complete (likely due to a timeout or LLM error). Please delete this job or try analyzing the URL again.
+        <div className="flex flex-col items-center justify-center py-24 text-center max-w-lg mx-auto">
+          <div className="text-4xl mb-4">⏳</div>
+          <h2 className="text-2xl font-bold text-white mb-2">Analysis in Progress or Timed Out</h2>
+          <p className="text-zinc-400 mb-8 text-sm leading-relaxed">
+            AI analysis usually takes 15-30 seconds. If the backend was cold or a model timed out, you can re-run analysis with 1-click or remove this job.
           </p>
-          <Link href="/" className="bg-zinc-800 text-white px-6 py-3 rounded-lg font-bold hover:bg-zinc-700 transition-colors">
-            Back to Dashboard
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => reanalyzeMutation.mutate()}
+              disabled={reanalyzeMutation.isPending}
+              className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-blue-500 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-blue-600/20"
+            >
+              {reanalyzeMutation.isPending ? 'Starting AI...' : '🔄 Re-analyze Job'}
+            </button>
+            <button
+              onClick={() => {
+                if (confirm('Are you sure you want to delete this job?')) {
+                  deleteJobMutation.mutate()
+                }
+              }}
+              disabled={deleteJobMutation.isPending}
+              className="bg-red-500/10 text-red-400 border border-red-500/20 px-5 py-2.5 rounded-lg font-bold hover:bg-red-500/20 transition-colors disabled:opacity-50"
+            >
+              {deleteJobMutation.isPending ? 'Deleting...' : '🗑 Delete Job'}
+            </button>
+            <Link href="/" className="bg-zinc-800 text-zinc-300 px-5 py-2.5 rounded-lg font-semibold hover:bg-zinc-700 hover:text-white transition-colors">
+              Back to Dashboard
+            </Link>
+          </div>
         </div>
       )
     }
@@ -126,7 +178,7 @@ export default function JobDetailPage() {
         <div>
           <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">AI is analyzing this job...</h2>
           <p className="text-zinc-400 max-w-md mx-auto text-sm">
-            JobCopilot is scoring your match, drafting recommendations, and gathering company intelligence. This usually takes 5-15 seconds.
+            JobCopilot is scoring your match, drafting recommendations, and gathering company intelligence. This usually takes 15-30 seconds.
           </p>
         </div>
       </div>
