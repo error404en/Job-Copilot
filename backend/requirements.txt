@@ -13,3 +13,5 @@ apscheduler
 ddgs
 python-multipart
 httpx
+PyJWT[cryptography]
+

@@ -9,9 +9,11 @@ load_dotenv()
 
 security = HTTPBearer()
 
-# Use the instance-specific JWKS URL (requires Authorization header via secret key)
+# Use the instance-specific JWKS URL.
+# Set CLERK_INSTANCE_DOMAIN in your env to your production Clerk domain.
+# For dev: many-goat-992.clerk.accounts.dev  For prod: clerk.yourdomain.com
 _CLERK_SECRET_KEY = os.environ.get("CLERK_SECRET_KEY", "")
-_INSTANCE_DOMAIN = "many-goat-992.clerk.accounts.dev"  # from network logs
+_INSTANCE_DOMAIN = os.environ.get("CLERK_INSTANCE_DOMAIN", "many-goat-992.clerk.accounts.dev")
 CLERK_JWKS_URL = f"https://{_INSTANCE_DOMAIN}/.well-known/jwks.json"
 _jwks_client = PyJWKClient(CLERK_JWKS_URL, cache_keys=True)
 

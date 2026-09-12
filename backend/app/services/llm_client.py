@@ -42,14 +42,13 @@ GEMINI_VISION_MODELS = [
 ]
 
 GROQ_MODELS = [
-    GROQ_MODEL,             # Default from settings
-    "qwen/qwen3.8-27b",     # Highly capable open source fallback
-    "qwen/qwen3.6-27b",
-    "groq/compound",
-    "groq/compound-mini",
-    "openai/gpt-oss-120b",  # High-parameter open source
-    "openai/gpt-oss-20b",
+    GROQ_MODEL,             # Default from settings (compound-beta)
+    "llama-3.3-70b-versatile",  # High quality, widely available
+    "llama-3.1-70b-versatile",  # Stable fallback
+    "mixtral-8x7b-32768",       # Reliable free-tier model
+    "gemma2-9b-it",             # Lightweight fallback
 ]
+
 
 # Local open source fallback (Ollama) to guarantee NO rate limits
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
