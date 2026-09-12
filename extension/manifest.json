@@ -1,10 +1,12 @@
 {
   "manifest_version": 3,
   "name": "JobCopilot Link Finder & Analyzer",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Send any job posting directly to JobCopilot for instant AI analysis.",
   "permissions": ["activeTab", "scripting", "tabs", "cookies"],
   "host_permissions": [
+    "https://job-copilot-ci8e.onrender.com/*",
+    "https://job-copilot-gold.vercel.app/*",
     "http://localhost:8000/*",
     "http://localhost:3000/*",
     "*://*.greenhouse.io/*",

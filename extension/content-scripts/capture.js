@@ -83,7 +83,7 @@
         const response = await new Promise((resolve) => {
           chrome.runtime.sendMessage({
             action: 'fetchBackend',
-            url: 'http://localhost:8000/api/jobs/parse',
+            url: '/api/jobs/parse',
             method: 'POST',
             body: {
               raw_jd: rawText,
@@ -107,7 +107,8 @@
         
         // When clicked again, open dashboard
         btn.onclick = () => {
-          window.open(`http://localhost:3000/jobs/${data.job_id}`, '_blank');
+          const dashUrl = response.dashboardUrl || 'https://job-copilot-gold.vercel.app';
+          window.open(`${dashUrl}/jobs/${data.job_id}`, '_blank');
         };
 
         // Show a little toast inside the button

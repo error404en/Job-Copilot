@@ -20,7 +20,7 @@
     const response = await new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'fetchBackend',
-        url: `http://localhost:8000/api/auto-apply/data?url=${encodeURIComponent(window.location.href)}`
+        url: `/api/auto-apply/data?url=${encodeURIComponent(window.location.href)}`
       }, (resp) => {
         if (chrome.runtime.lastError) {
           resolve({ success: false, error: chrome.runtime.lastError.message });

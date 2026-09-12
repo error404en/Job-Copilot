@@ -1,17 +1,27 @@
+importScripts('auth_helper.js');
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchBackend') {
     (async () => {
       try {
-        const cookie = await chrome.cookies.get({ url: 'http://localhost:3000', name: '__session' });
-        if (!cookie) {
-          throw new Error('You must be signed into the JobCopilot web dashboard (http://localhost:3000) first.');
+        const session = await getAuthSession();
+        if (!session || !session.token) {
+          throw new Error('You must be signed into the JobCopilot web dashboard first.');
         }
 
-        const res = await fetch(request.url, {
+        // Automatically route to resolved backend (Cloud or Local)
+        let targetUrl = request.url;
+        if (targetUrl.startsWith('/')) {
+          targetUrl = `${session.backendUrl}${targetUrl}`;
+        } else if (targetUrl.startsWith('http://localhost:8000')) {
+          targetUrl = targetUrl.replace('http://localhost:8000', session.backendUrl);
+        }
+
+        const res = await fetch(targetUrl, {
           method: request.method || 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${cookie.value}`,
+            'Authorization': `Bearer ${session.token}`,
             ...(request.headers || {})
           },
           body: request.body ? JSON.stringify(request.body) : undefined
@@ -23,11 +33,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         const data = await res.json();
-        sendResponse({ success: true, data });
+        sendResponse({ success: true, data, dashboardUrl: session.dashboardUrl });
       } catch (err) {
         let msg = err.message;
         if (msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
-          msg = 'Cannot reach backend. Make sure uvicorn is running on port 8000.';
+          msg = 'Cannot reach backend server. Please make sure the service is running or awake.';
         }
         sendResponse({ success: false, error: msg });
       }

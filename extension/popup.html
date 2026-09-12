@@ -1,19 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <title>JobCopilot Analyzer</title>
   <style>
     body {
-      width: 300px;
+      width: 310px;
       padding: 16px;
       font-family: -apple-system, system-ui, sans-serif;
-      background: #f9fafb;
+      background: #09090b;
+      color: #f4f4f5;
       margin: 0;
     }
     .header {
-      font-weight: bold;
+      font-weight: 700;
       font-size: 16px;
-      color: #1e3a8a;
+      color: #fafafa;
       margin-bottom: 12px;
       display: flex;
       align-items: center;
@@ -21,7 +23,7 @@
     }
     .status {
       font-size: 13px;
-      color: #4b5563;
+      color: #a1a1aa;
       margin-bottom: 16px;
       line-height: 1.4;
     }
@@ -40,16 +42,26 @@
       background: #1d4ed8;
     }
     button:disabled {
-      background: #9ca3af;
+      background: #3f3f46;
+      color: #71717a;
       cursor: not-allowed;
     }
-    #error {
-      color: #dc2626;
-      font-size: 12px;
+    .btn-secondary {
+      background: #27272a;
+      color: #e4e4e7;
       margin-top: 8px;
+    }
+    .btn-secondary:hover {
+      background: #3f3f46;
+    }
+    #error {
+      color: #f87171;
+      font-size: 12px;
+      margin-top: 10px;
       display: none;
       white-space: pre-wrap;
       word-break: break-word;
+      line-height: 1.4;
     }
   </style>
 </head>
@@ -61,7 +73,9 @@
     Ready to extract this page and send it to your JobCopilot AI for analysis.
   </div>
   <button id="analyzeBtn">Analyze Job Fit</button>
+  <button id="dashboardBtn" class="btn-secondary" style="display: none;">Open JobCopilot Dashboard ↗</button>
   <div id="error"></div>
+  <script src="auth_helper.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

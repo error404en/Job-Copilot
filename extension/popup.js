@@ -1,11 +1,13 @@
 document.getElementById('analyzeBtn').addEventListener('click', async () => {
   const btn = document.getElementById('analyzeBtn');
+  const dashBtn = document.getElementById('dashboardBtn');
   const status = document.getElementById('status');
   const errDiv = document.getElementById('error');
 
   btn.disabled = true;
   btn.innerText = 'Extracting page text...';
   errDiv.style.display = 'none';
+  dashBtn.style.display = 'none';
   status.innerText = 'Reading the current page...';
 
   try {
@@ -27,20 +29,27 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
     }
 
     const url = tab.url;
-    btn.innerText = 'Sending to backend...';
-    status.innerText = `Sending ${rawText.length} characters to JobCopilot AI...`;
+    btn.innerText = 'Checking authentication...';
+    status.innerText = 'Verifying your JobCopilot login session...';
 
-    // Fetch the Clerk session token from the localhost cookie directly
-    const cookie = await chrome.cookies.get({ url: 'http://localhost:3000', name: '__session' });
-    if (!cookie) {
-      throw new Error('You must be signed into the JobCopilot web dashboard (http://localhost:3000) first.');
+    // Get fresh Clerk session token and resolved endpoint
+    const session = await getAuthSession();
+    if (!session || !session.token) {
+      dashBtn.onclick = () => {
+        chrome.tabs.create({ url: CLOUD_CONFIG.dashboardUrl });
+      };
+      dashBtn.style.display = 'block';
+      throw new Error('Your login session has expired or you are not logged in.\n\nPlease open your JobCopilot dashboard and sign in to refresh your session.');
     }
 
-    const response = await fetch('http://localhost:8000/api/jobs/parse', {
+    btn.innerText = 'Sending to AI...';
+    status.innerText = `Sending ${rawText.length} characters to JobCopilot AI...`;
+
+    const response = await fetch(`${session.backendUrl}/api/jobs/parse`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cookie.value}`
+        'Authorization': `Bearer ${session.token}`
       },
       body: JSON.stringify({
         raw_jd: rawText,
@@ -51,13 +60,20 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
 
     if (!response.ok) {
       const errBody = await response.text();
+      if (response.status === 401) {
+        dashBtn.onclick = () => {
+          chrome.tabs.create({ url: session.dashboardUrl });
+        };
+        dashBtn.style.display = 'block';
+        throw new Error('Session token expired. Please click below to refresh your dashboard tab.');
+      }
       throw new Error(`Backend error ${response.status}: ${errBody}`);
     }
 
     const data = await response.json();
 
-    // Open the local dashboard in a new tab
-    chrome.tabs.create({ url: `http://localhost:3000/jobs/${data.job_id}` });
+    // Open the dashboard in a new tab
+    chrome.tabs.create({ url: `${session.dashboardUrl}/jobs/${data.job_id}` });
 
     status.innerText = '✅ Analysis complete! Opening your JobCopilot dashboard...';
     btn.innerText = 'Done ✓';
@@ -65,7 +81,7 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
   } catch (err) {
     let msg = err.message;
     if (msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
-      msg = '❌ Cannot reach backend. Make sure uvicorn is running on port 8000:\n\ncd backend && uvicorn main:app --reload --port 8000';
+      msg = '❌ Cannot reach backend server. If using cloud, it might be waking up (wait ~20s). If local, check port 8000.';
     }
     errDiv.innerText = msg;
     errDiv.style.display = 'block';
