@@ -67,7 +67,12 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
         dashBtn.style.display = 'block';
         throw new Error('Session token expired. Please click below to refresh your dashboard tab.');
       }
-      throw new Error(`Backend error ${response.status}: ${errBody}`);
+      let detailMsg = errBody;
+      try {
+        const parsed = JSON.parse(errBody);
+        if (parsed.detail) detailMsg = parsed.detail;
+      } catch (e) {}
+      throw new Error(detailMsg);
     }
 
     const data = await response.json();

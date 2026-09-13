@@ -119,9 +119,22 @@
         }, 3000);
 
       } catch (err) {
-        btn.innerText = '❌ Backend Offline';
+        const msg = (err.message || '').toLowerCase();
         btn.style.background = '#dc2626';
         btn.disabled = false;
+        btn.title = err.message || 'Error processing job';
+
+        if (msg.includes('signed into') || msg.includes('login') || msg.includes('token') || msg.includes('401')) {
+          btn.innerText = '⚠️ Please Sign In';
+          btn.onclick = () => window.open('https://job-copilot-gold.vercel.app', '_blank');
+        } else if (msg.includes('resume')) {
+          btn.innerText = '⚠️ Upload Resume First';
+          btn.onclick = () => window.open('https://job-copilot-gold.vercel.app/resumes', '_blank');
+        } else if (msg.includes('cannot reach') || msg.includes('failed to fetch') || msg.includes('connection_refused')) {
+          btn.innerText = '❌ Backend Waking Up (Try in 20s)';
+        } else {
+          btn.innerText = '❌ Error (Hover for Info)';
+        }
       }
     };
 

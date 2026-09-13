@@ -139,6 +139,21 @@
 
 ---
 
+### Bug 12: New User Onboarding ('User profile not found in DB' & False 'Backend Offline')
+- **Symptom:** When a new user (or second account) signed into JobCopilot and attempted to parse a job with the extension, the in-page button flashed `❌ Backend Offline` and popup failed with `User profile not found in DB`.
+- **Root Cause:**
+  1. No auto-provisioning existed for newly registered Clerk accounts in Supabase `user_profile`.
+  2. `capture.js` caught all API/auth errors and displayed `❌ Backend Offline`, masking the real cause.
+  3. If a new user hadn't uploaded a resume yet, `jobs.py` threw a 500 error instead of gracefully falling back.
+- **Fix:**
+  1. Added `get_or_create_user_profile()` in `backend/app/api/profile.py` to auto-provision default profiles on demand for any new Clerk user.
+  2. Integrated auto-provisioning in `backend/app/api/jobs.py` `/parse` and `/reanalyze`.
+  3. Made resume scoring gracefully fallback to a general candidate summary if no resume is uploaded yet.
+  4. Updated `capture.js` to show contextual badges (`⚠️ Please Sign In`, `⚠️ Upload Resume First`, `❌ Backend Waking Up`) with full tooltip diagnostics.
+  5. Re-compressed `JobCopilot_Extension.zip`.
+
+---
+
 ## 📊 Summary Status
 
 | Component | Status | Hosting Platform |

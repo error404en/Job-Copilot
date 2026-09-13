@@ -11,6 +11,7 @@ from app.services.application_prep import generate_cover_letter
 from app.services.llm_client import extract_text_from_image
 from app.services.company_researcher import research_company
 from app.middleware.auth import get_current_user
+from app.api.profile import get_or_create_user_profile
 
 router = APIRouter()
 
@@ -148,19 +149,15 @@ def _parse_and_score_job(req: ParseRequest, user_id: str, background_tasks: Back
                 # Delete the orphaned job record so we can recreate it with a fresh analysis
                 supabase.table("jobs").delete().eq("id", job_record["id"]).eq("user_id", user_id).execute()
 
-    # 1. Get user profile
-    profile_resp = supabase.table("user_profile").select("*").eq("user_id", user_id).limit(1).execute()
-    if not profile_resp.data:
-        raise HTTPException(status_code=500, detail="User profile not found in DB")
-    user_profile = profile_resp.data[0]
+    # 1. Get user profile (auto-create default if user is new)
+    user_profile = get_or_create_user_profile(user_id)
 
     # 2. Get all resumes to find the best match
     resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
-    if not resumes_resp.data:
-        raise HTTPException(status_code=500, detail="No resume versions found in DB. Please upload a resume first at /resumes.")
-        
-    # Combine all resume summaries for the scorer
-    resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
+    if resumes_resp.data:
+        resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
+    else:
+        resume_summaries = "Software Engineering Candidate Profile. (No specific resume uploaded yet)."
 
     # 3. Parse JD
     parsed_job = parse_job_description(req.raw_jd, use_groq=req.use_groq)
@@ -205,7 +202,7 @@ def _parse_and_score_job(req: ParseRequest, user_id: str, background_tasks: Back
             fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=req.use_groq)
 
             # 5. Determine which resume to recommend
-            best_resume_id = resumes_resp.data[0]["id"]
+            best_resume_id = resumes_resp.data[0]["id"] if resumes_resp.data else None
             role_lower = parsed_job.role_title.lower()
             
             type_keywords = {
@@ -216,13 +213,14 @@ def _parse_and_score_job(req: ParseRequest, user_id: str, background_tasks: Back
                 "data": ["data engineer", "data analyst", "analytics", "etl", "pipeline"],
             }
             
-            for resume_type, keywords in type_keywords.items():
-                if any(kw in role_lower for kw in keywords):
-                    for r in resumes_resp.data:
-                        if r["target_type"] == resume_type:
-                            best_resume_id = r["id"]
-                            break
-                    break
+            if resumes_resp.data:
+                for resume_type, keywords in type_keywords.items():
+                    if any(kw in role_lower for kw in keywords):
+                        for r in resumes_resp.data:
+                            if r["target_type"] == resume_type:
+                                best_resume_id = r["id"]
+                                break
+                        break
 
             final_reasoning = fit_report.reasoning
             if fit_report.culture_assessment:
@@ -458,15 +456,13 @@ def reanalyze_job(job_id: str, background_tasks: BackgroundTasks, user_id: str =
     now_utc = datetime.now(timezone.utc).isoformat()
     supabase.table("jobs").update({"fetched_at": now_utc}).eq("id", job_id).eq("user_id", user_id).execute()
 
-    profile_resp = supabase.table("user_profile").select("*").eq("user_id", user_id).limit(1).execute()
-    if not profile_resp.data:
-        raise HTTPException(status_code=500, detail="User profile not found in DB")
-    user_profile = profile_resp.data[0]
+    user_profile = get_or_create_user_profile(user_id)
 
     resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
-    if not resumes_resp.data:
-        raise HTTPException(status_code=500, detail="No resume versions found in DB")
-    resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
+    if resumes_resp.data:
+        resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
+    else:
+        resume_summaries = "Software Engineering Candidate Profile. (No specific resume uploaded yet)."
 
     parsed_job = parse_job_description(job["raw_jd"])
     if job.get("company"):
@@ -475,7 +471,7 @@ def reanalyze_job(job_id: str, background_tasks: BackgroundTasks, user_id: str =
     def run_reanalysis():
         try:
             fit_report = score_match(parsed_job, user_profile, resume_summaries)
-            best_resume_id = resumes_resp.data[0]["id"]
+            best_resume_id = resumes_resp.data[0]["id"] if resumes_resp.data else None
             role_lower = parsed_job.role_title.lower()
             type_keywords = {
                 "backend": ["backend", "server", "api", "microservice", "distributed"],
@@ -484,13 +480,14 @@ def reanalyze_job(job_id: str, background_tasks: BackgroundTasks, user_id: str =
                 "genai": ["ai", "ml", "machine learning", "llm", "genai", "nlp", "data science"],
                 "data": ["data engineer", "data analyst", "analytics", "etl", "pipeline"],
             }
-            for resume_type, keywords in type_keywords.items():
-                if any(kw in role_lower for kw in keywords):
-                    for r in resumes_resp.data:
-                        if r["target_type"] == resume_type:
-                            best_resume_id = r["id"]
-                            break
-                    break
+            if resumes_resp.data:
+                for resume_type, keywords in type_keywords.items():
+                    if any(kw in role_lower for kw in keywords):
+                        for r in resumes_resp.data:
+                            if r["target_type"] == resume_type:
+                                best_resume_id = r["id"]
+                                break
+                        break
 
             final_reasoning = fit_report.reasoning
             if fit_report.culture_assessment:
