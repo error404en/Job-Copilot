@@ -29,6 +29,19 @@ class FetchAtsRequest(BaseModel):
     use_groq: bool = False
     subscribe: bool = False
 
+from app.models.job import ParsedJob
+
+class QuickScoreRequest(BaseModel):
+    company: str
+    role_title: str
+    location: Optional[str] = "India"
+    url: Optional[str] = None
+    raw_jd: Optional[str] = None
+    seniority_required: Optional[str] = "0-2yr"
+    experience_level: Optional[str] = None
+    required_skills: Optional[List[str]] = None
+    compensation_range: Optional[str] = None
+
 class DraftRequest(BaseModel):
     resume_version_id: Optional[str] = None
     use_groq: bool = False
@@ -83,6 +96,133 @@ def get_digest(user_id: str = Depends(get_current_user)):
         reverse=True
     )
     return digest_jobs
+
+@router.post("/quick-score")
+def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_user)):
+    """
+    Instantly scores a discovered role or company opening against the user's active resume.
+    Returns the Match Score, Verdict ('apply' | 'skip' | 'stretch'), Seniority Fit,
+    and saves to DB so it can be tracked and viewed on Dashboard.
+    """
+    # 1. Check if user already scored this exact job
+    try:
+        existing = supabase.table("jobs") \
+            .select("id, url, location, job_analyses(*)") \
+            .eq("company", req.company) \
+            .eq("role_title", req.role_title) \
+            .eq("user_id", user_id) \
+            .limit(1) \
+            .execute()
+        
+        if existing.data and existing.data[0].get("job_analyses") and len(existing.data[0]["job_analyses"]) > 0:
+            job_record = existing.data[0]
+            analysis = job_record["job_analyses"][0]
+            return {
+                "job_id": job_record["id"],
+                "company": req.company,
+                "role_title": req.role_title,
+                "location": job_record.get("location") or req.location,
+                "url": job_record.get("url") or req.url,
+                "match_score": analysis.get("match_score", 85),
+                "verdict": analysis.get("verdict", "apply"),
+                "seniority_fit": analysis.get("seniority_fit", "good_fit"),
+                "experience_level": req.experience_level or "0-2 Yrs (Freshers & Analyst)",
+                "matched_keywords": analysis.get("matched_keywords") or [],
+                "missing_keywords": analysis.get("missing_keywords") or [],
+                "reasoning": analysis.get("reasoning", ""),
+                "culture_assessment": analysis.get("company_info") or ""
+            }
+    except Exception as e:
+        print(f"[quick_score_job] Cache lookup error: {e}")
+
+    # 2. Get user profile and resume
+    user_profile = get_or_create_user_profile(user_id)
+    resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
+    if resumes_resp.data:
+        resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
+    else:
+        resume_summaries = "Software Engineering Candidate. Experience with Python, JavaScript/React, SQL, REST APIs, Git, and Web Development."
+
+    # 3. Parse seniority & skills
+    raw_seniority = (req.seniority_required or "0-2yr").lower()
+    if "senior" in raw_seniority or "lead" in raw_seniority:
+        clean_seniority = "senior"
+    elif "2-5" in raw_seniority or "mid" in raw_seniority:
+        clean_seniority = "2-5yr"
+    elif "fresher" in raw_seniority or "entry" in raw_seniority or "0-1" in raw_seniority:
+        clean_seniority = "fresher"
+    else:
+        clean_seniority = "0-2yr"
+
+    skills = req.required_skills or ["Python", "Java", "Web Development", "SQL", "APIs", "Data Structures"]
+
+    parsed_job = ParsedJob(
+        company=req.company,
+        role_title=req.role_title,
+        location=req.location or "India",
+        remote_type="unclear",
+        pay_min=None,
+        pay_max=None,
+        pay_currency="INR",
+        pay_confidence="estimated",
+        seniority_required=clean_seniority,
+        required_skills=skills,
+        nice_to_have_skills=["Cloud", "Docker", "Git", "Testing"],
+        apply_link=req.url
+    )
+
+    # 4. Score match
+    fit_report = score_match(parsed_job, user_profile, resume_summaries)
+
+    # 5. Insert backing job and analysis into DB
+    job_id = None
+    try:
+        job_insert = {
+            "source": "deep_dive_role",
+            "url": req.url,
+            "company": req.company,
+            "role_title": req.role_title,
+            "raw_jd": req.raw_jd or f"{req.role_title} at {req.company}\nLocation: {req.location}\nExperience: {req.experience_level or clean_seniority}",
+            "location": req.location or "India",
+            "remote_type": "unclear",
+            "seniority_required": clean_seniority,
+            "required_skills": skills,
+            "user_id": user_id
+        }
+        job_res = supabase.table("jobs").insert(job_insert).execute()
+        if job_res.data:
+            job_id = job_res.data[0]["id"]
+            analysis_insert = {
+                "job_id": job_id,
+                "match_score": fit_report.match_score,
+                "verdict": fit_report.verdict,
+                "seniority_fit": fit_report.seniority_fit,
+                "pay_floor_pass": fit_report.pay_floor_pass,
+                "relocation_required": fit_report.relocation_required,
+                "matched_keywords": fit_report.matched_keywords,
+                "missing_keywords": fit_report.missing_keywords,
+                "reasoning": fit_report.reasoning,
+                "company_info": fit_report.culture_assessment
+            }
+            supabase.table("job_analyses").insert(analysis_insert).execute()
+    except Exception as e:
+        print(f"[quick_score_job] DB save error: {e}")
+
+    return {
+        "job_id": job_id,
+        "company": req.company,
+        "role_title": req.role_title,
+        "location": req.location or "India",
+        "url": req.url,
+        "match_score": fit_report.match_score,
+        "verdict": fit_report.verdict,
+        "seniority_fit": fit_report.seniority_fit,
+        "experience_level": req.experience_level or ("0-2 Yrs (Freshers & Entry)" if fit_report.seniority_fit in ("good_fit", "ideal") else "Higher Seniority Required"),
+        "matched_keywords": fit_report.matched_keywords,
+        "missing_keywords": fit_report.missing_keywords,
+        "reasoning": fit_report.reasoning,
+        "culture_assessment": fit_report.culture_assessment
+    }
 
 # IMPORTANT: This must come BEFORE the /{id} route so FastAPI doesn't
 # treat "scrape-url" as a job ID.

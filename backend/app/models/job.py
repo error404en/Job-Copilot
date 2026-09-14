@@ -4,15 +4,15 @@ from typing import List, Optional
 class ParsedJob(BaseModel):
     company: str = Field(description="Name of the company hiring")
     role_title: str = Field(description="The job title")
-    location: Optional[str] = Field(description="Geographic location of the job (city, state, country), if mentioned. Null if completely unspecified.")
-    remote_type: str = Field(description="'remote', 'hybrid', 'onsite', or 'unclear'")
-    pay_min: Optional[int] = Field(description="Minimum annual pay (in INR). Extract if stated. If in USD/other, convert roughly to INR or leave null.")
-    pay_max: Optional[int] = Field(description="Maximum annual pay (in INR).")
+    location: Optional[str] = Field(default=None, description="Geographic location of the job (city, state, country), if mentioned. Null if completely unspecified.")
+    remote_type: str = Field(default="unclear", description="'remote', 'hybrid', 'onsite', or 'unclear'")
+    pay_min: Optional[int] = Field(default=None, description="Minimum annual pay (in INR). Extract if stated. If in USD/other, convert roughly to INR or leave null.")
+    pay_max: Optional[int] = Field(default=None, description="Maximum annual pay (in INR).")
     pay_currency: str = Field(default="INR", description="Currency of the pay")
-    pay_confidence: str = Field(description="'stated' if explicitly in JD, 'estimated' if inferred, 'unknown' if no clues")
-    seniority_required: str = Field(description="'fresher', '0-2yr', '2-5yr', 'senior', or 'unclear'")
-    required_skills: List[str] = Field(description="List of mandatory technical or soft skills")
-    nice_to_have_skills: List[str] = Field(description="List of preferred or bonus skills")
+    pay_confidence: str = Field(default="estimated", description="'stated' if explicitly in JD, 'estimated' if inferred, 'unknown' if no clues")
+    seniority_required: str = Field(default="0-2yr", description="'fresher', '0-2yr', '2-5yr', 'senior', or 'unclear'")
+    required_skills: List[str] = Field(default_factory=list, description="List of mandatory technical or soft skills")
+    nice_to_have_skills: List[str] = Field(default_factory=list, description="List of preferred or bonus skills")
     apply_link: Optional[str] = Field(default=None, description="The direct apply URL if present in the text, otherwise guess the company's official career page URL.")
 
 class FitReport(BaseModel):

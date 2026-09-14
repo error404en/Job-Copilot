@@ -35,6 +35,35 @@ export default function CompaniesPage() {
   const [fresherOnly, setFresherOnly] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [trackedMap, setTrackedMap] = useState<Record<string, boolean>>({})
+  const [companyScores, setCompanyScores] = useState<Record<string, any>>({})
+  const [loadingScores, setLoadingScores] = useState<Record<string, boolean>>({})
+
+  const handleCheckFit = async (company: any, roleTitle?: string, seniority?: string) => {
+    const key = `${company.id}_${roleTitle || 'default'}`
+    setLoadingScores(prev => ({ ...prev, [key]: true }))
+    try {
+      const targetRole = roleTitle || (company.verified_levels ? company.verified_levels[0]?.role : 'Software Engineer')
+      const res = await apiFetch('/api/jobs/quick-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: company.name,
+          role_title: targetRole,
+          location: company.locations[0] || 'India',
+          url: company.careers_url,
+          seniority_required: seniority || (company.fresher_friendly ? '0-2yr' : '2-5yr'),
+          experience_level: company.fresher_friendly ? '0-2 Yrs (Freshers Match)' : '2-5 Yrs'
+        })
+      })
+      if (!res.ok) throw new Error('Failed to score role')
+      const data = await res.json()
+      setCompanyScores(prev => ({ ...prev, [key]: data }))
+    } catch (err: any) {
+      alert(err.message || 'Failed to score profile against role.')
+    } finally {
+      setLoadingScores(prev => ({ ...prev, [key]: false }))
+    }
+  }
 
   // Fetch target companies
   const { data: companies, isLoading } = useQuery({
@@ -273,15 +302,20 @@ export default function CompaniesPage() {
                       <table className="w-full text-left">
                         <thead>
                           <tr className="border-b border-zinc-800/80 text-zinc-500 text-[10px] uppercase font-semibold">
-                            <th className="py-1.5 px-3">Role</th>
+                            <th className="py-1.5 px-3">Role & Experience</th>
                             <th className="py-1.5 px-3">Base</th>
                             <th className="py-1.5 px-3 text-right text-purple-400">Total CTC</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-800/50 text-zinc-300">
                           {c.verified_levels.map((lvl: any, i: number) => (
-                            <tr key={i}>
-                              <td className="py-1.5 px-3 font-medium text-white">{lvl.role}</td>
+                            <tr key={i} className="hover:bg-zinc-900/40">
+                              <td className="py-1.5 px-3 font-medium text-white flex items-center justify-between gap-2">
+                                <span>{lvl.role}</span>
+                                <span className="text-[9px] text-purple-300 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 font-mono shrink-0">
+                                  {i === 0 ? '🎓 0-2 Yrs (Freshers Match)' : i === 1 ? '💼 2-4 Yrs' : '⭐ 4+ Yrs'}
+                                </span>
+                              </td>
                               <td className="py-1.5 px-3 font-mono text-zinc-400">{lvl.base}</td>
                               <td className="py-1.5 px-3 font-mono font-bold text-right text-green-400">{lvl.ctc}</td>
                             </tr>
@@ -290,20 +324,94 @@ export default function CompaniesPage() {
                       </table>
                     </div>
                   )}
+
+                  {/* Inline Score & Verdict Result */}
+                  {companyScores[`${c.id}_default`] && (
+                    <div className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 space-y-2 text-xs animate-in fade-in duration-300">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-zinc-500 font-bold uppercase tracking-wider text-[10px]">Your Fit:</span>
+                          <span className={`px-2 py-0.5 rounded font-black text-xs uppercase tracking-wider ${
+                            companyScores[`${c.id}_default`].verdict === 'apply' 
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : companyScores[`${c.id}_default`].verdict === 'stretch'
+                              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          }`}>
+                            {companyScores[`${c.id}_default`].verdict === 'apply' 
+                              ? '✅ APPLY' 
+                              : companyScores[`${c.id}_default`].verdict === 'stretch' 
+                              ? '🟣 STRETCH' 
+                              : '⚠️ SKIP'}
+                          </span>
+                          <span className="text-[11px] text-zinc-300 font-medium">
+                            {companyScores[`${c.id}_default`].experience_level}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className={`font-black text-lg ${
+                            companyScores[`${c.id}_default`].match_score >= 80 
+                              ? 'text-green-400' 
+                              : companyScores[`${c.id}_default`].match_score >= 50 
+                              ? 'text-amber-400' 
+                              : 'text-zinc-500'
+                          }`}>
+                            {companyScores[`${c.id}_default`].match_score}
+                          </span>
+                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider ml-1 font-semibold">Fit Score</span>
+                        </div>
+                      </div>
+                      {companyScores[`${c.id}_default`].reasoning && (
+                        <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed">
+                          {companyScores[`${c.id}_default`].reasoning}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between pt-1 text-[11px] border-t border-zinc-900">
+                        <span className="text-zinc-500">Evaluated role: <strong>{companyScores[`${c.id}_default`].role_title}</strong></span>
+                        {companyScores[`${c.id}_default`].job_id && (
+                          <Link 
+                            href={`/jobs/${companyScores[`${c.id}_default`].job_id}`} 
+                            className="text-purple-400 hover:text-purple-300 font-semibold hover:underline flex items-center gap-1"
+                          >
+                            Full Breakdown →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Card Action Buttons */}
-                <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between gap-2 text-xs">
+                <div className="pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  {/* Direct Apply Option */}
                   <a
                     href={c.careers_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-zinc-300 hover:text-white font-semibold flex items-center gap-1 hover:underline"
+                    className="bg-white text-zinc-950 font-bold px-3.5 py-1.5 rounded-lg text-xs hover:bg-zinc-200 transition-colors flex items-center gap-1.5 shadow-sm"
                   >
-                    Official Portal ↗
+                    <span>🚀</span>
+                    <span>Apply Now ↗</span>
                   </a>
 
                   <div className="flex items-center gap-2">
+                    {/* Score Fit / Apply or Skip */}
+                    <button
+                      onClick={() => handleCheckFit(c)}
+                      disabled={loadingScores[`${c.id}_default`]}
+                      className="bg-purple-950/60 hover:bg-purple-900/80 text-purple-300 border border-purple-500/30 px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1 disabled:opacity-50"
+                      title="Scores this company role against your resume and tells whether to apply or skip"
+                    >
+                      <span>{loadingScores[`${c.id}_default`] ? '⚙️' : '📊'}</span>
+                      <span>
+                        {loadingScores[`${c.id}_default`] 
+                          ? 'Scoring...' 
+                          : companyScores[`${c.id}_default`] 
+                          ? 'Re-Score' 
+                          : 'Score Fit (Apply/Skip)'}
+                      </span>
+                    </button>
+
                     <button
                       onClick={() => trackMutation.mutate(c)}
                       disabled={trackMutation.isPending}
@@ -318,7 +426,7 @@ export default function CompaniesPage() {
 
                     <button
                       onClick={() => router.push(`/jobs/new?tab=deep-dive&company=${encodeURIComponent(c.name)}`)}
-                      className="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3.5 py-1.5 rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                      className="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors shadow-sm flex items-center gap-1"
                     >
                       <span>🔍</span> Deep Dive
                     </button>

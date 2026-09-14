@@ -24,21 +24,23 @@ if GEMINI_API_KEY:
 # ---------------------------------------------------------------------------
 
 GEMINI_TEXT_MODELS = [
-    GEMINI_MODEL,           # gemini-2.0-flash  (default, from settings)
-    "gemini-1.5-flash",     # stable, high quota
-    "gemini-1.5-flash-8b",  # smallest, highest quota
+    GEMINI_MODEL,           # gemini-2.5-flash (default, from settings)
+    "gemini-3.6-flash",     # next-gen stable
+    "gemini-flash-latest",  # always latest active flash
+    "gemini-2.5-flash-lite",# high quota lightweight fallback
 ]
 
 GEMINI_JSON_MODELS = [
     GEMINI_MODEL,
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
+    "gemini-3.6-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
 ]
 
 GEMINI_VISION_MODELS = [
-    GEMINI_VISION_MODEL,    # gemini-2.0-flash  (default, from settings)
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
+    GEMINI_VISION_MODEL,    # gemini-2.5-flash (default, from settings)
+    "gemini-2.5-flash-image",
+    "gemini-3.1-flash-image",
 ]
 
 GROQ_MODELS = [

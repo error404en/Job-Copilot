@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useApiClient } from '@/lib/useApiClient'
 
@@ -50,7 +51,10 @@ export default function AddJobPage() {
   const [deepDiveKeywords, setDeepDiveKeywords] = useState('')
   const [researchData, setResearchData] = useState<any>(null)
   const [deepDiveLocFilter, setDeepDiveLocFilter] = useState('all')
+  const [deepDiveExpFilter, setDeepDiveExpFilter] = useState('all')
   const [trackedJobs, setTrackedJobs] = useState<Record<string, boolean>>({})
+  const [roleScores, setRoleScores] = useState<Record<number, any>>({})
+  const [scoringRoleIdx, setScoringRoleIdx] = useState<number | null>(null)
 
   // Screenshot Upload & Clipboard Paste State
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -313,10 +317,54 @@ export default function AddJobPage() {
     }
   }
 
-  // Filter deep dive jobs by location
+  const handleScoreRole = async (job: any, idx: number) => {
+    setScoringRoleIdx(idx)
+    try {
+      const res = await apiFetch('/api/jobs/quick-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: deepDiveCompany,
+          role_title: job.role_title,
+          location: job.location,
+          url: job.url,
+          raw_jd: job.raw_jd,
+          seniority_required: job.seniority_required || '0-2yr',
+          experience_level: job.experience_level,
+          required_skills: job.required_skills
+        })
+      })
+      if (!res.ok) throw new Error('Failed to score role')
+      const data = await res.json()
+      setRoleScores(prev => ({ ...prev, [idx]: data }))
+    } catch (err: any) {
+      alert(err.message || 'Error scoring role.')
+    } finally {
+      setScoringRoleIdx(null)
+    }
+  }
+
+  // Filter deep dive jobs by location and experience level
   const filteredDeepDiveJobs = (researchData?.jobs || []).filter((j: any) => {
-    if (deepDiveLocFilter === 'all') return true
-    return (j.location || '').toLowerCase().includes(deepDiveLocFilter.toLowerCase())
+    if (deepDiveLocFilter !== 'all' && !(j.location || '').toLowerCase().includes(deepDiveLocFilter.toLowerCase())) {
+      return false
+    }
+    if (deepDiveExpFilter !== 'all') {
+      const exp = (j.experience_level || '').toLowerCase()
+      const sen = (j.seniority_required || '').toLowerCase()
+      const title = (j.role_title || '').toLowerCase()
+      if (deepDiveExpFilter === 'fresher') {
+        const isFresher = exp.includes('0-2') || exp.includes('fresher') || exp.includes('entry') || exp.includes('0-1') || sen === '0-2yr' || sen === 'entry' || title.includes('analyst') || title.includes('graduate') || title.includes('trainee')
+        if (!isFresher) return false
+      } else if (deepDiveExpFilter === 'mid') {
+        const isMid = exp.includes('2-5') || exp.includes('mid') || sen === '2-5yr' || title.includes('associate')
+        if (!isMid) return false
+      } else if (deepDiveExpFilter === 'senior') {
+        const isSenior = exp.includes('5+') || exp.includes('senior') || exp.includes('lead') || sen === 'senior' || title.includes('senior') || title.includes('lead')
+        if (!isSenior) return false
+      }
+    }
+    return true
   })
 
   return (
@@ -746,23 +794,53 @@ export default function AddJobPage() {
                       )}
                     </div>
 
-                    {/* Location Filter Dropdown */}
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-zinc-400 font-semibold uppercase">Filter by Place:</label>
-                      <select
-                        value={deepDiveLocFilter}
-                        onChange={(e) => setDeepDiveLocFilter(e.target.value)}
-                        className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      >
-                        <option value="all">All Locations</option>
-                        <option value="bengaluru">Bengaluru / Bangalore</option>
-                        <option value="mumbai">Mumbai</option>
-                        <option value="pune">Pune</option>
-                        <option value="hyderabad">Hyderabad</option>
-                        <option value="delhi">Delhi / NCR</option>
-                        <option value="chennai">Chennai</option>
-                        <option value="remote">Remote</option>
-                      </select>
+                    {/* Place and Experience Filter Dropdowns */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Location Filter */}
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-zinc-400 font-semibold uppercase">Place:</label>
+                        <select
+                          value={deepDiveLocFilter}
+                          onChange={(e) => setDeepDiveLocFilter(e.target.value)}
+                          className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        >
+                          <option value="all">All Locations</option>
+                          <option value="bengaluru">Bengaluru / Bangalore</option>
+                          <option value="mumbai">Mumbai</option>
+                          <option value="pune">Pune</option>
+                          <option value="hyderabad">Hyderabad</option>
+                          <option value="delhi">Delhi / NCR</option>
+                          <option value="chennai">Chennai</option>
+                          <option value="remote">Remote</option>
+                        </select>
+                      </div>
+
+                      {/* Experience Filter */}
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-zinc-400 font-semibold uppercase">Experience:</label>
+                        <select
+                          value={deepDiveExpFilter}
+                          onChange={(e) => setDeepDiveExpFilter(e.target.value)}
+                          className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        >
+                          <option value="all">All Experience Levels</option>
+                          <option value="fresher">🎓 Freshers / 0-2 Yrs (Entry Level)</option>
+                          <option value="mid">💼 2-5 Yrs (Mid-Level)</option>
+                          <option value="senior">⭐ 5+ Yrs (Senior & Lead)</option>
+                        </select>
+                      </div>
+
+                      {(deepDiveLocFilter !== 'all' || deepDiveExpFilter !== 'all') && (
+                        <button
+                          onClick={() => {
+                            setDeepDiveLocFilter('all')
+                            setDeepDiveExpFilter('all')
+                          }}
+                          className="text-xs text-purple-400 hover:underline"
+                        >
+                          Reset filters
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -770,41 +848,154 @@ export default function AddJobPage() {
                     <div className="grid gap-4">
                       {filteredDeepDiveJobs.map((j: any, i: number) => {
                         const isTracked = trackedJobs[i]
+                        const score = roleScores[i]
+                        const isScoringThis = scoringRoleIdx === i
+
                         return (
-                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 flex justify-between items-center group hover:border-zinc-700 transition-colors">
-                            <div>
-                              <h3 className="font-bold text-white text-lg">{j.role_title}</h3>
-                              <div className="text-sm text-zinc-500 mt-1 flex gap-3">
-                                <span>📍 {j.location || "India"}</span>
-                                <span className="text-zinc-700">|</span>
-                                <span className="capitalize">
-                                  {j.source === 'live_search' ? '🌐 Live Job Portal' : j.source === 'careers_page' ? '🏢 Official Careers' : `${j.source} ATS`}
-                                </span>
+                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 space-y-4 hover:border-zinc-700 transition-all">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h3 className="font-bold text-white text-lg">{j.role_title}</h3>
+                                  {j.experience_level && (
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                      j.experience_level.includes('0-2') || j.experience_level.includes('Freshers')
+                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                        : j.experience_level.includes('5+')
+                                        ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                    }`}>
+                                      {j.experience_level}
+                                    </span>
+                                  )}
+                                  {j.compensation_range && (
+                                    <span className="text-[10px] text-green-400 font-mono bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                                      💰 {j.compensation_range}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-zinc-400 mt-1.5 flex flex-wrap items-center gap-2">
+                                  <span>📍 {j.location || "India"}</span>
+                                  <span className="text-zinc-700">•</span>
+                                  <span className="capitalize text-zinc-500">
+                                    {j.source === 'live_search' 
+                                      ? '🌐 Live Job Portal' 
+                                      : j.source === 'careers_page' 
+                                      ? '🏢 Official Careers' 
+                                      : j.source === 'official_portal' 
+                                      ? '🏢 Official Verified Opening' 
+                                      : `${j.source} ATS`}
+                                  </span>
+                                  {j.required_skills && j.required_skills.length > 0 && (
+                                    <>
+                                      <span className="text-zinc-700">•</span>
+                                      <span className="text-zinc-500">Skills: {j.required_skills.slice(0, 4).join(', ')}</span>
+                                    </>
+                                  )}
+                                </div>
                               </div>
+
+                              {/* Top Fit Score Badge if scored */}
+                              {score && (
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${
+                                    score.verdict === 'apply'
+                                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                      : score.verdict === 'stretch'
+                                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                  }`}>
+                                    {score.verdict === 'apply' ? '✅ APPLY' : score.verdict === 'stretch' ? '🟣 STRETCH' : '⚠️ SKIP'}
+                                  </span>
+                                  <div className="text-right">
+                                    <div className={`text-2xl font-black ${
+                                      score.match_score >= 80 ? 'text-green-400' : score.match_score >= 50 ? 'text-amber-400' : 'text-zinc-500'
+                                    }`}>
+                                      {score.match_score}
+                                    </div>
+                                    <div className="text-[9px] text-zinc-500 uppercase font-bold tracking-widest">Fit Score</div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <div className="flex items-center gap-2">
-                              {j.url && (
-                                <a href={j.url} target="_blank" rel="noopener noreferrer" className="bg-zinc-800/50 text-zinc-400 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-zinc-700 hover:text-white transition-colors flex items-center justify-center">
-                                  View Job ↗
+
+                            {/* Inline Scoring Report if evaluated */}
+                            {score && (
+                              <div className="bg-zinc-900/60 p-3.5 rounded-xl border border-zinc-800/80 text-xs space-y-2 animate-in fade-in duration-300">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                  <span className="text-zinc-300 font-medium">
+                                    🎯 <strong>Experience Fit:</strong> {score.seniority_fit === 'good_fit' || score.seniority_fit === 'ideal' ? 'Direct Match for your background' : score.seniority_fit}
+                                  </span>
+                                  {score.matched_keywords && score.matched_keywords.length > 0 && (
+                                    <span className="text-green-400">
+                                      Matched: {score.matched_keywords.slice(0, 4).join(', ')}
+                                    </span>
+                                  )}
+                                </div>
+                                {score.reasoning && (
+                                  <p className="text-zinc-400 text-xs leading-relaxed">
+                                    {score.reasoning}
+                                  </p>
+                                )}
+                                {score.job_id && (
+                                  <div className="pt-1 flex justify-end">
+                                    <Link href={`/jobs/${score.job_id}`} className="text-purple-400 hover:text-purple-300 font-semibold hover:underline">
+                                      View Deep Breakdown & Cover Letter →
+                                    </Link>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="pt-2 border-t border-zinc-900 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              {/* Direct Apply Option */}
+                              {(j.url || researchData.careers_url) && (
+                                <a 
+                                  href={j.url || researchData.careers_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="bg-white text-zinc-950 font-bold px-3.5 py-1.5 rounded-lg text-xs hover:bg-zinc-200 transition-colors flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <span>🚀</span>
+                                  <span>Apply Now ↗</span>
                                 </a>
                               )}
-                              <button 
-                                type="button"
-                                onClick={() => handleTrackDiscoveredJob(j, i)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1 ${
-                                  isTracked ? 'bg-green-600/20 text-green-400 border border-green-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                                }`}
-                              >
-                                {isTracked ? '✓ In Tracker' : '+ Track'}
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  parseMutation.mutate({ raw_jd: j.raw_jd, source: j.source, url: j.url, company_name: deepDiveCompany })
-                                }}
-                                className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-                              >
-                                1-Click Analyze
-                              </button>
+
+                              <div className="flex items-center gap-2 ml-auto">
+                                {/* Score Fit (Apply or Skip) */}
+                                <button 
+                                  type="button"
+                                  onClick={() => handleScoreRole(j, i)}
+                                  disabled={isScoringThis}
+                                  className="bg-purple-950/60 hover:bg-purple-900 text-purple-300 border border-purple-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                  title="Scores this role against your resume and tells whether to apply or skip"
+                                >
+                                  <span>{isScoringThis ? '⚙️' : '📊'}</span>
+                                  <span>{isScoringThis ? 'Scoring...' : (score ? 'Re-Score' : 'Score Fit (Apply/Skip)')}</span>
+                                </button>
+
+                                {/* Track Button */}
+                                <button 
+                                  type="button"
+                                  onClick={() => handleTrackDiscoveredJob(j, i)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 ${
+                                    isTracked ? 'bg-green-600/20 text-green-400 border border-green-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                  }`}
+                                >
+                                  {isTracked ? '✓ In Tracker' : '+ Track'}
+                                </button>
+
+                                {/* Full Analysis */}
+                                <button 
+                                  onClick={() => {
+                                    parseMutation.mutate({ raw_jd: j.raw_jd, source: j.source, url: j.url, company_name: deepDiveCompany })
+                                  }}
+                                  className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                                >
+                                  Full Analysis
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )
@@ -812,9 +1003,15 @@ export default function AddJobPage() {
                     </div>
                   ) : (
                     <div className="text-center py-12 bg-zinc-950/50 rounded-xl border border-zinc-800/50">
-                      <p className="text-zinc-400">No jobs matching this location filter.</p>
-                      <button onClick={() => setDeepDiveLocFilter('all')} className="mt-2 text-xs text-purple-400 hover:underline">
-                        Reset location filter
+                      <p className="text-zinc-400">No jobs matching your filters.</p>
+                      <button 
+                        onClick={() => {
+                          setDeepDiveLocFilter('all')
+                          setDeepDiveExpFilter('all')
+                        }} 
+                        className="mt-2 text-xs text-purple-400 hover:underline"
+                      >
+                        Reset filters
                       </button>
                     </div>
                   )}
