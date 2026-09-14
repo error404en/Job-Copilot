@@ -17,13 +17,13 @@ export default function AddJobPage() {
   const [url, setUrl] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [isUrlFetching, setIsUrlFetching] = useState(false)
+  const [promoWarning, setPromoWarning] = useState<string | null>(null)
 
   // ATS Fetch State
   const [atsSystem, setAtsSystem] = useState('greenhouse')
   const [companyToken, setCompanyToken] = useState('')
   const [targetKeywords, setTargetKeywords] = useState('')
   const [atsSubscribe, setAtsSubscribe] = useState(false)
-  const [atsResults, setAtsResults] = useState<any>(null)
 
   const { data: subscriptions, refetch: refetchSubscriptions } = useQuery({
     queryKey: ['ats_subscriptions'],
@@ -49,10 +49,94 @@ export default function AddJobPage() {
   const [deepDiveCompany, setDeepDiveCompany] = useState('')
   const [deepDiveKeywords, setDeepDiveKeywords] = useState('')
   const [researchData, setResearchData] = useState<any>(null)
+  const [deepDiveLocFilter, setDeepDiveLocFilter] = useState('all')
+  const [trackedJobs, setTrackedJobs] = useState<Record<string, boolean>>({})
 
-  // Screenshot Upload State
+  // Screenshot Upload & Clipboard Paste State
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [pastedFromClipboard, setPastedFromClipboard] = useState(false)
+
+  // Auto-detect URL query params (e.g. from Target Companies directory)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const tab = params.get('tab')
+      const company = params.get('company')
+      if (tab === 'deep-dive' || tab === 'screenshot' || tab === 'manual' || tab === 'ats') {
+        setActiveTab(tab)
+      }
+      if (company) {
+        setDeepDiveCompany(company)
+        if (tab === 'deep-dive') {
+          researchMutation.mutate({ company_name: company })
+        }
+      }
+    }
+  }, [])
+
+  // Listen for Ctrl+V paste anywhere on the page
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile()
+          if (file) {
+            e.preventDefault()
+            setSelectedFile(file)
+            setActiveTab('screenshot')
+            setPastedFromClipboard(true)
+            setError(null)
+            break
+          }
+        }
+      }
+    }
+
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [])
+
+  // Generate object preview URL for selected file
+  useEffect(() => {
+    if (selectedFile) {
+      const preview = URL.createObjectURL(selectedFile)
+      setImagePreviewUrl(preview)
+      return () => URL.revokeObjectURL(preview)
+    } else {
+      setImagePreviewUrl(null)
+      setPastedFromClipboard(false)
+    }
+  }, [selectedFile])
+
+  const handleClipboardRead = async () => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        alert("Direct clipboard read is restricted by browser security. Please press Ctrl+V directly to paste your copied screenshot!")
+        return
+      }
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const imageType = item.types.find(t => t.startsWith('image/'))
+        if (imageType) {
+          const blob = await item.getType(imageType)
+          const file = new File([blob], `screenshot_${Date.now()}.png`, { type: imageType })
+          setSelectedFile(file)
+          setActiveTab('screenshot')
+          setPastedFromClipboard(true)
+          return
+        }
+      }
+      alert("No image found in clipboard! Copy a screenshot first (e.g. Win+Shift+S), then press Ctrl+V or click this button.")
+    } catch {
+      alert("To paste, simply press Ctrl+V anywhere on this page!")
+    }
+  }
 
   const parseMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -113,7 +197,6 @@ export default function AddJobPage() {
   const handleAtsSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setAtsResults(null)
     if (!companyToken) return
     const keywordsArray = targetKeywords ? targetKeywords.split(',').map(k => k.trim()) : undefined
     atsMutation.mutate({ 
@@ -182,40 +265,83 @@ export default function AddJobPage() {
       return
     }
     setIsUrlFetching(true)
+    setPromoWarning(null)
     try {
-      if (url.includes('linkedin.com') || url.includes('indeed.com')) {
-        alert("🔒 Bot Protection Detected: LinkedIn and Indeed strictly block automated scraping. Please use the JobCopilot Chrome Extension to capture this job, or copy-paste the text manually.")
-        setIsUrlFetching(false)
-        return
-      }
-      
       const res = await apiFetch(`/api/jobs/scrape-url?url=${encodeURIComponent(url)}`, {
         method: 'POST',
       })
       const data = await res.json()
       
       if (!res.ok) {
-        alert(`Failed to scrape: ${data.detail || 'Site blocked request'}\nPlease use the Chrome Extension instead.`)
+        alert(`Failed to scrape: ${data.detail || 'Site blocked request'}\nPlease paste the text or screenshot manually.`)
       } else {
+        if (data.is_promo) {
+          setPromoWarning(`⚠️ Creator Link Warning: This link was detected as an influencer course/bootcamp (${data.promo_name || 'ProPeers/Course'}). It is not an official company job posting. We recommend using Company Deep Dive or Target Companies to find the official careers page!`)
+        }
         setRawJd(data.raw_jd)
-        alert('✅ Job successfully fetched and auto-filled!')
+        if (data.resolved_url && data.resolved_url !== url) {
+          setUrl(data.resolved_url)
+        }
       }
     } catch (err) {
       console.error(err)
-      alert("Network error. The site might be blocking cross-origin requests. Use the Chrome Extension.")
+      alert("Network error. Please paste the job description text or screenshot directly.")
     } finally {
       setIsUrlFetching(false)
     }
   }
 
+  const handleTrackDiscoveredJob = async (job: any, idx: number) => {
+    try {
+      const res = await apiFetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: deepDiveCompany,
+          role_title: job.role_title,
+          location: job.location,
+          url: job.url,
+          status: 'saved',
+          notes: `Added from Company Deep Dive (${job.source})`
+        })
+      })
+      if (res.ok) {
+        setTrackedJobs(prev => ({ ...prev, [idx]: true }))
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  // Filter deep dive jobs by location
+  const filteredDeepDiveJobs = (researchData?.jobs || []).filter((j: any) => {
+    if (deepDiveLocFilter === 'all') return true
+    return (j.location || '').toLowerCase().includes(deepDiveLocFilter.toLowerCase())
+  })
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl text-sm">
-          {error}
+        <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-white font-bold ml-4">✕</button>
         </div>
       )}
+
+      {/* Global Quick Paste Banner */}
+      <div className="bg-gradient-to-r from-blue-900/30 via-purple-900/20 to-zinc-900/40 border border-blue-500/30 rounded-xl p-3 px-4 flex items-center justify-between text-xs text-zinc-300 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-base">📋</span>
+          <span><strong>Quick Paste Ready:</strong> Copied a screenshot from LinkedIn or Snipping Tool? Press <kbd className="bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-white font-mono font-bold">Ctrl+V</kbd> anywhere on this page to instantly load and analyze it!</span>
+        </div>
+        <button 
+          onClick={handleClipboardRead}
+          className="bg-blue-600/80 hover:bg-blue-600 text-white font-semibold px-3 py-1 rounded-lg transition-colors shrink-0 ml-3"
+        >
+          Paste from Clipboard
+        </button>
+      </div>
 
       {/* Tabs */}
       <div className="flex space-x-2 bg-zinc-900/50 p-2 rounded-xl backdrop-blur-sm border border-zinc-800/50">
@@ -227,15 +353,10 @@ export default function AddJobPage() {
         </button>
         <button 
           onClick={() => setActiveTab('screenshot')}
-          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all ${activeTab === 'screenshot' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-1.5 ${activeTab === 'screenshot' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
         >
-          Upload Screenshot
-        </button>
-        <button 
-          onClick={() => setActiveTab('ats')}
-          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all ${activeTab === 'ats' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
-        >
-          Company ATS Search
+          <span>📸</span> Screenshot
+          {selectedFile && <span className="w-2 h-2 rounded-full bg-green-400 ml-1"></span>}
         </button>
         <button 
           onClick={() => setActiveTab('deep-dive')}
@@ -243,10 +364,17 @@ export default function AddJobPage() {
         >
           Company Deep Dive
         </button>
+        <button 
+          onClick={() => setActiveTab('ats')}
+          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all ${activeTab === 'ats' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+        >
+          ATS Search
+        </button>
       </div>
 
       <div className="bg-zinc-900/40 p-8 rounded-2xl shadow-sm border border-zinc-800/50 backdrop-blur-sm">
         
+        {/* TAB 1: MANUAL PASTE / URL */}
         {activeTab === 'manual' && (
           <form onSubmit={handleManualSubmit} className="space-y-6">
             <h1 className="text-2xl font-bold mb-6 text-white tracking-tight">Analyze a Single Job</h1>
@@ -255,7 +383,7 @@ export default function AddJobPage() {
               <div>
                 <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Source</label>
                 <select 
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
                 >
@@ -276,38 +404,65 @@ export default function AddJobPage() {
                   className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="e.g. Google, Amazon"
+                  placeholder="e.g. Barclays, Google, HSBC"
                 />
               </div>
             </div>
             
             <div className="grid grid-cols-1 gap-6">
               <div>
-                <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Job URL</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-semibold text-zinc-400 uppercase tracking-wide">Job or Creator Apply URL</label>
+                  <span className="text-xs text-zinc-500">Auto-resolves shortened lnkd.in links</span>
+                </div>
                 <div className="flex gap-2">
                   <input 
                     type="url" 
                     className="flex-1 bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
-                    placeholder="https://..."
+                    placeholder="https://lnkd.in/... or company careers URL"
                   />
-                  <button type="button" onClick={handleUrlFetch} className="bg-zinc-800 text-white px-4 rounded-lg font-bold hover:bg-zinc-700 transition-colors text-sm">
-                    Fetch
+                  <button 
+                    type="button" 
+                    onClick={handleUrlFetch} 
+                    disabled={isUrlFetching}
+                    className="bg-zinc-800 text-white px-5 rounded-lg font-bold hover:bg-zinc-700 transition-colors text-sm disabled:opacity-50"
+                  >
+                    {isUrlFetching ? 'Resolving...' : 'Fetch'}
                   </button>
                 </div>
               </div>
             </div>
 
+            {promoWarning && (
+              <div className="bg-amber-500/10 border border-amber-500/40 text-amber-300 p-4 rounded-xl text-sm space-y-2">
+                <div className="font-semibold flex items-center gap-2">
+                  <span>⚠️</span> Influencer / Course Link Detected
+                </div>
+                <p className="text-xs text-amber-200/90 leading-relaxed">{promoWarning}</p>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setActiveTab('deep-dive')
+                    if (companyName) setDeepDiveCompany(companyName)
+                  }}
+                  className="text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 px-3 py-1.5 rounded transition-colors inline-block"
+                >
+                  Use Company Deep Dive for Official Openings →
+                </button>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Job Description Text</label>
               <textarea 
                 className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-lg p-4 font-mono text-sm leading-relaxed placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all" 
-                rows={12}
+                rows={10}
                 required
                 value={rawJd}
                 onChange={(e) => setRawJd(e.target.value)}
-                placeholder="Paste the full job description here..."
+                placeholder="Paste the full job description or creator hiring alert text here..."
               />
             </div>
 
@@ -321,37 +476,121 @@ export default function AddJobPage() {
           </form>
         )}
 
+        {/* TAB 2: SCREENSHOT (CLIPBOARD PASTE + DRAG/DROP + FILE PICKER) */}
         {activeTab === 'screenshot' && (
           <form onSubmit={handleScreenshotSubmit} className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold mb-2 text-white tracking-tight">Screenshot Analysis</h1>
-              <p className="text-zinc-400 text-sm mb-3">Upload a screenshot of a job posting (e.g. from Instagram or mobile apps) to instantly extract and analyze it.</p>
-              <div className="flex items-center gap-2 text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
-                <span>⚡</span>
-                <span>Uses Gemini Vision (free tier: ~20 images/day). If you hit a rate limit, wait a few minutes or paste the text manually.</span>
+              <div className="flex items-center justify-between mb-2">
+                <h1 className="text-2xl font-bold text-white tracking-tight">Screenshot Analysis</h1>
+                <span className="text-xs bg-blue-500/20 text-blue-400 px-2.5 py-1 rounded-full border border-blue-500/30 font-medium">
+                  Ctrl+V Supported
+                </span>
               </div>
+              <p className="text-zinc-400 text-sm mb-3">
+                Paste any copied screenshot directly (<kbd className="bg-zinc-800 border border-zinc-700 px-1 py-0.5 rounded text-white font-mono text-xs">Ctrl+V</kbd>), drag & drop, or browse your files. Works on LinkedIn infographics, hiring alerts, and compensation tables!
+              </p>
             </div>
-            
-            <div className="border-2 border-dashed border-zinc-700 bg-zinc-950/50 rounded-xl p-8 text-center hover:border-blue-500/50 transition-colors cursor-pointer">
-              <input 
-                type="file" 
-                accept="image/png, image/jpeg, image/jpg"
-                className="hidden" 
-                id="file-upload"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) {
-                    setSelectedFile(e.target.files[0])
+
+            {/* Paste Notification Banner */}
+            {pastedFromClipboard && (
+              <div className="bg-green-500/10 border border-green-500/30 text-green-300 p-3 rounded-xl text-sm flex items-center justify-between animate-in fade-in duration-300">
+                <div className="flex items-center gap-2">
+                  <span>✅</span>
+                  <span><strong>Screenshot Pasted from Clipboard!</strong> Ready for AI vision extraction.</span>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => { setSelectedFile(null); setPastedFromClipboard(false); }}
+                  className="text-xs text-zinc-400 hover:text-white"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {/* Live Image Preview OR Dropzone */}
+            {imagePreviewUrl ? (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-center space-y-4">
+                <div className="relative inline-block max-w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img 
+                    src={imagePreviewUrl} 
+                    alt="Screenshot Preview" 
+                    className="max-h-80 mx-auto rounded-xl object-contain shadow-2xl border border-zinc-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedFile(null); setImagePreviewUrl(null); }}
+                    className="absolute top-2 right-2 bg-zinc-900/90 text-white rounded-full p-2 hover:bg-red-600 transition-colors shadow-lg text-xs"
+                    title="Remove Screenshot"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="text-xs text-zinc-400 flex items-center justify-center gap-4">
+                  <span>📁 {selectedFile?.name || 'clipboard_screenshot.png'}</span>
+                  <span>•</span>
+                  <span>{selectedFile ? (selectedFile.size / 1024).toFixed(1) + ' KB' : ''}</span>
+                  <span>•</span>
+                  <button 
+                    type="button"
+                    onClick={() => { setSelectedFile(null); setImagePreviewUrl(null); }}
+                    className="text-blue-400 hover:underline"
+                  >
+                    Replace Image
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div 
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setIsDragOver(false)
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    const f = e.dataTransfer.files[0]
+                    if (f.type.startsWith('image/')) {
+                      setSelectedFile(f)
+                    } else {
+                      setError('Please drop an image file (PNG, JPG).')
+                    }
                   }
                 }}
-              />
-              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                <span className="text-4xl mb-4">📸</span>
-                <span className="text-white font-bold mb-1">
-                  {selectedFile ? selectedFile.name : "Click to select a screenshot"}
-                </span>
-                <span className="text-zinc-500 text-sm">PNG, JPG up to 10MB</span>
-              </label>
-            </div>
+                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
+                  isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-zinc-700 bg-zinc-950/50 hover:border-blue-500/50'
+                }`}
+              >
+                <input 
+                  type="file" 
+                  accept="image/png, image/jpeg, image/jpg"
+                  className="hidden" 
+                  id="file-upload"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setSelectedFile(e.target.files[0])
+                    }
+                  }}
+                />
+                <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                  <span className="text-5xl mb-4">📋</span>
+                  <span className="text-white text-lg font-bold mb-1">
+                    Press <kbd className="bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded text-white font-mono">Ctrl+V</kbd> to Paste Screenshot
+                  </span>
+                  <span className="text-zinc-400 text-sm mt-1 mb-4">
+                    Or drag and drop an image file here, or click to browse
+                  </span>
+                  <button 
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleClipboardRead(); }}
+                    className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-4 py-2 rounded-lg transition-colors border border-zinc-700"
+                  >
+                    Click to Paste from Clipboard
+                  </button>
+                  <span className="text-zinc-600 text-xs mt-3">Supports PNG, JPG, WebP up to 10MB</span>
+                </label>
+              </div>
+            )}
 
             <button 
               type="submit" 
@@ -361,7 +600,7 @@ export default function AddJobPage() {
               {isUploading ? (
                 <>
                   <span className="animate-spin text-lg leading-none">⚙️</span>
-                  Extracting text and analyzing...
+                  Extracting Text & Analyzing Job Fit...
                 </>
               ) : (
                 'Analyze Screenshot'
@@ -370,6 +609,222 @@ export default function AddJobPage() {
           </form>
         )}
 
+        {/* TAB 3: COMPANY DEEP DIVE */}
+        {activeTab === 'deep-dive' && (
+          <div className="space-y-6">
+            <form onSubmit={handleDeepDiveSubmit} className="space-y-6">
+              <div>
+                <h1 className="text-2xl font-bold mb-2 text-white tracking-tight">Company Deep Dive & Live Roles</h1>
+                <p className="text-zinc-400 text-sm">
+                  Research enterprise culture, verified salary brackets (Analyst/Associate/SDE), and discover live openings across official career portals.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Company Name</label>
+                  <input 
+                    type="text" 
+                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    value={deepDiveCompany}
+                    onChange={(e) => setDeepDiveCompany(e.target.value)}
+                    placeholder="e.g. Barclays, HSBC, Google, HCLTech"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Target Role Keywords (Optional)</label>
+                  <input 
+                    type="text" 
+                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    value={deepDiveKeywords}
+                    onChange={(e) => setDeepDiveKeywords(e.target.value)}
+                    placeholder="e.g. Analyst, Associate, Engineer"
+                  />
+                </div>
+              </div>
+              <button 
+                type="submit" 
+                disabled={researchMutation.isPending || !deepDiveCompany}
+                className="w-full bg-purple-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(147,51,234,0.2)] text-lg flex items-center justify-center gap-2"
+              >
+                {researchMutation.isPending ? (
+                  <>
+                    <span className="animate-spin text-lg leading-none">⚙️</span>
+                    Discovering Live Roles & Intelligence for {deepDiveCompany}...
+                  </>
+                ) : (
+                  `Deep Dive ${deepDiveCompany || 'Company'} & Find Roles`
+                )}
+              </button>
+            </form>
+
+            {researchData && (
+              <div className="mt-12 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                
+                {/* Verified Compensation Table if available */}
+                {researchData.company_info?.compensation_levels && researchData.company_info.compensation_levels.length > 0 && (
+                  <div className="bg-zinc-950/80 p-6 rounded-2xl border border-zinc-800 shadow-sm">
+                    <h2 className="text-lg font-bold text-white tracking-tight mb-4 flex items-center gap-2">
+                      <span>💰</span> Verified Compensation Breakdown
+                    </h2>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-zinc-800 text-zinc-400 text-xs uppercase tracking-wider">
+                            <th className="py-3 px-4 font-semibold">Level / Role</th>
+                            <th className="py-3 px-4 font-semibold">Base Pay</th>
+                            <th className="py-3 px-4 font-semibold">Bonus</th>
+                            <th className="py-3 px-4 font-semibold">Stock</th>
+                            <th className="py-3 px-4 font-semibold text-right text-purple-400">Total CTC</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
+                          {researchData.company_info.compensation_levels.map((lvl: any, i: number) => (
+                            <tr key={i} className="hover:bg-zinc-900/40">
+                              <td className="py-3 px-4 font-medium text-white">{lvl.level_name}</td>
+                              <td className="py-3 px-4 font-mono">{lvl.base_pay}</td>
+                              <td className="py-3 px-4 font-mono text-zinc-400">{lvl.bonus || '—'}</td>
+                              <td className="py-3 px-4 font-mono text-zinc-400">{lvl.stock || '—'}</td>
+                              <td className="py-3 px-4 font-mono font-bold text-right text-green-400">{lvl.total_comp}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Intelligence Report */}
+                <div className="bg-zinc-950/50 p-8 rounded-2xl border border-zinc-800/50 shadow-sm backdrop-blur-sm">
+                  <h2 className="text-xl font-bold text-white tracking-tight mb-6 flex items-center gap-2">
+                    <span>🏢</span> Company Intelligence Report
+                  </h2>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Work Culture</strong>
+                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.work_culture}</p>
+                      </div>
+                      <div>
+                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Work / Life Balance</strong>
+                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.work_life_balance}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Compensation Overview</strong>
+                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.compensation_estimates}</p>
+                      </div>
+                      <div>
+                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Perks & Benefits</strong>
+                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.perks}</p>
+                      </div>
+                      <div>
+                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Bonds / Contracts</strong>
+                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.bonds_or_contracts}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Auto-Discovered Roles with Location Filter */}
+                <div>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                        <span>🎯</span> Open Roles Discovered ({filteredDeepDiveJobs.length})
+                      </h2>
+                      {researchData.careers_url && (
+                        <a 
+                          href={researchData.careers_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-xs text-blue-400 hover:underline inline-block mt-1"
+                        >
+                          Official Careers Portal: {researchData.careers_url} ↗
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Location Filter Dropdown */}
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-zinc-400 font-semibold uppercase">Filter by Place:</label>
+                      <select
+                        value={deepDiveLocFilter}
+                        onChange={(e) => setDeepDiveLocFilter(e.target.value)}
+                        className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      >
+                        <option value="all">All Locations</option>
+                        <option value="bengaluru">Bengaluru / Bangalore</option>
+                        <option value="mumbai">Mumbai</option>
+                        <option value="pune">Pune</option>
+                        <option value="hyderabad">Hyderabad</option>
+                        <option value="delhi">Delhi / NCR</option>
+                        <option value="chennai">Chennai</option>
+                        <option value="remote">Remote</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {filteredDeepDiveJobs && filteredDeepDiveJobs.length > 0 ? (
+                    <div className="grid gap-4">
+                      {filteredDeepDiveJobs.map((j: any, i: number) => {
+                        const isTracked = trackedJobs[i]
+                        return (
+                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 flex justify-between items-center group hover:border-zinc-700 transition-colors">
+                            <div>
+                              <h3 className="font-bold text-white text-lg">{j.role_title}</h3>
+                              <div className="text-sm text-zinc-500 mt-1 flex gap-3">
+                                <span>📍 {j.location || "India"}</span>
+                                <span className="text-zinc-700">|</span>
+                                <span className="capitalize">
+                                  {j.source === 'live_search' ? '🌐 Live Job Portal' : j.source === 'careers_page' ? '🏢 Official Careers' : `${j.source} ATS`}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {j.url && (
+                                <a href={j.url} target="_blank" rel="noopener noreferrer" className="bg-zinc-800/50 text-zinc-400 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-zinc-700 hover:text-white transition-colors flex items-center justify-center">
+                                  View Job ↗
+                                </a>
+                              )}
+                              <button 
+                                type="button"
+                                onClick={() => handleTrackDiscoveredJob(j, i)}
+                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1 ${
+                                  isTracked ? 'bg-green-600/20 text-green-400 border border-green-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                }`}
+                              >
+                                {isTracked ? '✓ In Tracker' : '+ Track'}
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  parseMutation.mutate({ raw_jd: j.raw_jd, source: j.source, url: j.url, company_name: deepDiveCompany })
+                                }}
+                                className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                              >
+                                1-Click Analyze
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 bg-zinc-950/50 rounded-xl border border-zinc-800/50">
+                      <p className="text-zinc-400">No jobs matching this location filter.</p>
+                      <button onClick={() => setDeepDiveLocFilter('all')} className="mt-2 text-xs text-purple-400 hover:underline">
+                        Reset location filter
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: BULK ATS SEARCH */}
         {activeTab === 'ats' && (
           <form onSubmit={handleAtsSubmit} className="space-y-6">
             <div>
@@ -377,7 +832,7 @@ export default function AddJobPage() {
               <p className="text-zinc-400 text-sm">Automatically scrape a company's career page for open roles.</p>
               <div className="mt-3 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-blue-200 text-xs leading-relaxed">
                 <strong className="text-blue-400 uppercase tracking-wider block mb-1">Supported Platforms</strong>
-                Greenhouse, Lever, Ashby, and SmartRecruiters provide open APIs allowing safe bulk-fetching. For Workday, Taleo, or iCIMS, use the "Generic Fallback" and paste the full careers page URL, or use the manual tab.
+                Greenhouse, Lever, Ashby, and SmartRecruiters provide open APIs allowing safe bulk-fetching. For Workday, Taleo, or iCIMS, use Company Deep Dive.
               </div>
             </div>
             
@@ -469,144 +924,6 @@ export default function AddJobPage() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {activeTab === 'deep-dive' && (
-          <div className="space-y-6">
-            <form onSubmit={handleDeepDiveSubmit} className="space-y-6">
-              <div>
-                <h1 className="text-2xl font-bold mb-2 text-white tracking-tight">Company Deep Dive</h1>
-                <p className="text-zinc-400 text-sm">Research a company and auto-discover matching open roles from their careers page.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Company Name</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
-                    value={deepDiveCompany}
-                    onChange={(e) => setDeepDiveCompany(e.target.value)}
-                    placeholder="e.g. Stripe, Airbnb"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Target Keywords (Optional)</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
-                    value={deepDiveKeywords}
-                    onChange={(e) => setDeepDiveKeywords(e.target.value)}
-                    placeholder="e.g. engineer, developer"
-                  />
-                </div>
-              </div>
-              <button 
-                type="submit" 
-                disabled={researchMutation.isPending || !deepDiveCompany}
-                className="w-full bg-purple-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(147,51,234,0.2)] text-lg"
-              >
-                {researchMutation.isPending ? 'Researching Company & Discovering Jobs...' : 'Deep Dive & Find Jobs'}
-              </button>
-            </form>
-
-            {researchData && (
-              <div className="mt-12 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="bg-zinc-950/50 p-8 rounded-2xl border border-zinc-800/50 shadow-sm backdrop-blur-sm">
-                  <h2 className="text-xl font-bold text-white tracking-tight mb-6 flex items-center gap-2">
-                    <span>🏢</span> Intelligence Report
-                  </h2>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Work Culture</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.work_culture}</p>
-                      </div>
-                      <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Work/Life Balance</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.work_life_balance}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Compensation Estimates</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.compensation_estimates}</p>
-                      </div>
-                      <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Perks & Benefits</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.perks}</p>
-                      </div>
-                      <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Bonds / Contracts</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.bonds_or_contracts}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h2 className="text-xl font-bold text-white tracking-tight mb-2 flex items-center gap-2">
-                    <span>🎯</span> Auto-Discovered Roles
-                  </h2>
-                  {/* Show where jobs came from */}
-                  {researchData.jobs && researchData.jobs.length > 0 && (
-                    <div className="mb-4 text-xs text-zinc-500 flex items-center gap-2">
-                      {researchData.ats_info ? (
-                        <span className="bg-zinc-800 px-2 py-1 rounded capitalize">
-                          Source: {researchData.ats_info.system} ATS ({researchData.ats_info.token})
-                        </span>
-                      ) : researchData.careers_url ? (
-                        <span className="bg-zinc-800 px-2 py-1 rounded flex items-center gap-1">
-                          Source: Careers page scrape —{' '}
-                          <a href={researchData.careers_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate max-w-[260px]">
-                            {researchData.careers_url}
-                          </a>
-                        </span>
-                      ) : null}
-                    </div>
-                  )}
-                  {researchData.jobs && researchData.jobs.length > 0 ? (
-                    <div className="grid gap-4">
-                      {researchData.jobs.map((j: any, i: number) => (
-                        <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 flex justify-between items-center group hover:border-zinc-700 transition-colors">
-                          <div>
-                            <h3 className="font-bold text-white text-lg">{j.role_title}</h3>
-                            <div className="text-sm text-zinc-500 mt-1 flex gap-3">
-                              <span>📍 {j.location || "Location Unknown"}</span>
-                              <span className="text-zinc-700">|</span>
-                              <span className="capitalize">
-                                {j.source === 'careers_page' ? '🌐 Careers Page' : `${j.source} ATS`}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            {j.url && (
-                              <a href={j.url} target="_blank" rel="noopener noreferrer" className="bg-zinc-800/50 text-zinc-400 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-zinc-700 hover:text-white transition-colors flex items-center justify-center">
-                                View Job ↗
-                              </a>
-                            )}
-                            <button 
-                              onClick={() => {
-                                parseMutation.mutate({ raw_jd: j.raw_jd, source: j.source, url: j.url, company_name: deepDiveCompany })
-                              }}
-                              className="bg-zinc-800 text-zinc-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white hover:text-zinc-950 transition-colors group-hover:bg-purple-600 group-hover:text-white"
-                            >
-                              1-Click Analyze
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 bg-zinc-950/50 rounded-xl border border-zinc-800/50">
-                      <p className="text-zinc-400">No matching jobs discovered.</p>
-                      <p className="text-zinc-600 text-sm mt-2">We searched known ATS platforms (Greenhouse, Lever, Ashby) and the company's careers page. Try the Company ATS Search tab if you have their token.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
 

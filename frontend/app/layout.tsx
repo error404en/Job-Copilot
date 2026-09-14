@@ -36,8 +36,14 @@ export default function RootLayout({
           JobCopilot
           </div>
           <div className="flex items-center gap-6">
-            <div className="flex gap-6 text-sm font-medium mr-4">
+            <div className="flex gap-5 text-sm font-medium mr-4">
             <Link href="/" className="text-zinc-400 hover:text-white transition-colors">Dashboard</Link>
+            <Link href="/tracker" className="text-zinc-400 hover:text-white transition-colors flex items-center gap-1">
+              <span>📋</span> Tracker
+            </Link>
+            <Link href="/companies" className="text-zinc-400 hover:text-white transition-colors flex items-center gap-1">
+              <span>🏢</span> Target Companies
+            </Link>
             <Link href="/digest" className="text-zinc-400 hover:text-white transition-colors">Digest</Link>
             <Link href="/jobs/new" className="text-zinc-400 hover:text-white transition-colors">Add Job</Link>
             <Link href="/resumes" className="text-zinc-400 hover:text-white transition-colors">Resumes</Link>

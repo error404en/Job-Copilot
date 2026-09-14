@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from app.db.supabase_client import supabase
 from app.services.jd_parser import parse_job_description
 from app.services.match_scorer import score_match
-from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback
+from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback, resolve_redirects_and_detect_promo
 from app.services.application_prep import generate_cover_letter
 from app.services.llm_client import extract_text_from_image
 from app.services.company_researcher import research_company
@@ -89,14 +89,29 @@ def get_digest(user_id: str = Depends(get_current_user)):
 @router.post("/scrape-url")
 def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
     """
-    Generic scraper for standard company job pages.
-    Will not work on heavy SPA anti-bot sites like LinkedIn/Indeed.
+    Scraper with automatic link unshortener and promotional funnel detection.
+    Unshortens lnkd.in, tinyurl, bit.ly, etc., and flags bootcamp/creator promotional funnels.
     """
+    url_info = resolve_redirects_and_detect_promo(url)
+    resolved_url = url_info.get("resolved_url") or url
+    is_promo = url_info.get("is_promo", False)
+    promo_name = url_info.get("promo_name")
+
+    if is_promo:
+        return {
+            "raw_jd": f"[⚠️ Creator Promotional / Affiliate Link Detected]\n"
+                      f"This link redirected to: {resolved_url} ({promo_name}).\n"
+                      f"This is an influencer promotional/bootcamp page, not an official company job posting.",
+            "resolved_url": resolved_url,
+            "is_promo": True,
+            "promo_name": promo_name
+        }
+
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
-        res = requests.get(url, headers=headers, timeout=10)
+        res = requests.get(resolved_url, headers=headers, timeout=10)
         res.raise_for_status()
         
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -106,14 +121,17 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
             script.extract()
             
         text = soup.get_text(separator='\n')
-        # clean up empty lines
         lines = (line.strip() for line in text.splitlines())
         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         text = '\n'.join(chunk for chunk in chunks if chunk)
         
-        return {"raw_jd": text}
+        return {
+            "raw_jd": text,
+            "resolved_url": resolved_url,
+            "is_promo": False
+        }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to scrape URL. It may be blocking bots. Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to scrape URL {resolved_url}. It may be blocking bots. Error: {str(e)}")
 
 @router.get("/{id}")
 def get_job(id: str, user_id: str = Depends(get_current_user)):
@@ -300,13 +318,25 @@ async def parse_and_score_image(background_tasks: BackgroundTasks, file: UploadF
             )
         raise HTTPException(status_code=400, detail=f"Failed to extract text from image: {err_str}")
         
-    # 3. Use the existing parse_and_score_job logic
-    # Do NOT hardcode a garbage URL — let the JD parser extract apply_link if present,
-    # otherwise url will be None and the UI will show the '+ Add Link' button.
+    # 3. Detect and resolve any URLs (such as lnkd.in links in creator posts)
+    import re
+    detected_url = None
+    url_matches = re.findall(r'https?://[^\s<>"\'\)]+|lnkd\.in/[^\s<>"\'\)]+', extracted_text)
+    for raw_u in url_matches:
+        full_u = raw_u if raw_u.startswith("http") else f"https://{raw_u}"
+        try:
+            u_info = resolve_redirects_and_detect_promo(full_u)
+            if not u_info.get("is_promo"):
+                detected_url = u_info.get("resolved_url")
+                break
+        except Exception:
+            pass
+
+    # 4. Use the existing parse_and_score_job logic
     req = ParseRequest(
         raw_jd=f"[Extracted from Screenshot]\n{extracted_text}",
         source="screenshot",
-        url=None,  # Will be set from parsed apply_link inside parse_and_score_job if found
+        url=detected_url,
         use_groq=False
     )
     

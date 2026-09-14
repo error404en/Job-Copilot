@@ -7,7 +7,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import jobs, profile, auto_apply, resumes, research
+from app.api import jobs, profile, auto_apply, resumes, research, applications, companies
 from app.services.scheduler import start_scheduler
 from contextlib import asynccontextmanager
 
@@ -31,6 +31,8 @@ app.add_middleware(
 )
 
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
+app.include_router(applications.router, prefix="/api/applications", tags=["Applications"])
+app.include_router(companies.router, prefix="/api/companies", tags=["Companies"])
 app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(auto_apply.router, prefix="/api/auto-apply", tags=["Auto-Apply"])
 app.include_router(resumes.router, prefix="/api/resumes", tags=["Resumes"])
