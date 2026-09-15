@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 import io
+import hashlib
 import PyPDF2
 from typing import List
 from pydantic import BaseModel
@@ -32,6 +33,18 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     # Read file content
     content = await file.read()
     
+    # Calculate SHA-256 hash of the content
+    file_hash = hashlib.sha256(content).hexdigest()
+    
+    # Check if this exact resume has already been uploaded by this user
+    existing_res = supabase.table("resume_versions").select("id, title").eq("user_id", user_id).eq("file_hash", file_hash).execute()
+    if existing_res.data and len(existing_res.data) > 0:
+        existing_title = existing_res.data[0].get("title", "Unknown")
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Duplicate resume detected. This exact resume was already uploaded as '{existing_title}'."
+        )
+    
     # Extract text using PyPDF2
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
@@ -60,7 +73,8 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
         "title": extraction.title,
         "target_type": extraction.target_type,
         "skills_summary": extraction.skills_summary,
-        "user_id": user_id
+        "user_id": user_id,
+        "file_hash": file_hash
     }
     
     res = supabase.table("resume_versions").insert(insert_data).execute()

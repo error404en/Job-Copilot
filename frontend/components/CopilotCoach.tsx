@@ -82,6 +82,9 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
     }
   })
 
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
       let tid = currentThreadId
@@ -92,16 +95,70 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
         tid = newThread.id
       }
 
+      // Optimistically add user message and placeholder for assistant
+      const tempUserMsg = { id: Date.now().toString(), role: 'user' as const, content, created_at: new Date().toISOString() }
+      const tempAsstMsg = { id: 'streaming', role: 'assistant' as const, content: '', created_at: new Date().toISOString() }
+      
+      queryClient.setQueryData(['chat_messages', tid], (old: any) => [...(old || []), tempUserMsg, tempAsstMsg])
+
+      const formData = new FormData()
+      formData.append('content', content)
+      if (attachedFile) {
+        formData.append('file', attachedFile)
+      }
+
       const res = await apiFetch(`/api/chat/threads/${tid}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        body: formData
       })
       if (!res.ok) throw new Error('Failed to send message')
-      return res.json()
+
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      let fullResponse = ""
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          
+          const chunkStr = decoder.decode(value, { stream: true })
+          const lines = chunkStr.split('\n')
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6).trim()
+              if (dataStr === '[DONE]') break
+              
+              try {
+                const parsed = JSON.parse(dataStr)
+                if (parsed.error) {
+                    console.error("Stream error:", parsed.error)
+                } else if (parsed.content) {
+                  fullResponse += parsed.content
+                  // Update the streaming message in the UI instantly
+                  queryClient.setQueryData(['chat_messages', tid], (old: any) => {
+                    if (!old) return old
+                    const newMessages = [...old]
+                    const lastMsg = newMessages[newMessages.length - 1]
+                    if (lastMsg.id === 'streaming') {
+                      lastMsg.content = fullResponse
+                    }
+                    return newMessages
+                  })
+                }
+              } catch (e) {
+                // ignore parse errors for split chunks
+              }
+            }
+          }
+        }
+      }
+      return tid
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chat_messages', currentThreadId] })
+    onSuccess: (tid) => {
+      queryClient.invalidateQueries({ queryKey: ['chat_messages', tid] })
+      setAttachedFile(null)
     }
   })
 
@@ -112,6 +169,12 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
     setInput('')
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setAttachedFile(e.target.files[0])
+    }
+  }
+
   return (
     <div className={`flex flex-col ${inline ? 'h-[600px] border border-zinc-800/50 rounded-2xl' : 'h-[calc(100vh-120px)] border border-zinc-800 rounded-2xl'} bg-zinc-950 shadow-2xl overflow-hidden`}>
       {/* Header */}
@@ -120,7 +183,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
           <div className="text-2xl">🧠</div>
           <div>
             <h2 className="font-bold text-white tracking-tight leading-tight">Copilot Coach</h2>
-            <p className="text-xs text-zinc-400">Powered by Llama 3.3 70B</p>
+            <p className="text-xs text-zinc-400">Powered by Llama 3.3 70B & Gemini Vision</p>
           </div>
         </div>
         {!inline && (
@@ -153,7 +216,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
         {messages?.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-2xl p-4 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-900/80 border border-zinc-800 text-zinc-200'}`}>
-              <div className="prose prose-invert prose-sm max-w-none">
+              <div className="prose prose-invert prose-sm max-w-none break-words">
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
             </div>
@@ -173,20 +236,44 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-zinc-950 border-t border-zinc-800/50">
+      <div className="p-4 bg-zinc-950 border-t border-zinc-800/50 flex flex-col gap-2">
+        {attachedFile && (
+          <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-zinc-300 overflow-hidden">
+              <span>📎</span>
+              <span className="truncate">{attachedFile.name}</span>
+            </div>
+            <button type="button" onClick={() => setAttachedFile(null)} className="text-zinc-500 hover:text-red-400">✕</button>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="relative flex items-center">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            className="hidden" 
+            accept="image/*,.pdf,.txt,.docx"
+          />
+          <button 
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute left-2 p-2 text-zinc-500 hover:text-zinc-300 transition-colors z-10"
+            title="Attach File"
+          >
+            📎
+          </button>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={sendMessageMutation.isPending}
             placeholder={jobId ? "Ask about this job..." : "Ask Coach anything..."}
-            className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl py-3.5 pl-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm disabled:opacity-50"
+            className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl py-3.5 pl-12 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!input.trim() || sendMessageMutation.isPending}
-            className="absolute right-2 p-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-500 transition-colors"
+            className="absolute right-2 p-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-500 transition-colors z-10"
           >
             ↑
           </button>

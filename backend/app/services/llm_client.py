@@ -249,6 +249,33 @@ def generate_tailoring_text(prompt: str) -> str:
     # Fallback to standard waterfall, preferring Groq
     return get_completion(prompt, use_groq=True)
 
+def generate_tailoring_text_stream(prompt: str):
+    """
+    Generator for streaming high-nuance writing tasks (cover letters, bullet points).
+    Strictly attempts to use the high-tier Groq model (Llama 3.3 70B) first with stream=True.
+    Yields chunks of text.
+    """
+    if groq_client:
+        try:
+            print(f"[LLM] Attempting tailored streaming generation with {GROQ_TAILORING_MODEL}...")
+            response = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=GROQ_TAILORING_MODEL,
+                temperature=0.7,
+                stream=True
+            )
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            return
+        except Exception as e:
+            print(f"[LLM] Tailoring streaming model {GROQ_TAILORING_MODEL} failed: {e}. Falling back to blocking waterfall.")
+    
+    # If streaming fails (or groq is unavailable), fallback to standard blocking generation
+    # Yield it all at once to maintain the generator interface.
+    fallback_text = get_completion(prompt, use_groq=True)
+    yield fallback_text
+
 
 
 def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = False) -> T:
