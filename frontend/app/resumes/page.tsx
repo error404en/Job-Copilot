@@ -50,11 +50,17 @@ export default function ResumesPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await apiFetch(`/api/resumes/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Failed to delete' }))
+        throw new Error(err.detail || 'Failed to delete')
+      }
       return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['resumes'] })
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to delete resume')
     }
   })
 
