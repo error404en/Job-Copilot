@@ -85,6 +85,8 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
   const [attachedFile, setAttachedFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>([])
+  
   const sendMessageMutation = useMutation({
     mutationFn: async (content: string) => {
       let tid = currentThreadId
@@ -95,13 +97,10 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
         tid = newThread.id
       }
 
-      // Optimistically add user message and placeholder for assistant
-      await queryClient.cancelQueries({ queryKey: ['chat_messages', tid] })
+      const tempUserMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content, created_at: new Date().toISOString() }
+      const tempAsstMsg: ChatMessage = { id: 'streaming', role: 'assistant', content: '', created_at: new Date().toISOString() }
       
-      const tempUserMsg = { id: Date.now().toString(), role: 'user' as const, content, created_at: new Date().toISOString() }
-      const tempAsstMsg = { id: 'streaming', role: 'assistant' as const, content: '', created_at: new Date().toISOString() }
-      
-      queryClient.setQueryData(['chat_messages', tid], (old: any) => [...(old || []), tempUserMsg, tempAsstMsg])
+      setOptimisticMessages([tempUserMsg, tempAsstMsg])
 
       const formData = new FormData()
       formData.append('content', content)
@@ -138,15 +137,12 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                     console.error("Stream error:", parsed.error)
                 } else if (parsed.content) {
                   fullResponse += parsed.content
-                  // Update the streaming message in the UI instantly
-                  queryClient.setQueryData(['chat_messages', tid], (old: any) => {
-                    if (!old) return old
-                    const newMessages = [...old]
-                    const lastIdx = newMessages.length - 1
-                    if (newMessages[lastIdx].id === 'streaming') {
-                      newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullResponse }
+                  setOptimisticMessages(prev => {
+                    const next = [...prev]
+                    if (next.length > 1) {
+                      next[1] = { ...next[1], content: fullResponse }
                     }
-                    return newMessages
+                    return next
                   })
                 }
               } catch (e) {
@@ -158,8 +154,9 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       }
       return tid
     },
-    onSuccess: (tid) => {
-      queryClient.invalidateQueries({ queryKey: ['chat_messages', tid] })
+    onSuccess: async (tid) => {
+      await queryClient.invalidateQueries({ queryKey: ['chat_messages', tid] })
+      setOptimisticMessages([])
       setAttachedFile(null)
     }
   })
@@ -225,7 +222,19 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
           <div className="flex justify-center p-4"><div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
         )}
 
-        {messages?.map((msg, idx) => (
+        {(() => {
+          const displayMessages = [...(messages || [])]
+          if (optimisticMessages.length === 2) {
+            const dbHasUserMsg = displayMessages.length > 0 && 
+                                 displayMessages[displayMessages.length - 1].role === 'user' && 
+                                 displayMessages[displayMessages.length - 1].content === optimisticMessages[0].content
+            if (!dbHasUserMsg) {
+              displayMessages.push(optimisticMessages[0])
+            }
+            displayMessages.push(optimisticMessages[1])
+          }
+          return displayMessages
+        })().map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-2xl p-4 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-900/80 border border-zinc-800 text-zinc-200'}`}>
               <div className="prose prose-invert prose-sm max-w-none break-words">
