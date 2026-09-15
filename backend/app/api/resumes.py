@@ -61,17 +61,27 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
             detail=f"Duplicate resume detected. A file named '{file.filename}' was already uploaded as '{existing_title}'."
         )
     
-    # Extract text using PyPDF2
+    # Extract text — try PyPDF2 first, fall back to PyMuPDF for complex PDFs
+    raw_text = ""
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
-        raw_text = ""
         for page in pdf_reader.pages:
-            raw_text += page.extract_text() + "\n"
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+            raw_text += (page.extract_text() or "") + "\n"
+    except Exception:
+        pass
+
+    if not raw_text.strip():
+        # Fallback: PyMuPDF handles scanned/complex PDFs better
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=content, filetype="pdf")
+            for page in doc:
+                raw_text += page.get_text() + "\n"
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
         
     if not raw_text.strip():
-        raise HTTPException(status_code=400, detail="PDF appears to be empty or image-based.")
+        raise HTTPException(status_code=400, detail="PDF appears to be empty or image-based (no extractable text found).")
         
     # Send to LLM to extract structured data
     try:
@@ -94,14 +104,12 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
             detail=f"Duplicate resume detected. A resume with title '{cleaned_title}' already exists in your account."
         )
 
-    # Save to database
-    # In a full system we'd upload the file to Supabase Storage and save the URL.
-    # For now, since we only need the skills for analysis, we use a placeholder or local filename.
     insert_data = {
         "file_path": file_path_placeholder,
         "title": extraction.title,
         "target_type": extraction.target_type,
         "skills_summary": extraction.skills_summary,
+        "raw_content": raw_text.strip(),  # Save full resume text for .docx generation
         "user_id": user_id,
         "file_hash": file_hash
     }

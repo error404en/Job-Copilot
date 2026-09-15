@@ -1,7 +1,7 @@
 import json
 from app.services.llm_client import generate_tailoring_text
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict
 
 class TailoredBullets(BaseModel):
     bullets: List[str]
@@ -107,3 +107,161 @@ def generate_targeted_cover_letter(resume_summary: str, jd_text: str, role_title
     
     response = generate_tailoring_text(prompt)
     return response.strip()
+
+
+def _parse_json_response(raw: str) -> dict:
+    """Strips markdown fences and parses JSON."""
+    raw = raw.strip()
+    if raw.startswith("```json"):
+        raw = raw[7:]
+        raw = raw[:raw.rfind("```")]
+    elif raw.startswith("```"):
+        raw = raw[3:]
+        raw = raw[:raw.rfind("```")]
+    return json.loads(raw.strip())
+
+
+def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywords: List[str]) -> Dict:
+    """
+    Two-pass LLM pipeline to generate a fully tailored resume JSON:
+    
+    Pass 1: Structure Extraction
+      Parses the raw resume text (from the PDF) into a clean JSON schema
+      (name, contact, experience, projects, education, skills).
+    
+    Pass 2: Bullet Tailoring (Anti-Hallucination)
+      Rewrites ONLY the bullet points in each experience/project section
+      using JD-aligned vocabulary, without inventing any new facts.
+    
+    Returns a dict matching the docx_generator schema.
+    """
+
+    # ─────────────────────────────────────────────────────────
+    # PASS 1: Parse raw resume text into structured JSON
+    # ─────────────────────────────────────────────────────────
+    parse_prompt = f"""
+    You are a precise data-extraction assistant. Parse the following raw resume text
+    and extract it into a clean JSON object. 
+    
+    RULES:
+    - Extract ONLY information that is explicitly present in the text. 
+    - Do NOT invent, infer, or fill missing values. If a field is missing, use null or an empty list.
+    - For "bullets" under experience/projects: copy the existing bullet points verbatim. Do NOT rewrite them yet.
+    - For "skills", split the skills by category (languages, frameworks, tools, databases) as best you can from the text.
+    
+    Return ONLY a raw JSON object (no markdown fences) matching this exact schema:
+    {{
+      "name": "string",
+      "email": "string",
+      "phone": "string",
+      "linkedin": "string",
+      "github": "string",
+      "summary": "string or null",
+      "experience": [
+        {{
+          "company": "string",
+          "title": "string",
+          "location": "string",
+          "dates": "string",
+          "bullets": ["string"]
+        }}
+      ],
+      "projects": [
+        {{
+          "name": "string",
+          "tech": "string",
+          "bullets": ["string"]
+        }}
+      ],
+      "education": [
+        {{
+          "institution": "string",
+          "degree": "string",
+          "dates": "string",
+          "gpa": "string or null"
+        }}
+      ],
+      "skills": {{
+        "languages": "string",
+        "frameworks": "string",
+        "tools": "string",
+        "databases": "string"
+      }}
+    }}
+    
+    Raw Resume Text:
+    {raw_content[:6000]}
+    """
+
+    try:
+        raw_parse = generate_tailoring_text(parse_prompt)
+        resume_json = _parse_json_response(raw_parse)
+    except Exception as e:
+        print(f"[Tailor DOCX] Pass 1 (parse) failed: {e}")
+        raise ValueError("Failed to parse resume structure. Please ensure your resume has clear section headings.")
+
+    # ─────────────────────────────────────────────────────────
+    # PASS 2: Tailor bullet points (anti-hallucination)
+    # ─────────────────────────────────────────────────────────
+    keywords_str = ", ".join(missing_keywords) if missing_keywords else "None"
+
+    # Collect all bullets into one list with a section label for traceability
+    all_bullets = []
+    for i, exp in enumerate(resume_json.get("experience", [])):
+        for b in exp.get("bullets", []):
+            all_bullets.append({"section": "experience", "index": i, "original": b})
+    for i, proj in enumerate(resume_json.get("projects", [])):
+        for b in proj.get("bullets", []):
+            all_bullets.append({"section": "projects", "index": i, "original": b})
+
+    if not all_bullets:
+        return resume_json  # Nothing to tailor
+
+    bullets_input = json.dumps([item["original"] for item in all_bullets], indent=2)
+
+    tailor_prompt = f"""
+    You are an elite technical resume writer. Rewrite the following resume bullet points
+    to better align with the target job description using JD-aligned vocabulary.
+    
+    ABSOLUTE RULES — violating any means you have failed:
+    1. Do NOT invent any technology, metric, architecture, or claim not present in the original bullet.
+    2. Do NOT add tools, libraries, databases, or frameworks that are not already in the bullet text.
+    3. Reframe using JD vocabulary only (e.g., "scalability", "low-latency", "high-throughput").
+    4. If a JD keyword from the list has NO real counterpart in a bullet, do NOT force it in.
+    5. Never use: {BANNED_WORDS}
+    6. Preserve the XYZ structure wherever it exists. Keep metrics verbatim.
+    7. Return EXACTLY the same number of bullets as the input, in the same order, as a JSON array of strings.
+    
+    Input bullets (rewrite these, same count, same order):
+    {bullets_input}
+    
+    Target JD (vocabulary/framing guide only):
+    {jd_text[:2000]}
+    
+    Missing JD keywords to weave in IF a real counterpart exists: {keywords_str}
+    
+    Return ONLY a raw JSON array of strings. Example: ["bullet 1", "bullet 2", ...]
+    """
+
+    try:
+        raw_tailor = generate_tailoring_text(tailor_prompt)
+        tailored_bullets = _parse_json_response(raw_tailor)
+        if not isinstance(tailored_bullets, list):
+            raise ValueError("Expected a list")
+    except Exception as e:
+        print(f"[Tailor DOCX] Pass 2 (tailor) failed: {e}. Using original bullets.")
+        tailored_bullets = [item["original"] for item in all_bullets]
+
+    # Reinsert tailored bullets back into the structured JSON
+    bullet_idx = 0
+    for i in range(len(resume_json.get("experience", []))):
+        original_count = len(resume_json["experience"][i].get("bullets", []))
+        resume_json["experience"][i]["bullets"] = tailored_bullets[bullet_idx:bullet_idx + original_count]
+        bullet_idx += original_count
+
+    for i in range(len(resume_json.get("projects", []))):
+        original_count = len(resume_json["projects"][i].get("bullets", []))
+        resume_json["projects"][i]["bullets"] = tailored_bullets[bullet_idx:bullet_idx + original_count]
+        bullet_idx += original_count
+
+    return resume_json

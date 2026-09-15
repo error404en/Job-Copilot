@@ -16,6 +16,7 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
   const [bullets, setBullets] = useState<string[] | null>(null)
   const [coverLetter, setCoverLetter] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [docxError, setDocxError] = useState<string | null>(null)
 
   const tailorMutation = useMutation({
     mutationFn: async (type: 'resume' | 'cover-letter') => {
@@ -36,6 +37,38 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
     }
   })
 
+  const docxMutation = useMutation({
+    mutationFn: async () => {
+      setDocxError(null)
+      const res = await apiFetch(`/api/jobs/${jobId}/tailor/download-docx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(err.detail || `Server error ${res.status}`)
+      }
+      // Extract filename from Content-Disposition header
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const nameMatch = disposition.match(/filename="?([^"]+)"?/)
+      const filename = nameMatch ? nameMatch[1] : 'Tailored_Resume.docx'
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    },
+    onError: (err: Error) => {
+      setDocxError(err.message)
+    }
+  })
+
   const handleGenerate = () => {
     tailorMutation.mutate(activeTab === 'bullets' ? 'resume' : 'cover-letter')
   }
@@ -45,6 +78,7 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
 
   return (
     <div className="bg-zinc-900/40 p-1 rounded-2xl border border-zinc-800/50 shadow-2xl backdrop-blur-md overflow-hidden mt-8">
@@ -100,7 +134,7 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
             </div>
           )}
 
-          <div className="mt-12">
+          <div className="mt-8 space-y-3">
             <button
               onClick={handleGenerate}
               disabled={tailorMutation.isPending}
@@ -115,6 +149,35 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
                 `Generate ${activeTab === 'bullets' ? 'Bullets' : 'Letter'}`
               )}
             </button>
+
+            {/* Download Tailored .docx Resume */}
+            <div className="border-t border-zinc-800/60 pt-3">
+              <button
+                onClick={() => docxMutation.mutate()}
+                disabled={docxMutation.isPending}
+                className="w-full bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-emerald-900/20 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {docxMutation.isPending ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Building Resume...
+                  </>
+                ) : (
+                  <>
+                    <span>📄</span>
+                    Download Tailored Resume (.docx)
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-zinc-600 mt-2 text-center">
+                Full ATS-optimised resume, reworded for this role
+              </p>
+              {docxError && (
+                <div className="mt-2 bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg leading-relaxed">
+                  {docxError}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

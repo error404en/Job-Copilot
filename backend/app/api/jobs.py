@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
+import io
 import requests
 from bs4 import BeautifulSoup
 from app.db.supabase_client import supabase
@@ -8,7 +10,8 @@ from app.services.jd_parser import parse_job_description
 from app.services.match_scorer import score_match
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback, resolve_redirects_and_detect_promo
 from app.services.application_prep import generate_cover_letter
-from app.services.tailor import tailor_resume_bullets, generate_targeted_cover_letter
+from app.services.tailor import tailor_resume_bullets, generate_targeted_cover_letter, generate_tailored_resume_json
+from app.services.docx_generator import generate_docx_from_structured_resume
 from app.services.llm_client import extract_text_from_image
 from app.services.company_researcher import research_company
 from app.middleware.auth import get_current_user
@@ -652,6 +655,91 @@ def generate_tailored_cover_letter_endpoint(job_id: str, req: TailorRequest, use
     )
     
     return {"cover_letter": letter}
+
+
+@router.post("/{job_id}/tailor/download-docx")
+def download_tailored_docx(job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):
+    """
+    Generates a fully tailored .docx resume for this job and streams it back as a file download.
+    
+    Pipeline:
+    1. Fetch job + missing keywords from DB
+    2. Fetch the candidate's raw resume text (requires re-upload if raw_content is missing)
+    3. Pass 1 (LLM): Parse raw text → structured JSON schema
+    4. Pass 2 (LLM): Tailor bullet points with anti-hallucination rules
+    5. Generate .docx binary from the tailored JSON
+    6. Stream .docx file to frontend as an attachment
+    """
+    # 1. Fetch Job and Analysis
+    job_res = supabase.table("jobs").select("*, job_analyses(*)").eq("id", job_id).eq("user_id", user_id).execute()
+    if not job_res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_data = job_res.data[0]
+
+    analysis = None
+    if job_data.get("job_analyses") and len(job_data["job_analyses"]) > 0:
+        analysis = job_data["job_analyses"][0]
+
+    missing_keywords = analysis.get("missing_keywords", []) if analysis else []
+
+    # 2. Determine Resume Version
+    resume_id = req.resume_version_id
+    if not resume_id and analysis and analysis.get("recommended_resume_version_id"):
+        resume_id = analysis["recommended_resume_version_id"]
+
+    if not resume_id:
+        # Fall back to user's most recent resume
+        fallback_res = supabase.table("resume_versions").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        if fallback_res.data:
+            resume_id = fallback_res.data[0]["id"]
+
+    if not resume_id:
+        raise HTTPException(status_code=400, detail="No resume found. Please upload a resume first.")
+
+    # 3. Fetch raw resume content
+    resume_res = supabase.table("resume_versions").select("raw_content, title").eq("id", resume_id).execute()
+    if not resume_res.data:
+        raise HTTPException(status_code=404, detail="Resume version not found")
+
+    raw_content = resume_res.data[0].get("raw_content")
+    resume_title = resume_res.data[0].get("title", "Resume")
+
+    if not raw_content:
+        raise HTTPException(
+            status_code=422,
+            detail="This resume was uploaded before the .docx feature was added and its full text was not saved. Please delete it and re-upload your PDF to enable tailored .docx generation."
+        )
+
+    # 4 & 5. Run two-pass LLM tailoring pipeline
+    try:
+        tailored_json = generate_tailored_resume_json(
+            raw_content=raw_content,
+            jd_text=job_data.get("raw_jd", ""),
+            missing_keywords=missing_keywords
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        print(f"[download_tailored_docx] Tailoring pipeline failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate tailored resume. Please try again.")
+
+    # 6. Generate .docx bytes
+    try:
+        docx_bytes = generate_docx_from_structured_resume(tailored_json)
+    except Exception as e:
+        print(f"[download_tailored_docx] DOCX generation failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build .docx file.")
+
+    # 7. Stream file to frontend
+    company_name = job_data.get("company", "Company").replace(" ", "_")
+    role_name = job_data.get("role_title", "Role").replace(" ", "_")
+    filename = f"Resume_{company_name}_{role_name}.docx"
+
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 
 class JobUpdateRequest(BaseModel):
