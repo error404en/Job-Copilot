@@ -96,6 +96,8 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       }
 
       // Optimistically add user message and placeholder for assistant
+      await queryClient.cancelQueries({ queryKey: ['chat_messages', tid] })
+      
       const tempUserMsg = { id: Date.now().toString(), role: 'user' as const, content, created_at: new Date().toISOString() }
       const tempAsstMsg = { id: 'streaming', role: 'assistant' as const, content: '', created_at: new Date().toISOString() }
       
@@ -140,9 +142,9 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                   queryClient.setQueryData(['chat_messages', tid], (old: any) => {
                     if (!old) return old
                     const newMessages = [...old]
-                    const lastMsg = newMessages[newMessages.length - 1]
-                    if (lastMsg.id === 'streaming') {
-                      lastMsg.content = fullResponse
+                    const lastIdx = newMessages.length - 1
+                    if (newMessages[lastIdx].id === 'streaming') {
+                      newMessages[lastIdx] = { ...newMessages[lastIdx], content: fullResponse }
                     }
                     return newMessages
                   })
