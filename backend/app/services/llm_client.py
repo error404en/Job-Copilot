@@ -251,28 +251,56 @@ def generate_tailoring_text(prompt: str) -> str:
 
 def generate_tailoring_text_stream(prompt: str):
     """
-    Generator for streaming high-nuance writing tasks (cover letters, bullet points).
-    Strictly attempts to use the high-tier Groq model (Llama 3.3 70B) first with stream=True.
-    Yields chunks of text.
+    Generator for streaming conversational coaching and writing tasks.
+    Streams via Groq primary model, falls back to Groq secondary, then Gemini Flash streaming, and finally blocking waterfall.
     """
+    # 1. Primary & Secondary Groq Streaming
     if groq_client:
-        try:
-            print(f"[LLM] Attempting tailored streaming generation with {GROQ_TAILORING_MODEL}...")
-            response = groq_client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=GROQ_TAILORING_MODEL,
-                temperature=0.7,
-                stream=True
-            )
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-            return
-        except Exception as e:
-            print(f"[LLM] Tailoring streaming model {GROQ_TAILORING_MODEL} failed: {e}. Falling back to blocking waterfall.")
-    
-    # If streaming fails (or groq is unavailable), fallback to standard blocking generation
-    # Yield it all at once to maintain the generator interface.
+        groq_stream_models = [GROQ_TAILORING_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound"]
+        seen_models = set()
+        for m in groq_stream_models:
+            if m in seen_models:
+                continue
+            seen_models.add(m)
+            try:
+                print(f"[LLM] Attempting tailored streaming generation with {m}...")
+                response = groq_client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=m,
+                    temperature=0.7,
+                    stream=True
+                )
+                yielded_anything = False
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        yielded_anything = True
+                        yield chunk.choices[0].delta.content
+                if yielded_anything:
+                    return
+            except Exception as e:
+                print(f"[LLM] Groq streaming with {m} failed: {e}")
+
+    # 2. Gemini Flash Streaming Fallback
+    if gemini_client:
+        for gm in GEMINI_TEXT_MODELS:
+            try:
+                print(f"[LLM] Attempting Gemini streaming generation with {gm}...")
+                response = gemini_client.models.generate_content_stream(
+                    model=gm,
+                    contents=prompt
+                )
+                yielded_anything = False
+                for chunk in response:
+                    if hasattr(chunk, 'text') and chunk.text:
+                        yielded_anything = True
+                        yield chunk.text
+                if yielded_anything:
+                    return
+            except Exception as e:
+                print(f"[LLM] Gemini streaming with {gm} failed: {e}")
+
+    # 3. Final blocking fallback
+    print("[LLM] Streaming fallbacks exhausted, falling back to blocking waterfall.")
     fallback_text = get_completion(prompt, use_groq=True)
     yield fallback_text
 

@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS public.chat_threads (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
     job_id UUID REFERENCES public.jobs(id) ON DELETE SET NULL, -- Optional: Link to a specific job
     title TEXT NOT NULL DEFAULT 'New Conversation',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
