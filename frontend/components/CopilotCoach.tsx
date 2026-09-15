@@ -177,6 +177,16 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
     }
   }
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      const file = e.clipboardData.files[0]
+      if (file.type.startsWith('image/')) {
+        setAttachedFile(file)
+        e.preventDefault()
+      }
+    }
+  }
+
   return (
     <div className={`flex flex-col ${inline ? 'h-[600px] border border-zinc-800/50 rounded-2xl' : 'h-[calc(100vh-120px)] border border-zinc-800 rounded-2xl'} bg-zinc-950 shadow-2xl overflow-hidden`}>
       {/* Header */}
@@ -268,8 +278,9 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={handlePaste}
             disabled={sendMessageMutation.isPending}
-            placeholder={jobId ? "Ask about this job..." : "Ask Coach anything..."}
+            placeholder={jobId ? "Ask about this job (Paste images here)..." : "Ask Coach anything (Paste images here)..."}
             className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl py-3.5 pl-12 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm disabled:opacity-50"
           />
           <button
