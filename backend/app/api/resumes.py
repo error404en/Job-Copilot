@@ -123,7 +123,22 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
 
 @router.delete("/{resume_id}")
 def delete_resume(resume_id: str, user_id: str = Depends(get_current_user)):
+    # Disassociate foreign keys before deleting so constraint does not block
+    try:
+        supabase.table("job_analyses").update({"recommended_resume_version_id": None}).eq("recommended_resume_version_id", resume_id).execute()
+    except Exception:
+        pass
+    try:
+        supabase.table("application_drafts").update({"resume_version_id": None}).eq("resume_version_id", resume_id).execute()
+    except Exception:
+        pass
+    try:
+        supabase.table("applications").update({"resume_version_id": None}).eq("resume_version_id", resume_id).execute()
+    except Exception:
+        pass
+
     res = supabase.table("resume_versions").delete().eq("id", resume_id).eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Resume not found")
     return {"status": "success"}
+

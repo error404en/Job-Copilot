@@ -606,12 +606,18 @@ def generate_tailored_bullets_endpoint(job_id: str, req: TailorRequest, user_id:
     if not resume_id and analysis and analysis.get("recommended_resume_version_id"):
         resume_id = analysis["recommended_resume_version_id"]
         
-    # 3. Fetch Resume Summary
+    # 3. Fetch Resume Summary / Full Content
+    resume_summary = "Software Engineer"
     if resume_id:
-        resume_res = supabase.table("resume_versions").select("skills_summary").eq("id", resume_id).execute()
-        resume_summary = resume_res.data[0].get("skills_summary", "") if resume_res.data else "Software Engineer"
+        resume_res = supabase.table("resume_versions").select("raw_content, skills_summary").eq("id", resume_id).execute()
+        if resume_res.data:
+            rec = resume_res.data[0]
+            resume_summary = rec.get("raw_content") or rec.get("skills_summary") or "Software Engineer"
     else:
-        resume_summary = "Software Engineer"
+        fallback_res = supabase.table("resume_versions").select("raw_content, skills_summary").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        if fallback_res.data:
+            rec = fallback_res.data[0]
+            resume_summary = rec.get("raw_content") or rec.get("skills_summary") or "Software Engineer"
         
     # 4. Generate Bullets
     bullets = tailor_resume_bullets(
@@ -639,12 +645,18 @@ def generate_tailored_cover_letter_endpoint(job_id: str, req: TailorRequest, use
     if not resume_id and analysis and analysis.get("recommended_resume_version_id"):
         resume_id = analysis["recommended_resume_version_id"]
         
-    # 3. Fetch Resume Summary
+    # 3. Fetch Resume Summary / Full Content
+    resume_summary = "Software Engineer"
     if resume_id:
-        resume_res = supabase.table("resume_versions").select("skills_summary").eq("id", resume_id).execute()
-        resume_summary = resume_res.data[0].get("skills_summary", "") if resume_res.data else "Software Engineer"
+        resume_res = supabase.table("resume_versions").select("raw_content, skills_summary").eq("id", resume_id).execute()
+        if resume_res.data:
+            rec = resume_res.data[0]
+            resume_summary = rec.get("raw_content") or rec.get("skills_summary") or "Software Engineer"
     else:
-        resume_summary = "Software Engineer"
+        fallback_res = supabase.table("resume_versions").select("raw_content, skills_summary").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        if fallback_res.data:
+            rec = fallback_res.data[0]
+            resume_summary = rec.get("raw_content") or rec.get("skills_summary") or "Software Engineer"
         
     # 4. Generate Letter
     letter = generate_targeted_cover_letter(
@@ -682,32 +694,46 @@ def download_tailored_docx(job_id: str, req: TailorRequest, user_id: str = Depen
 
     missing_keywords = analysis.get("missing_keywords", []) if analysis else []
 
-    # 2. Determine Resume Version
+    # 2. Determine Resume Version & fetch raw resume content
     resume_id = req.resume_version_id
     if not resume_id and analysis and analysis.get("recommended_resume_version_id"):
         resume_id = analysis["recommended_resume_version_id"]
 
-    if not resume_id:
-        # Fall back to user's most recent resume
-        fallback_res = supabase.table("resume_versions").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if fallback_res.data:
-            resume_id = fallback_res.data[0]["id"]
+    raw_content = None
+    resume_title = "Resume"
 
-    if not resume_id:
-        raise HTTPException(status_code=400, detail="No resume found. Please upload a resume first.")
+    if resume_id:
+        resume_res = supabase.table("resume_versions").select("id, raw_content, title").eq("id", resume_id).execute()
+        if resume_res.data and resume_res.data[0].get("raw_content"):
+            raw_content = resume_res.data[0]["raw_content"]
+            resume_title = resume_res.data[0].get("title", "Resume")
 
-    # 3. Fetch raw resume content
-    resume_res = supabase.table("resume_versions").select("raw_content, title").eq("id", resume_id).execute()
-    if not resume_res.data:
-        raise HTTPException(status_code=404, detail="Resume version not found")
+    # If no raw_content yet (e.g. recommended resume was old or empty), find candidate's latest resume with raw_content
+    if not raw_content:
+        all_user_resumes = supabase.table("resume_versions") \
+            .select("id, raw_content, title, target_type") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .execute()
+        
+        valid_resumes = [r for r in (all_user_resumes.data or []) if (r.get("raw_content") or "").strip()]
+        if valid_resumes:
+            chosen = valid_resumes[0]
+            resume_id = chosen["id"]
+            raw_content = chosen["raw_content"]
+            resume_title = chosen.get("title", "Resume")
 
-    raw_content = resume_res.data[0].get("raw_content")
-    resume_title = resume_res.data[0].get("title", "Resume")
+            # Self-heal job_analyses record so future requests use this valid resume
+            if analysis and analysis.get("id"):
+                try:
+                    supabase.table("job_analyses").update({"recommended_resume_version_id": resume_id}).eq("id", analysis["id"]).execute()
+                except Exception:
+                    pass
 
     if not raw_content:
         raise HTTPException(
             status_code=422,
-            detail="This resume was uploaded before the .docx feature was added and its full text was not saved. Please delete it and re-upload your PDF to enable tailored .docx generation."
+            detail="No resume with full text found. Please upload your resume PDF to enable tailored .docx generation."
         )
 
     # 4 & 5. Run two-pass LLM tailoring pipeline
