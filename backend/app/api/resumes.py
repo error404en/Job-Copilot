@@ -36,13 +36,29 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     # Calculate SHA-256 hash of the content
     file_hash = hashlib.sha256(content).hexdigest()
     
-    # Check if this exact resume has already been uploaded by this user
-    existing_res = supabase.table("resume_versions").select("id, title").eq("user_id", user_id).eq("file_hash", file_hash).execute()
-    if existing_res.data and len(existing_res.data) > 0:
-        existing_title = existing_res.data[0].get("title", "Unknown")
+    # 1. Check exact SHA-256 hash match
+    existing_by_hash = supabase.table("resume_versions").select("id, title").eq("user_id", user_id).eq("file_hash", file_hash).execute()
+    if existing_by_hash.data and len(existing_by_hash.data) > 0:
+        existing_title = existing_by_hash.data[0].get("title", "Unknown")
         raise HTTPException(
             status_code=409, 
-            detail=f"Duplicate resume detected. This exact resume was already uploaded as '{existing_title}'."
+            detail=f"Duplicate resume detected. This exact file was already uploaded as '{existing_title}'."
+        )
+    
+    # 2. Check identical filename upload
+    file_path_placeholder = f"local_upload_{file.filename}"
+    existing_by_filename = supabase.table("resume_versions").select("id, title, file_hash").eq("user_id", user_id).eq("file_path", file_path_placeholder).execute()
+    if existing_by_filename.data and len(existing_by_filename.data) > 0:
+        existing_title = existing_by_filename.data[0].get("title", "Unknown")
+        # Backfill hash if missing
+        if not existing_by_filename.data[0].get("file_hash"):
+            try:
+                supabase.table("resume_versions").update({"file_hash": file_hash}).eq("id", existing_by_filename.data[0]["id"]).execute()
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=409,
+            detail=f"Duplicate resume detected. A file named '{file.filename}' was already uploaded as '{existing_title}'."
         )
     
     # Extract text using PyPDF2
@@ -63,11 +79,24 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to analyze resume with AI")
         
+    # 3. Check extracted title match (catches legacy resumes uploaded before file_hash was added)
+    cleaned_title = extraction.title.strip()
+    existing_by_title = supabase.table("resume_versions").select("id, title, file_hash").eq("user_id", user_id).ilike("title", cleaned_title).execute()
+    if existing_by_title.data and len(existing_by_title.data) > 0:
+        # Backfill hash on legacy resume record
+        if not existing_by_title.data[0].get("file_hash"):
+            try:
+                supabase.table("resume_versions").update({"file_hash": file_hash}).eq("id", existing_by_title.data[0]["id"]).execute()
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=409,
+            detail=f"Duplicate resume detected. A resume with title '{cleaned_title}' already exists in your account."
+        )
+
     # Save to database
     # In a full system we'd upload the file to Supabase Storage and save the URL.
     # For now, since we only need the skills for analysis, we use a placeholder or local filename.
-    file_path_placeholder = f"local_upload_{file.filename}"
-    
     insert_data = {
         "file_path": file_path_placeholder,
         "title": extraction.title,
