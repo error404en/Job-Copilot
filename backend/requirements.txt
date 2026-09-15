@@ -17,3 +17,4 @@ httpx
 PyJWT[cryptography]
 python-docx
 
+playwright

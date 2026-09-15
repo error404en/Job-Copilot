@@ -135,26 +135,14 @@ class AutoApplyRequest(BaseModel):
     job_id: Optional[str] = None
 
 @router.post("/auto-apply")
-def auto_apply_job(req: AutoApplyRequest, user_id: str = Depends(get_current_user)):
+async def auto_apply_job(req: AutoApplyRequest, user_id: str = Depends(get_current_user)):
     """
     Triggers the Hermes background auto-apply agent for a specific job URL.
     """
-    from app.api.profile import get_or_create_user_profile
-    from app.services.auto_apply_agent import AutoApplyAgent
-
-    user_profile = get_or_create_user_profile(user_id)
+    from app.services.hermes_agent import run_hermes_apply
     
-    # Optional: Fetch a resume summary
-    resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
-    resume_summary = ""
-    if resumes_resp.data:
-        resume_summary = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
-
-    agent = AutoApplyAgent(user_profile=user_profile, resume_text=resume_summary)
-    
-    # In a real production system, this would be pushed to a Celery/Redis queue or BackgroundTasks
-    # For now, we execute synchronously and return the result.
-    result = agent.apply(req.url)
+    # Run the background automation asynchronously to prevent blocking
+    result = await run_hermes_apply(req.url, req.job_id or "unknown")
     
     if result["status"] == "success" and req.job_id:
         # Mark as applied in tracker automatically

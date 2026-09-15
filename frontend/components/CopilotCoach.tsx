@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useApiClient } from '@/lib/useApiClient'
+import { AIOrb } from './ui/AIOrb'
 import ReactMarkdown from 'react-markdown'
 
 class ChatErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
@@ -371,8 +373,8 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
         {(!currentThreadId || currentThreadId === 'new') && (!messages || messages.length === 0) && optimisticMessages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-zinc-400 space-y-4 py-8">
-            <div className="w-14 h-14 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-3xl shadow-inner">
-              ⚡
+            <div className="scale-75 origin-center -mb-8">
+              <AIOrb state="idle" />
             </div>
             <div className="text-center max-w-md">
               <p className="text-base font-medium text-zinc-200">
@@ -432,8 +434,8 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
         )}
 
         {currentThreadId && currentThreadId !== 'new' && isLoadingMessages && (
-          <div className="flex justify-center p-8">
-            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="flex justify-center p-8 scale-75 origin-center">
+            <AIOrb state="thinking" />
           </div>
         )}
 
@@ -463,11 +465,8 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
               }`}>
                 {isStreamingMsg && !msg.content ? (
                   /* Pulsing thinking indicator inside the bubble */
-                  <div className="flex items-center gap-1.5 py-1 px-1">
-                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
-                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse [animation-delay:200ms]"></span>
-                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse [animation-delay:400ms]"></span>
-                    <span className="text-xs text-zinc-400 ml-2 font-medium">Thinking...</span>
+                  <div className="flex items-center justify-center -my-4 scale-[0.6] origin-left">
+                    <AIOrb state="thinking" />
                   </div>
                 ) : (
                   <div className="prose prose-invert prose-sm max-w-none break-words leading-relaxed">

@@ -16,6 +16,8 @@ const STATUS_COLUMNS = [
   { id: 'rejected', label: 'Rejected / Inactive', icon: '❌', color: 'border-zinc-700 bg-zinc-900/30' },
 ]
 
+import { StatusDatePicker } from '@/components/ui/StatusDatePicker'
+
 export default function TrackerPage() {
   const queryClient = useQueryClient()
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
@@ -32,6 +34,7 @@ export default function TrackerPage() {
   const [newSalary, setNewSalary] = useState('')
   const [newUrl, setNewUrl] = useState('')
   const [newStatus, setNewStatus] = useState('applied')
+  const [newDate, setNewDate] = useState(new Date())
   const [newNotes, setNewNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -443,17 +446,13 @@ export default function TrackerPage() {
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1.5">Status</label>
-                  <select
-                    value={newStatus}
-                    onChange={(e) => setNewStatus(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner appearance-none"
-                  >
-                    {STATUS_COLUMNS.map(c => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
-                    ))}
-                  </select>
+                <div className="col-span-2 mt-4">
+                  <StatusDatePicker 
+                    date={newDate} 
+                    status={newStatus} 
+                    onDateChange={setNewDate} 
+                    onStatusChange={setNewStatus} 
+                  />
                 </div>
               </div>
               <div>
