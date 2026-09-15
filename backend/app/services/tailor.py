@@ -14,31 +14,43 @@ BANNED_WORDS = (
 
 def tailor_resume_bullets(resume_summary: str, jd_text: str, missing_keywords: List[str]) -> List[str]:
     """
-    Generates 3-5 highly targeted resume bullet points using the XYZ formula,
-    incorporating missing JD keywords naturally.
+    Generates 3-5 resume bullet points by reframing REAL achievements in JD-aligned language.
+    Strictly forbidden from inventing tech stacks, metrics, or any claims not in the source resume.
     """
     keywords_str = ", ".join(missing_keywords) if missing_keywords else "None"
     
     prompt = f"""
-    You are an elite, no-nonsense senior technical recruiter.
-    Your task is to rewrite or create 3-5 resume bullet points for a candidate based on their base profile and the target Job Description.
+    You are an elite technical resume writer. Your task is to rewrite 3-5 resume bullet points for a candidate.
     
-    CRITICAL RULES:
-    1. You must NEVER use any of the following words or phrases. If you use them, you fail:
-       {BANNED_WORDS}
-    2. Write bullets using ONLY the XYZ formula: "Accomplished [X] as measured by [Y], by doing [Z]."
-    3. Do NOT use adjectives to describe the work (e.g., do not say "successfully led" or "expertly designed"). Let the metrics speak for themselves.
-    4. If metrics are missing from the base profile, extrapolate realistic placeholders in brackets like [insert %] or [insert number].
-    5. Weave the following missing keywords seamlessly into the narrative. Do NOT just list them.
-       Missing Keywords: {keywords_str}
+    ABSOLUTE RULES — violating any of these means you have failed:
+    1. You MUST NOT invent, fabricate, or extrapolate ANY of the following:
+       - Technologies (e.g., do NOT add Redis, C++, Kafka, or any tool not explicitly mentioned in the candidate's profile below)
+       - Metrics (e.g., do NOT invent "40% throughput improvement" or "25% cost reduction" unless the number already appears in the profile)
+       - Architecture patterns (e.g., do NOT claim "microservice redesign" unless the profile says so)
+       - Migrations (e.g., "migrated PostgreSQL to X" — only if the profile explicitly describes this)
+       If a claimed achievement cannot be directly traced back to the candidate's profile text, do NOT include it.
     
-    Base Candidate Profile:
+    2. Your ONLY job is to take what is ALREADY in the candidate's profile and reframe it using the vocabulary and priorities of the JD.
+       - "Scalability", "latency", "reliability", "trade-offs", "throughput" are language choices, not new claims.
+       - Reword real metrics in JD-relevant framing.
+    
+    3. If a missing keyword from the JD has NO real counterpart in the candidate's profile, do NOT force it in.
+       Instead, write the bullet without it. A true, strong bullet beats a fabricated one every time.
+    
+    4. Write using the XYZ formula: "Accomplished [X] as measured by [Y], by doing [Z]."
+       Only use metrics that already exist verbatim in the profile (e.g., "sub-50ms latency", "35K embeddings", "18-25 FPS").
+    
+    5. Never use: {BANNED_WORDS}
+    
+    Candidate's Actual Profile (source of truth — do not invent beyond this):
     {resume_summary}
     
-    Target Job Description (for context):
+    Target Job Description (use only for vocabulary and framing):
     {jd_text[:3000]}
     
-    Return exactly 3 to 5 highly polished bullet points.
+    JD Keywords to weave in IF a real counterpart exists in the profile: {keywords_str}
+    
+    Return exactly 3 to 5 bullet points.
     """
     
     full_prompt = (
@@ -50,7 +62,6 @@ def tailor_resume_bullets(resume_summary: str, jd_text: str, missing_keywords: L
     
     raw_response = generate_tailoring_text(full_prompt)
     
-    # Manually parse the JSON from the text response
     try:
         raw_response = raw_response.strip()
         if raw_response.startswith("```json"):
@@ -65,6 +76,7 @@ def tailor_resume_bullets(resume_summary: str, jd_text: str, missing_keywords: L
     except Exception as e:
         print(f"[Tailor] Failed to parse tailored bullets JSON: {e}")
         return ["Failed to generate tailored bullets. Please try again."]
+
 
 
 def generate_targeted_cover_letter(resume_summary: str, jd_text: str, role_title: str, company: str) -> str:
