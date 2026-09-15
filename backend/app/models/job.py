@@ -10,6 +10,8 @@ class ParsedJob(BaseModel):
     pay_max: Optional[int] = Field(default=None, description="Maximum annual pay (in INR).")
     pay_currency: str = Field(default="INR", description="Currency of the pay")
     pay_confidence: str = Field(default="estimated", description="'stated' if explicitly in JD, 'estimated' if inferred, 'unknown' if no clues")
+    deadline_date: Optional[str] = Field(default=None, description="The deadline for applications, in YYYY-MM-DD format if explicitly stated. Null if not mentioned.")
+    is_rolling_deadline: bool = Field(default=False, description="True if the job mentions rolling applications or applying ASAP.")
     seniority_required: str = Field(default="0-2yr", description="'fresher', '0-2yr', '2-5yr', 'senior', or 'unclear'")
     required_skills: List[str] = Field(default_factory=list, description="List of mandatory technical or soft skills")
     nice_to_have_skills: List[str] = Field(default_factory=list, description="List of preferred or bonus skills")

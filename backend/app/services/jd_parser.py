@@ -12,6 +12,7 @@ def parse_job_description(raw_text: str, use_groq: bool = False) -> ParsedJob:
     but mark pay_confidence as 'estimated' or 'unknown'. 
     For remote_type, choose from 'remote', 'hybrid', 'onsite', or 'unclear'.
     For seniority, classify it as 'fresher' (0-1 yrs), '0-2yr', '2-5yr', 'senior' (5+), or 'unclear'.
+    Look closely for application deadlines (deadline_date) and format as YYYY-MM-DD. If they mention "rolling basis" or "apply ASAP", set is_rolling_deadline to true.
     Return the information in the required JSON structure.
     
     JOB DESCRIPTION TEXT:

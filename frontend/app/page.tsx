@@ -70,6 +70,21 @@ export default function Dashboard() {
     }
   })
 
+  const autoApplyMutation = useMutation({
+    mutationFn: async ({ url, jobId }: { url: string; jobId: string }) => {
+      const res = await apiFetch('/api/applications/auto-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url, job_id: jobId })
+      })
+      if (!res.ok) throw new Error('Failed to trigger auto apply')
+      return res.json()
+    },
+    onSuccess: () => {
+      refetchApplications()
+    }
+  })
+
   // Derive unique locations from analyzed jobs
   const availableLocations = useMemo(() => {
     const set = new Set<string>()
@@ -412,14 +427,28 @@ export default function Dashboard() {
                   </button>
 
                   {job.url && job.url !== 'Screenshot Upload' && (
-                    <a 
-                      href={job.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="bg-zinc-800 text-zinc-300 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white hover:text-zinc-950 transition-colors"
-                    >
-                      Apply ↗
-                    </a>
+                    <div className="flex gap-2 items-center">
+                      <a 
+                        href={job.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="bg-zinc-800 text-zinc-300 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white hover:text-zinc-950 transition-colors"
+                      >
+                        Apply ↗
+                      </a>
+                      <button
+                        onClick={() => {
+                          if (confirm("Trigger Hermes AI to navigate and apply to this job in the background?")) {
+                            autoApplyMutation.mutate({ url: job.url, jobId: job.id });
+                          }
+                        }}
+                        disabled={autoApplyMutation.isPending}
+                        className="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-600/40 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <span>🤖</span>
+                        {autoApplyMutation.isPending ? 'Applying...' : 'Auto-Apply'}
+                      </button>
+                    </div>
                   )}
 
                   {analysis && (
