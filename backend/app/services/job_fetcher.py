@@ -271,13 +271,13 @@ def resolve_redirects_and_detect_promo(url: str) -> dict:
 
 VERIFIED_COMPANY_ROLES = {
     "zsassociates": {
-        "careers_url": "https://www.zs.com/careers/india",
+        "careers_url": "https://jobs.zs.com/",
         "roles": [
             {
                 "role_title": "Software Engineer",
                 "company": "ZS Associates",
                 "location": "Pune / New Delhi / Bengaluru",
-                "url": "https://www.zs.com/careers/india",
+                "url": "https://jobs.zs.com/",
                 "experience_level": "0-2 Yrs (Freshers & Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹12.0L - ₹15.0L CTC",
@@ -289,7 +289,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Business Technology Analyst",
                 "company": "ZS Associates",
                 "location": "Pune / New Delhi",
-                "url": "https://www.zs.com/careers/india",
+                "url": "https://jobs.zs.com/",
                 "experience_level": "0-2 Yrs (Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹10.5L - ₹12.5L CTC",

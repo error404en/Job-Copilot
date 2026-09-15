@@ -852,7 +852,7 @@ export default function AddJobPage() {
                         const isScoringThis = scoringRoleIdx === i
 
                         return (
-                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 space-y-4 hover:border-zinc-700 transition-all">
+                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 space-y-4 hover:border-blue-500/50 hover:-translate-y-1.5 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.2)] transition-all duration-300">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">

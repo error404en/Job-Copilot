@@ -245,7 +245,7 @@ export default function CompaniesPage() {
             return (
               <div
                 key={c.id}
-                className="bg-zinc-900/40 border border-zinc-800 hover:border-zinc-700/80 rounded-2xl p-6 space-y-4 backdrop-blur-sm transition-all group flex flex-col justify-between"
+                className="bg-zinc-900/40 border border-zinc-800 hover:border-purple-500/50 hover:-translate-y-1.5 hover:shadow-[0_10px_40px_-10px_rgba(168,85,247,0.2)] rounded-2xl p-6 space-y-4 backdrop-blur-sm transition-all duration-300 group flex flex-col justify-between"
               >
                 <div className="space-y-3">
                   {/* Card Header */}

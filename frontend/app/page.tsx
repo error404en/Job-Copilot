@@ -345,7 +345,7 @@ export default function Dashboard() {
             return (
               <div 
                 key={job.id} 
-                className="bg-zinc-900/40 p-5 rounded-xl border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/70 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group shadow-sm"
+                className="bg-zinc-900/40 p-5 rounded-xl border border-zinc-800 hover:border-blue-500/50 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.2)] transition-all duration-300 flex flex-col md:flex-row md:items-center justify-between gap-4 group"
               >
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2 mb-1.5">
