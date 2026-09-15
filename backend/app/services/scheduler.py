@@ -1,4 +1,6 @@
 import asyncio
+import os
+import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.db.supabase_client import supabase
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs
@@ -71,8 +73,79 @@ def fetch_latest_jobs_task():
     except Exception as e:
         print(f"[Scheduler] Error in scheduled job fetcher: {e}")
 
+def fetch_dream_company_jobs_task():
+    """
+    Background task to auto-fetch jobs for users' dream companies.
+    """
+    print("[Scheduler] Running scheduled Dream Company fetcher...")
+    try:
+        res = supabase.table("user_profile").select("*").execute()
+        if not res.data:
+            print("No user profiles found.")
+            return
+
+        from app.services.job_fetcher import scrape_careers_page
+        
+        url_res = supabase.table("jobs").select("url").execute()
+        existing_urls = {row["url"] for row in url_res.data if row.get("url")}
+
+        for profile in res.data:
+            user_id = profile.get("user_id")
+            dream_companies = profile.get("dream_companies", [])
+            target_roles = profile.get("target_roles", [])
+            
+            if not dream_companies:
+                continue
+                
+            print(f"Fetching dream companies for user {user_id}: {dream_companies}")
+            
+            for company in dream_companies:
+                try:
+                    result = scrape_careers_page(company, target_roles)
+                    jobs_to_process = result.get("jobs", [])
+                    
+                    new_count = 0
+                    for job_data in jobs_to_process:
+                        if job_data["url"] in existing_urls:
+                            continue
+                            
+                        new_count += 1
+                        existing_urls.add(job_data["url"])
+                        
+                        try:
+                            p_req = ParseRequest(
+                                raw_jd=job_data["raw_jd"],
+                                source=job_data["source"],
+                                url=job_data["url"],
+                                use_groq=False
+                            )
+                            _parse_and_score_job(p_req, user_id=user_id, background_tasks=None)
+                        except Exception as e:
+                            print(f"Failed to auto-process dream job {job_data['url']}: {e}")
+                            
+                    print(f"Finished {company} for {user_id}: added {new_count} new roles.")
+                except Exception as e:
+                    print(f"Error fetching dream company {company}: {e}")
+
+    except Exception as e:
+        print(f"[Scheduler] Error in dream company fetcher: {e}")
+
+def keep_alive_task():
+    """
+    Pings the application's external URL to keep it awake on Render's free tier.
+    """
+    url = os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:8000/health")
+    print(f"[Scheduler] Running keep-alive ping to {url}")
+    try:
+        response = requests.get(url, timeout=10)
+        print(f"[Scheduler] Keep-alive status: {response.status_code}")
+    except Exception as e:
+        print(f"[Scheduler] Keep-alive failed: {e}")
+
 def start_scheduler():
     # Run every 12 hours
     scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=12)
+    scheduler.add_job(fetch_dream_company_jobs_task, 'interval', hours=12)
+    scheduler.add_job(keep_alive_task, 'interval', minutes=5)
     scheduler.start()
     print("[Scheduler] Background scheduler started!")
