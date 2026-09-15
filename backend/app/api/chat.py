@@ -7,7 +7,11 @@ from app.middleware.auth import get_current_user
 from app.services.llm_client import get_completion, generate_tailoring_text, generate_tailoring_text_stream, extract_text_from_image
 import json
 import io
-import fitz  # PyMuPDF
+
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
 
 router = APIRouter()
 
@@ -152,10 +156,15 @@ async def send_message(
                     raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
             elif mime_type == "application/pdf":
                 try:
-                    pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
                     extracted = ""
-                    for page in pdf_doc:
-                        extracted += page.get_text() + "\n"
+                    if fitz is not None:
+                        pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+                        for page in pdf_doc:
+                            extracted += page.get_text() + "\n"
+                    else:
+                        import PyPDF2
+                        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                        extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
                     attachment_text = f"\n[User Attached PDF. Extracted Text:]\n{extracted}\n"
                 except Exception as e:
                     raise HTTPException(status_code=400, detail=f"Failed to process PDF: {e}")

@@ -104,7 +104,14 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, job_id: jobId })
       })
-      if (!res.ok) throw new Error('Failed to create thread')
+      if (!res.ok) {
+        let errMsg = `Failed to create thread (${res.status})`
+        try {
+          const errData = await res.json()
+          if (errData.detail) errMsg = errData.detail
+        } catch {}
+        throw new Error(errMsg)
+      }
       return res.json()
     },
     onSuccess: (data) => {
