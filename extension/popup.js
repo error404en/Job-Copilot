@@ -42,46 +42,31 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
       throw new Error('Your login session has expired or you are not logged in.\n\nPlease open your JobCopilot dashboard and sign in to refresh your session.');
     }
 
-    btn.innerText = 'Sending to AI...';
-    status.innerText = `Sending ${rawText.length} characters to JobCopilot AI...`;
+    btn.innerText = 'Analyzing in Background...';
+    status.innerText = `Sending ${rawText.length} characters to AI... You can safely close this popup!`;
 
-    const response = await fetch(`${session.backendUrl}/api/jobs/parse`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.token}`
-      },
-      body: JSON.stringify({
-        raw_jd: rawText,
-        source: 'extension',
-        url: url
-      })
-    });
-
-    if (!response.ok) {
-      const errBody = await response.text();
-      if (response.status === 401) {
-        dashBtn.onclick = () => {
-          chrome.tabs.create({ url: session.dashboardUrl });
-        };
-        dashBtn.style.display = 'block';
-        throw new Error('Session token expired. Please click below to refresh your dashboard tab.');
+    // Offload parsing to the background worker so it survives tab switches
+    chrome.runtime.sendMessage({
+      action: 'parseJobBackground',
+      raw_jd: rawText,
+      url: url
+    }, (response) => {
+      // Note: If the popup is closed, this callback just won't run, which is fine!
+      if (chrome.runtime.lastError) {
+        console.error("Runtime error:", chrome.runtime.lastError);
       }
-      let detailMsg = errBody;
-      try {
-        const parsed = JSON.parse(errBody);
-        if (parsed.detail) detailMsg = parsed.detail;
-      } catch (e) {}
-      throw new Error(detailMsg);
-    }
-
-    const data = await response.json();
-
-    // Open the dashboard in a new tab
-    chrome.tabs.create({ url: `${session.dashboardUrl}/jobs/${data.job_id}` });
-
-    status.innerText = '✅ Analysis complete! Opening your JobCopilot dashboard...';
-    btn.innerText = 'Done ✓';
+      
+      if (response && response.success) {
+        status.innerText = '✅ Analysis complete! Opening your JobCopilot dashboard...';
+        btn.innerText = 'Done ✓';
+      } else if (response && response.error) {
+        errDiv.innerText = response.error;
+        errDiv.style.display = 'block';
+        btn.disabled = false;
+        btn.innerText = 'Try Again';
+        status.innerText = 'Something went wrong.';
+      }
+    });
 
   } catch (err) {
     let msg = err.message;

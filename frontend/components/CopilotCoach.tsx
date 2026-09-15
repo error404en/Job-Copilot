@@ -1,9 +1,28 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApiClient } from '@/lib/useApiClient'
 import ReactMarkdown from 'react-markdown'
+
+class ChatErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Chat Markdown Rendering Error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div className="text-red-400 text-xs p-2 border border-red-900 bg-red-950/20 rounded">Failed to render this message.</div>;
+    }
+    return this.props.children;
+  }
+}
 
 interface CopilotCoachProps {
   jobId?: string
@@ -167,6 +186,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       const reader = res.body?.getReader()
       const decoder = new TextDecoder()
       let fullResponse = ''
+      let lastUpdateTime = Date.now()
 
       if (reader) {
         while (true) {
@@ -188,12 +208,17 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                   setErrorMessage(parsed.error)
                 } else if (parsed.content) {
                   fullResponse += parsed.content
-                  setOptimisticMessages(prev => {
-                    if (prev.length < 2) return prev
-                    const next = [...prev]
-                    next[1] = { ...next[1], content: fullResponse }
-                    return next
-                  })
+                  const now = Date.now()
+                  // Throttle state updates to ~50ms to prevent render freezing
+                  if (now - lastUpdateTime > 50) {
+                    setOptimisticMessages(prev => {
+                      if (prev.length < 2) return prev
+                      const next = [...prev]
+                      next[1] = { ...next[1], content: fullResponse }
+                      return next
+                    })
+                    lastUpdateTime = now
+                  }
                 }
               } catch (e) {
                 // Ignore chunk boundary json parse errors
@@ -201,6 +226,14 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
             }
           }
         }
+        
+        // Final state update when stream is completely done
+        setOptimisticMessages(prev => {
+          if (prev.length < 2) return prev
+          const next = [...prev]
+          next[1] = { ...next[1], content: fullResponse }
+          return next
+        })
       }
       return tid
     },
@@ -438,41 +471,43 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                   </div>
                 ) : (
                   <div className="prose prose-invert prose-sm max-w-none break-words leading-relaxed">
-                    <ReactMarkdown
-                      components={{
-                        code({ inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '')
-                          const rawCode = String(children).replace(/\n$/, '')
-                          const codeId = idx * 1000 + Math.floor(Math.random() * 999)
+                    <ChatErrorBoundary>
+                      <ReactMarkdown
+                        components={{
+                          code({ inline, className, children, ...props }: any) {
+                            const match = /language-(\w+)/.exec(className || '')
+                            const rawCode = String(children).replace(/\n$/, '')
+                            const codeId = idx * 1000 + Math.floor(Math.random() * 999)
 
-                          return !inline ? (
-                            <div className="relative group my-3 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 font-mono text-xs not-prose">
-                              <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 border-b border-zinc-800/80 text-zinc-400 text-xs">
-                                <span className="font-semibold text-zinc-300">{match ? match[1] : 'code'}</span>
-                                <button 
-                                  type="button"
-                                  onClick={() => handleCopyCode(rawCode, codeId)}
-                                  className="text-zinc-400 hover:text-white transition-colors flex items-center gap-1 bg-zinc-800 px-2 py-0.5 rounded text-[11px]"
-                                >
-                                  {copiedIndex === codeId ? '✓ Copied' : 'Copy'}
-                                </button>
+                            return !inline ? (
+                              <div className="relative group my-3 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 font-mono text-xs not-prose">
+                                <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 border-b border-zinc-800/80 text-zinc-400 text-xs">
+                                  <span className="font-semibold text-zinc-300">{match ? match[1] : 'code'}</span>
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleCopyCode(rawCode, codeId)}
+                                    className="text-zinc-400 hover:text-white transition-colors flex items-center gap-1 bg-zinc-800 px-2 py-0.5 rounded text-[11px]"
+                                  >
+                                    {copiedIndex === codeId ? '✓ Copied' : 'Copy'}
+                                  </button>
+                                </div>
+                                <pre className="p-3.5 overflow-x-auto text-zinc-200 leading-normal">
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                </pre>
                               </div>
-                              <pre className="p-3.5 overflow-x-auto text-zinc-200 leading-normal">
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              </pre>
-                            </div>
-                          ) : (
-                            <code className="bg-zinc-800/80 text-blue-300 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
-                              {children}
-                            </code>
-                          )
-                        }
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
+                            ) : (
+                              <code className="bg-zinc-800/80 text-blue-300 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+                                {children}
+                              </code>
+                            )
+                          }
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </ChatErrorBoundary>
                     {isStreamingMsg && (
                       <span className="inline-block w-1.5 h-4 bg-blue-400 animate-pulse ml-1 align-middle" />
                     )}

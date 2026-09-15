@@ -9,7 +9,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           throw new Error('You must be signed into the JobCopilot web dashboard first.');
         }
 
-        // Automatically route to resolved backend (Cloud or Local)
         let targetUrl = request.url;
         if (targetUrl.startsWith('/')) {
           targetUrl = `${session.backendUrl}${targetUrl}`;
@@ -42,6 +41,51 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: false, error: msg });
       }
     })();
-    return true; // Indicates we will respond asynchronously
+    return true;
+  }
+
+  if (request.action === 'parseJobBackground') {
+    (async () => {
+      try {
+        const session = await getAuthSession();
+        if (!session || !session.token) {
+          throw new Error('You must be signed into the JobCopilot web dashboard first.');
+        }
+
+        // We do the fetch directly here in the background
+        const res = await fetch(`${session.backendUrl}/api/jobs/parse`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.token}`
+          },
+          body: JSON.stringify({
+            raw_jd: request.raw_jd,
+            source: 'extension',
+            url: request.url
+          })
+        });
+
+        if (!res.ok) {
+          console.error("Background parse failed:", res.status);
+          // If it fails, maybe open dashboard anyway to show they need to login
+          if (res.status === 401) {
+            chrome.tabs.create({ url: session.dashboardUrl });
+          }
+          sendResponse({ success: false, error: "Backend parsing failed." });
+          return;
+        }
+
+        const data = await res.json();
+        // Once done, open the new tab
+        chrome.tabs.create({ url: `${session.dashboardUrl}/jobs/${data.job_id}` });
+        sendResponse({ success: true, job_id: data.job_id });
+
+      } catch (err) {
+        console.error("parseJobBackground Error:", err);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
   }
 });

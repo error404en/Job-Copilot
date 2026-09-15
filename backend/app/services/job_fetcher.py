@@ -270,6 +270,52 @@ def resolve_redirects_and_detect_promo(url: str) -> dict:
 
 
 VERIFIED_COMPANY_ROLES = {
+    "zsassociates": {
+        "careers_url": "https://www.zs.com/careers/india",
+        "roles": [
+            {
+                "role_title": "Software Engineer",
+                "company": "ZS Associates",
+                "location": "Pune / New Delhi / Bengaluru",
+                "url": "https://www.zs.com/careers/india",
+                "experience_level": "0-2 Yrs (Freshers & Analyst)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹12.0L - ₹15.0L CTC",
+                "required_skills": ["Python", "SQL", "AWS", "Data Structures", "Algorithms"],
+                "raw_jd": "Software Engineer at ZS Associates India. Responsible for building and maintaining enterprise applications and data pipelines. Strong understanding of Object-Oriented Programming (Python/Java), relational databases, and data structures.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Business Technology Analyst",
+                "company": "ZS Associates",
+                "location": "Pune / New Delhi",
+                "url": "https://www.zs.com/careers/india",
+                "experience_level": "0-2 Yrs (Analyst)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹10.5L - ₹12.5L CTC",
+                "required_skills": ["SQL", "Data Analytics", "Python", "Problem Solving"],
+                "raw_jd": "Business Technology Analyst at ZS Associates India. Requires strong problem solving, SQL, and data analysis skills. Ideal for fresh graduates.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "openai": {
+        "careers_url": "https://openai.com/careers/search",
+        "roles": [
+            {
+                "role_title": "Software Engineer (India)",
+                "company": "OpenAI",
+                "location": "Remote - India / Bengaluru",
+                "url": "https://openai.com/careers/search",
+                "experience_level": "2-5 Yrs (Mid-Level)",
+                "seniority_required": "2-5yr",
+                "compensation_range": "₹45.0L - ₹80.0L CTC (Base + Equity)",
+                "required_skills": ["Python", "Rust", "Distributed Systems", "AI/ML", "React"],
+                "raw_jd": "Software Engineer at OpenAI India. Build scalable infrastructure and tooling for next-gen models. Requires deep expertise in distributed systems and performance optimization.",
+                "source": "official_portal"
+            }
+        ]
+    },
     "barclays": {
         "careers_url": "https://search.jobs.barclays/",
         "roles": [
@@ -645,7 +691,7 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
 
     # Step B: Live search for current openings with experience inference
     kw_str = " ".join(target_keywords[:2]) if target_keywords else "Software Engineer Analyst"
-    query = f'"{company_name}" hiring ("Software Engineer" OR "Analyst" OR "Associate" OR "Developer") India'
+    query = f'"{company_name}" hiring ("Software Engineer" OR "Analyst" OR "Associate" OR "Developer") ("India" OR "Bengaluru" OR "Pune" OR "Hyderabad" OR "Mumbai" OR "Noida" OR "Gurugram" OR "Chennai")'
     
     try:
         with DDGS(timeout=4) as ddgs:
@@ -660,12 +706,38 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
                 if not cleaned_title:
                     continue
 
+                text_content = (title + " " + body).lower()
+                foreign_cities = ["usa", "uk", "london", "san francisco", "new york", "seattle", "austin", "texas", "california", "remote us", "remote uk"]
+                indian_cities = ["bengaluru", "bangalore", "mumbai", "pune", "hyderabad", "delhi", "gurugram", "gurgaon", "noida", "chennai", "india"]
+                
+                has_indian_city = any(city in text_content for city in indian_cities)
+                has_foreign_city = any(city in text_content for city in foreign_cities)
+                
+                # Exclude obvious non-Indian roles
+                if has_foreign_city and not has_indian_city:
+                    continue
+
                 # Infer location
                 loc = "India"
                 for city in ["Bengaluru", "Bangalore", "Mumbai", "Pune", "Hyderabad", "Delhi", "Gurugram", "Noida", "Chennai"]:
-                    if city.lower() in (title + body).lower():
+                    if city.lower() in text_content:
                         loc = city
                         break
+                        
+                # Infer Salary for Indian roles
+                salary = "Competitive (₹ INR)"
+                import re
+                salary_match = re.search(r'(₹\s*\d+(?:\.\d+)?\s*(?:LPA|Lakhs?|Cr|K)|(?:INR)\s*\d+(?:\.\d+)?\s*(?:LPA|Lakhs?|Cr|K))', text_content, re.IGNORECASE)
+                if salary_match:
+                    salary = salary_match.group(1)
+                else:
+                    exp_level = _infer_experience_metadata(cleaned_title, body)["experience_level"]
+                    if "0-2" in exp_level:
+                        salary = "₹8.0L - ₹15.0L CTC (Estimated)"
+                    elif "2-5" in exp_level:
+                        salary = "₹15.0L - ₹30.0L CTC (Estimated)"
+                    else:
+                        salary = "₹30.0L+ CTC (Estimated)"
 
                 exp_meta = _infer_experience_metadata(cleaned_title, body)
 
@@ -677,7 +749,7 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
                     "location": loc,
                     "experience_level": exp_meta["experience_level"],
                     "seniority_required": exp_meta["seniority_required"],
-                    "raw_jd": f"{cleaned_title}\nCompany: {company_name}\nLocation: {loc}\nExperience: {exp_meta['experience_level']}\n\n{body}"
+                    "raw_jd": f"{cleaned_title}\nCompany: {company_name}\nLocation: {loc}\nExperience: {exp_meta['experience_level']}\nCompensation: {salary}\n\n{body}"
                 })
     except Exception as e:
         print(f"[scrape_careers_page] Live search fallback failed for {company_name}: {e}")
