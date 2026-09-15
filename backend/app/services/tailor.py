@@ -1,7 +1,8 @@
 import json
+import re
 from app.services.llm_client import generate_tailoring_text
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 class TailoredBullets(BaseModel):
     bullets: List[str]
@@ -9,46 +10,54 @@ class TailoredBullets(BaseModel):
 BANNED_WORDS = (
     "delve, dive, navigate, landscape, tapestry, thrilled, excited, passionate, honored, "
     "robust, dynamic, seamless, cutting-edge, unparalleled, testament to, pivotal, transformative, "
-    "In today's fast-paced, Spearheaded, Synergized, —, -, em dash"
+    "In today's fast-paced, Spearheaded, Synergized, —, -, em dash, comfortable with, "
+    "translating ambiguous business and technical requirements"
 )
+
 
 def tailor_resume_bullets(resume_summary: str, jd_text: str, missing_keywords: List[str]) -> List[str]:
     """
-    Generates 3-5 resume bullet points by reframing REAL achievements in JD-aligned language.
-    Strictly forbidden from inventing tech stacks, metrics, or any claims not in the source resume.
+    Generates 3-5 high-impact resume bullet points following Claude's technical guidelines:
+    - Retains 100% of hard engineering facts, frameworks, model names, and metrics.
+    - Opens every bullet with an authoritative engineering action verb.
+    - Never dilutes technical achievements into vague business speak.
+    - Strictly avoids keyword stuffing.
     """
     keywords_str = ", ".join(missing_keywords) if missing_keywords else "None"
     
     prompt = f"""
-    You are an elite technical resume writer. Your task is to rewrite 3-5 resume bullet points for a candidate.
+    You are an elite technical resume writer generating resume bullets that match the gold-standard quality of Claude.
+    Your task is to rewrite 3-5 resume bullet points for a candidate targeting the provided job description.
     
-    ABSOLUTE RULES — violating any of these means you have failed:
-    1. You MUST NOT invent, fabricate, or extrapolate ANY of the following:
-       - Technologies (e.g., do NOT add Redis, C++, Kafka, or any tool not explicitly mentioned in the candidate's profile below)
-       - Metrics (e.g., do NOT invent "40% throughput improvement" or "25% cost reduction" unless the number already appears in the profile)
-       - Architecture patterns (e.g., do NOT claim "microservice redesign" unless the profile says so)
-       - Migrations (e.g., "migrated PostgreSQL to X" — only if the profile explicitly describes this)
-       If a claimed achievement cannot be directly traced back to the candidate's profile text, do NOT include it.
+    CLAUDE RESUME GUIDELINES (STRICT COMPLIANCE REQUIRED):
+    1. ZERO TECHNICAL DILUTION:
+       - You MUST retain all specific technologies, libraries, frameworks, and model architectures mentioned in the candidate's profile (e.g., PyTorch, YOLOv8n, Llama 4, Whisper, Inngest, Qdrant, FastAPI, Next.js, Docker).
+       - NEVER generalize a technical achievement into vague corporate speak (e.g., NEVER turn "integrating Llama 4 Scout Vision and Groq Whisper" into "integrating vision and speech models").
     
-    2. Your ONLY job is to take what is ALREADY in the candidate's profile and reframe it using the vocabulary and priorities of the JD.
-       - "Scalability", "latency", "reliability", "trade-offs", "throughput" are language choices, not new claims.
-       - Reword real metrics in JD-relevant framing.
+    2. PRESERVE ALL CONCRETE METRICS VERBATIM:
+       - Keep every parameter, speed metric, and volume figure exactly as given (e.g., "29M-parameter", "18-25 FPS across 80 categories", "sub-150ms vector search latency", "sub-50ms repeat-query latency", "1000-char chunking with 200-char overlap", "15+ REST APIs", "300+ technical documents").
+       - Do NOT invent metrics, and do NOT delete or round existing metrics.
     
-    3. If a missing keyword from the JD has NO real counterpart in the candidate's profile, do NOT force it in.
-       Instead, write the bullet without it. A true, strong bullet beats a fabricated one every time.
+    3. AUTHORITATIVE ENGINEERING ACTION VERBS:
+       - Every bullet MUST start with a strong technical action verb:
+         "Engineered", "Architected", "Delivered", "Tuned", "Designed", "Built", "Cut", "Automated", "Created".
+       - NEVER start with passive, administrative, or soft verbs like "Translated requirements", "Validated system outputs", "Assisted", "Worked on".
     
-    4. Write using the XYZ formula: "Accomplished [X] as measured by [Y], by doing [Z]."
-       Only use metrics that already exist verbatim in the profile (e.g., "sub-50ms latency", "35K embeddings", "18-25 FPS").
+    4. NO KEYWORD STUFFING:
+       - Missing JD keywords: {keywords_str}
+       - If a keyword has a genuine technical counterpart in the candidate's work, weave it in naturally at most ONCE or TWICE.
+       - NEVER force the same keyword repeatedly into consecutive bullets.
     
-    5. Never use: {BANNED_WORDS}
+    5. STRUCTURE & CONCISENESS:
+       - Follow the formula: [Action Verb] [Technical What / Architecture] [Measurable Metric / Latency / Scale].
+       - Maximum 2 lines per bullet. High signal-to-noise ratio.
+       - Never use: {BANNED_WORDS}
     
-    Candidate's Actual Profile (source of truth — do not invent beyond this):
+    Candidate's Actual Profile (source of truth):
     {resume_summary}
     
-    Target Job Description (use only for vocabulary and framing):
+    Target Job Description (for vocabulary and priorities):
     {jd_text[:3000]}
-    
-    JD Keywords to weave in IF a real counterpart exists in the profile: {keywords_str}
     
     Return exactly 3 to 5 bullet points.
     """
@@ -78,10 +87,9 @@ def tailor_resume_bullets(resume_summary: str, jd_text: str, missing_keywords: L
         return ["Failed to generate tailored bullets. Please try again."]
 
 
-
 def generate_targeted_cover_letter(resume_summary: str, jd_text: str, role_title: str, company: str) -> str:
     """
-    Generates a highly personalized, structurally unique cover letter using Llama 3.3 70B.
+    Generates a highly personalized, structurally unique cover letter using Llama 3.3 70B / Claude-level standard.
     """
     prompt = f"""
     You are writing a cover letter for a candidate applying for the '{role_title}' role at '{company}'.
@@ -93,7 +101,7 @@ def generate_targeted_cover_letter(resume_summary: str, jd_text: str, role_title
        - Do NOT start with "I am writing to express my interest in..." or "I am thrilled to apply for..."
        - Do NOT end with "In conclusion" or "I look forward to hearing from you."
     3. Start immediately with a strong, factual hook about a relevant technical achievement from the candidate's profile that perfectly matches the JD.
-    4. Vary your sentence lengths. Keep it under 250 words.
+    4. Vary your sentence lengths. Keep it under 200 words.
     5. Be direct, professional, understated, and factual.
     
     Base Candidate Profile:
@@ -110,7 +118,7 @@ def generate_targeted_cover_letter(resume_summary: str, jd_text: str, role_title
 
 
 def _parse_json_response(raw: str) -> dict:
-    """Strips markdown fences and parses JSON."""
+    """Strips markdown fences and parses JSON safely."""
     raw = raw.strip()
     if raw.startswith("```json"):
         raw = raw[7:]
@@ -121,17 +129,62 @@ def _parse_json_response(raw: str) -> dict:
     return json.loads(raw.strip())
 
 
+def tailor_professional_summary(original_summary: Optional[str], raw_content: str, jd_text: str, target_role: str = "") -> str:
+    """
+    Generates an authoritative 4-sentence summary following Claude's exact formula:
+    Sentence 1: Education, CS specialization, and engineering pillars (backend, applied AI, full-stack).
+    Sentence 2: Technology internship delivery at scale (APIs shipped, data/documents indexed, latency).
+    Sentence 3: Portfolio breadth (from-scratch model training pipeline, multi-service systems).
+    Sentence 4: Hard proficiencies (Python, JS/TS, DSA, OOP, modern practices) and explicit target role.
+    """
+    prompt = f"""
+    You are an elite technical resume writer. Write a 4-sentence professional summary for this candidate
+    targeting the role: '{target_role or "Software Engineer"}'.
+    
+    STRICT CLAUDE SUMMARY FORMULA (4 sentences total, dense and authoritative):
+    - Sentence 1: Level/Degree + CS Specialization + core engineering pillars (e.g. "Final-year B.Tech (Computer Science specialization, Electronics & Communication Engineering) undergraduate with hands-on software engineering experience across backend systems, applied AI, and full-stack delivery.")
+    - Sentence 2: Production internship highlight with concrete volume/scope (e.g. "During a technology internship, built and shipped 15+ production REST APIs while working cross-functionally to translate requirements into working systems.")
+    - Sentence 3: Independent technical portfolio breadth (e.g. "Independently designed and delivered four additional full-stack projects, including a from-scratch model-training pipeline and a multi-service integration platform.")
+    - Sentence 4: Core technical proficiencies + Target Role (e.g. "Proficient in Python, JavaScript/TypeScript, data structures & algorithms, OOP, and modern engineering practices (Git, CI/CD, testing). Seeking {target_role or 'Software Engineer'} roles.")
+    
+    ABSOLUTE RULES:
+    - NEVER use hedging or weak phrases like "Comfortable with", "familiar with", or "seeking to learn".
+    - NEVER use generic consulting fluff like "translating ambiguous business and technical requirements into working solutions" unless the target role is explicitly a consulting role.
+    - Keep it strictly to 4 sentences. Dense, confident, and professional.
+    - Never use: {BANNED_WORDS}
+    
+    Candidate's Resume Text:
+    {raw_content[:4000]}
+    
+    Target Job Description:
+    {jd_text[:2000]}
+    
+    Return ONLY the 4-sentence summary paragraph as plain text. No preambles, no quotes.
+    """
+    try:
+        res = generate_tailoring_text(prompt).strip()
+        # Clean stray quotes
+        if res.startswith('"') and res.endswith('"'):
+            res = res[1:-1].strip()
+        return res
+    except Exception as e:
+        print(f"[Tailor] Summary tailoring failed: {e}")
+        return original_summary or ""
+
+
 def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywords: List[str], one_page_only: bool = False, custom_instructions: str = "") -> Dict:
     """
-    Two-pass LLM pipeline to generate a fully tailored resume JSON:
+    Two-pass LLM pipeline to generate a fully tailored resume JSON adhering to Claude's guidelines:
     
     Pass 1: Structure Extraction
-      Parses the raw resume text (from the PDF) into a clean JSON schema
-      (name, contact, experience, projects, education, skills).
+      Parses raw resume text into clean JSON schema (name, contact, experience, projects, education, skills).
+      Preserves all 4 projects and extracts clean GitHub links and metadata.
     
-    Pass 2: Bullet Tailoring (Anti-Hallucination)
-      Rewrites ONLY the bullet points in each experience/project section
-      using JD-aligned vocabulary, without inventing any new facts.
+    Pass 2: Content & Bullet Tailoring (Anti-Dilution & High Technical Signal)
+      - Generates an authoritative 4-sentence Claude-style summary.
+      - Rewrites bullet points starting with active engineering verbs, preserving all technologies,
+        model names (PyTorch, YOLOv8n, Whisper, Llama 4, Inngest), and quantitative metrics verbatim.
+      - Ensures all 4 projects are retained (no project deletion).
     
     Returns a dict matching the docx_generator schema.
     """
@@ -146,8 +199,14 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     RULES:
     - Extract ONLY information that is explicitly present in the text. 
     - Do NOT invent, infer, or fill missing values. If a field is missing, use null or an empty list.
-    - For "bullets" under experience/projects: copy the existing bullet points verbatim. Do NOT rewrite them yet.
-    - For "skills", split the skills by category (languages, frameworks, tools, databases) as best you can from the text.
+    - If a field is absent, use null or "" (NEVER output the literal string "None").
+    - For projects: "name" is the project name (e.g. "LitLens AI"), "tech" is the project repo link or key stack (e.g. "github.com/error404en/LitLensAI").
+    - For "bullets" under experience/projects: copy the existing bullet points verbatim.
+    - For "skills", split skills into:
+      "languages": languages + core CS fundamentals (e.g. "Python, C++, JavaScript/TypeScript, SQL, DSA, OOP, DBMS, OS, Computer Networks, System Design")
+      "frameworks": web/ML frameworks (e.g. "FastAPI, React, Next.js, Tailwind CSS, PyTorch, LangChain")
+      "tools": tools and DevOps (e.g. "Git, GitHub, Docker, Postman, Linux/CLI, CI/CD")
+      "databases": database systems (e.g. "PostgreSQL (Supabase), Qdrant")
     
     Return ONLY a raw JSON object (no markdown fences) matching this exact schema:
     {{
@@ -161,7 +220,7 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
         {{
           "company": "string",
           "title": "string",
-          "location": "string",
+          "location": "string or null",
           "dates": "string",
           "bullets": ["string"]
         }}
@@ -201,22 +260,36 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
         raise ValueError("Failed to parse resume structure. Please ensure your resume has clear section headings.")
 
     # ─────────────────────────────────────────────────────────
-    # PASS 2: Tailor bullet points (anti-hallucination)
+    # PASS 2: Tailor Professional Summary & Bullets
     # ─────────────────────────────────────────────────────────
     keywords_str = ", ".join(missing_keywords) if missing_keywords else "None"
 
-    if one_page_only:
-        # Prune structure before tailoring to ensure it fits on one page
-        if "experience" in resume_json:
-            resume_json["experience"] = resume_json["experience"][:3]
-            for exp in resume_json["experience"]:
-                exp["bullets"] = exp.get("bullets", [])[:3]
-        if "projects" in resume_json:
-            resume_json["projects"] = resume_json["projects"][:2]
-            for proj in resume_json["projects"]:
-                proj["bullets"] = proj.get("bullets", [])[:2]
+    # Extract target role title from JD if available
+    target_role = "Software Engineer"
+    role_match = re.search(r"(Software Engineer|Backend Engineer|Full Stack Engineer|Data Engineer|Applied AI Engineer|AI/ML Engineer|Business Technology Analyst)", jd_text, re.IGNORECASE)
+    if role_match:
+        target_role = role_match.group(1)
 
-    # Collect all bullets into one list with a section label for traceability
+    # 1. Tailor Summary to match Claude's 4-sentence formula
+    tailored_summary = tailor_professional_summary(
+        original_summary=resume_json.get("summary"),
+        raw_content=raw_content,
+        jd_text=jd_text,
+        target_role=target_role
+    )
+    if tailored_summary:
+        resume_json["summary"] = tailored_summary
+
+    # 2. Ensure ALL projects are preserved without truncation
+    # Cap bullets per project to 2-3 to guarantee a crisp 1-page fit
+    for proj in resume_json.get("projects", []):
+        if len(proj.get("bullets", [])) > 3:
+            proj["bullets"] = proj["bullets"][:3]
+    for exp in resume_json.get("experience", []):
+        if len(exp.get("bullets", [])) > 3:
+            exp["bullets"] = exp["bullets"][:3]
+
+    # Collect all bullets into one indexed list
     all_bullets = []
     for i, exp in enumerate(resume_json.get("experience", [])):
         for b in exp.get("bullets", []):
@@ -226,35 +299,45 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
             all_bullets.append({"section": "projects", "index": i, "original": b})
 
     if not all_bullets:
-        return resume_json  # Nothing to tailor
+        return resume_json
 
     bullets_input = json.dumps([item["original"] for item in all_bullets], indent=2)
-
-    one_page_rule = "8. MANDATORY: The user wants a strictly 1-page resume. Aggressively cut down older, less relevant experience, projects, or less impactful bullets if they don't strongly match the JD." if one_page_only else ""
-    custom_rule = f"9. CUSTOM INSTRUCTIONS: {custom_instructions}" if custom_instructions else ""
+    custom_rule = f"MANDATORY CUSTOM INSTRUCTIONS: {custom_instructions}" if custom_instructions else ""
 
     tailor_prompt = f"""
-    You are an elite technical resume writer. Rewrite the following resume bullet points
-    to better align with the target job description using JD-aligned vocabulary.
+    You are an elite technical resume writer generating resume bullets that match the gold-standard quality of Claude.
+    Rewrite the following resume bullet points to align with the target job description while strictly obeying Claude's writing guidelines.
     
-    ABSOLUTE RULES — violating any means you have failed:
-    1. Do NOT invent any technology, metric, architecture, or claim not present in the original bullet.
-    2. Do NOT add tools, libraries, databases, or frameworks that are not already in the bullet text.
-    3. Reframe using JD vocabulary only (e.g., "scalability", "low-latency", "high-throughput").
-    4. If a JD keyword from the list has NO real counterpart in a bullet, do NOT force it in.
-    5. Never use: {BANNED_WORDS} (no em dashes, hyphens replacing em dashes, or generic AI markers).
-    6. Preserve the XYZ structure wherever it exists. Keep metrics verbatim.
-    7. Return EXACTLY the same number of bullets as the input, in the same order, as a JSON array of strings (unless pruning for 1-page requirement).
-    {one_page_rule}
+    CLAUDE BULLET GUIDELINES (STRICT COMPLIANCE REQUIRED):
+    1. ZERO TECHNICAL DILUTION:
+       - You MUST preserve all specific tools, libraries, frameworks, model names, and architectures mentioned in each bullet (e.g. PyTorch, YOLOv8n, Llama 4, Groq Whisper, TinyStories, DistilBERT, Inngest, Qdrant, D3.js, FastAPI, Next.js, Supabase, Docker).
+       - NEVER dilute engineering details into vague abstractions (e.g. NEVER replace "integrating Llama 4 Scout Vision and Groq Whisper" with "integrating vision and speech models"; NEVER replace "from-scratch 29M-parameter GPT-style transformer in PyTorch" with "built a FastAPI backend").
+    
+    2. CONCRETE METRICS VERBATIM:
+       - Every metric and parameter must be preserved verbatim (e.g. "29M-parameter", "18-25 FPS across 80 categories", "sub-150ms vector search latency", "sub-50ms repeat-query latency", "1000-character chunking with 200-character overlap", "15+ REST APIs", "300+ technical documents").
+       - Do NOT delete or round down metrics, and do NOT fabricate new ones.
+    
+    3. AUTHORITATIVE ENGINEERING ACTION VERBS:
+       - Every bullet MUST begin with a decisive engineering action verb:
+         "Engineered", "Architected", "Delivered", "Tuned", "Designed", "Built", "Cut", "Automated", "Created".
+       - NEVER use passive or administrative verbs like "Translated requirements", "Validated system outputs", "Helped", "Assisted", "Worked on".
+    
+    4. NO KEYWORD STUFFING:
+       - Target JD Keywords: {keywords_str}
+       - If a keyword has a genuine architectural counterpart in the bullet, adapt framing naturally at most ONCE or TWICE across the entire resume.
+       - NEVER repeatedly insert the same JD keyword into multiple consecutive bullets.
+    
+    5. FORMATTING & DENSITY:
+       - Exactly 1 to 2 lines per bullet. Concise, high-density, action -> architecture -> metric.
+       - Return EXACTLY the same number of bullets ({len(all_bullets)}), in the exact same order.
+       - Never use: {BANNED_WORDS}
     {custom_rule}
     
     Input bullets (rewrite these, same count, same order):
     {bullets_input}
     
-    Target JD (vocabulary/framing guide only):
+    Target Job Description:
     {jd_text[:2000]}
-    
-    Missing JD keywords to weave in IF a real counterpart exists: {keywords_str}
     
     Return ONLY a raw JSON array of strings. Example: ["bullet 1", "bullet 2", ...]
     """
@@ -262,8 +345,9 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     try:
         raw_tailor = generate_tailoring_text(tailor_prompt)
         tailored_bullets = _parse_json_response(raw_tailor)
-        if not isinstance(tailored_bullets, list):
-            raise ValueError("Expected a list")
+        if not isinstance(tailored_bullets, list) or len(tailored_bullets) != len(all_bullets):
+            print(f"[Tailor DOCX] Bullet count mismatch (got {len(tailored_bullets) if isinstance(tailored_bullets, list) else 'non-list'}, expected {len(all_bullets)}). Using original bullets.")
+            tailored_bullets = [item["original"] for item in all_bullets]
     except Exception as e:
         print(f"[Tailor DOCX] Pass 2 (tailor) failed: {e}. Using original bullets.")
         tailored_bullets = [item["original"] for item in all_bullets]
