@@ -342,6 +342,8 @@ def _parse_and_score_job(req: ParseRequest, user_id: str, background_tasks: Back
         "pay_max": parsed_job.pay_max,
         "pay_currency": parsed_job.pay_currency,
         "pay_confidence": parsed_job.pay_confidence,
+        "posting_date": parsed_job.posting_date,
+        "region_wise_salary": parsed_job.region_wise_salary,
         "deadline": parsed_job.deadline_date,
         "seniority_required": parsed_job.seniority_required,
         "required_skills": parsed_job.required_skills,

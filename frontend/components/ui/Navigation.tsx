@@ -34,7 +34,7 @@ export function Navigation() {
             
             if (link.color === 'indigo') {
                return (
-                <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 group transition-colors shrink-0 ${isActive ? 'text-indigo-300' : 'text-indigo-400 hover:text-indigo-300'}`}>
+                <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg group transition-all shrink-0 ${isActive ? 'bg-indigo-500/15 text-indigo-300 shadow-[0_0_10px_rgba(99,102,241,0.1)] border border-indigo-500/20' : 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/5 border border-transparent'}`}>
                   <Icon className={`w-4 h-4 transition-all ${isActive ? 'drop-shadow-[0_0_8px_rgba(129,140,248,0.8)]' : 'group-hover:drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]'}`} /> 
                   <span className={`${isActive ? 'block' : 'hidden lg:block'} sm:block`}>{link.label}</span>
                 </Link>
@@ -42,7 +42,7 @@ export function Navigation() {
             }
 
             return (
-              <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 group transition-colors shrink-0 ${isActive ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-100'}`}>
+              <Link key={link.href} href={link.href} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg group transition-all shrink-0 ${isActive ? 'bg-zinc-800 text-zinc-100 shadow-sm border border-zinc-700/50' : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 border border-transparent'}`}>
                 <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-zinc-100' : 'text-zinc-500 group-hover:text-zinc-100'}`} /> 
                 <span className={`${isActive ? 'block' : 'hidden lg:block'} sm:block`}>{link.label}</span>
               </Link>
