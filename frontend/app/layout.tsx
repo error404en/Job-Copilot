@@ -28,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50 min-h-screen selection:bg-indigo-500/30`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50 min-h-screen selection:bg-indigo-500/30 overflow-x-hidden`}>
         <ClerkProvider>
           <Providers>
           <nav className="bg-zinc-950/70 backdrop-blur-xl border-b border-zinc-800/80 px-6 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm transition-all">
