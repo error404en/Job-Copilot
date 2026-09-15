@@ -259,9 +259,9 @@ export default function TrackerPage() {
 
       {/* Main Content Area */}
       {!isLoading && (
-        <div className="min-h-[60vh]">
+        <div className="min-h-[60vh] w-full overflow-hidden">
           {viewMode === 'kanban' ? (
-            <div className="flex gap-4 overflow-x-auto pb-6 snap-x">
+            <div className="flex gap-4 overflow-x-auto pb-6 snap-x w-full">
               {STATUS_COLUMNS.map(col => {
                 const colApps = filteredApplications.filter((a: any) => a.status === col.id)
                 return (

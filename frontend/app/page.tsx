@@ -260,7 +260,7 @@ export default function Dashboard() {
       <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800/80 backdrop-blur-xl space-y-4 shadow-sm">
         {/* Row 1: Primary Tabs & Search */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="flex gap-2 w-full md:w-auto bg-zinc-950/50 p-1 rounded-xl border border-zinc-800/50">
+          <div className="flex gap-2 w-full md:w-auto bg-zinc-950/50 p-1 rounded-xl border border-zinc-800/50 overflow-x-auto no-scrollbar">
             <button 
               onClick={() => setFilter('all')} 
               className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${filter === 'all' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'}`}
