@@ -1,4 +1,7 @@
 'use client'
+import { ClipboardList, Building2, Plus, Search, MapPin, XCircle, MoreVertical, LayoutGrid, List, CheckCircle2, Star, CalendarClock, Briefcase, Send, Target, Phone, X, Check, ArrowUpRight } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+
 
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -142,446 +145,332 @@ export default function TrackerPage() {
     }
   }, [applications])
 
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-12">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-2">
-            <span>📋</span> Application Tracker
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(99,102,241,0.3)] border border-indigo-400/20">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            Application Tracker
           </h1>
-          <p className="text-zinc-400 text-sm">
+          <p className="text-zinc-400 text-sm max-w-xl">
             Manage your applications across stages, track interviews, and filter by place.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Link
             href="/companies"
-            className="bg-zinc-900 border border-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-colors flex items-center gap-2"
+            className="bg-zinc-900 border border-zinc-800/80 text-zinc-300 px-5 py-2.5 rounded-xl text-[13px] font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-2 shadow-sm shrink-0"
           >
-            <span>🏢</span> Browse Companies
+            <Building2 className="w-4 h-4 text-indigo-400" />
+            Browse Companies
           </Link>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-500 transition-colors shadow-sm"
+            className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold hover:bg-indigo-500 transition-all shadow-[0_4px_14px_rgba(79,70,229,0.3)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.4)] flex items-center gap-2"
           >
-            + Track New Application
+            <Plus className="w-4 h-4" /> Track New Application
           </button>
         </div>
       </div>
 
       {/* Quick Stats Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 backdrop-blur-sm">
-          <div className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Total Tracked</div>
-          <div className="text-2xl font-black text-white mt-1">{stats.total}</div>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-zinc-900/50 p-5 rounded-2xl border border-zinc-800/80 backdrop-blur-xl shadow-sm flex flex-col justify-center">
+          <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5"/> Total Tracked</div>
+          <div className="text-3xl font-black text-white">{stats.total}</div>
         </div>
-        <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 backdrop-blur-sm">
-          <div className="text-xs text-blue-400 uppercase tracking-wider font-semibold">Wishlist</div>
-          <div className="text-2xl font-black text-blue-400 mt-1">{stats.saved}</div>
+        <div className="bg-blue-900/10 p-5 rounded-2xl border border-blue-800/30 backdrop-blur-xl shadow-sm flex flex-col justify-center">
+          <div className="text-[11px] text-blue-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Star className="w-3.5 h-3.5"/> Wishlist</div>
+          <div className="text-3xl font-black text-blue-100">{stats.saved}</div>
         </div>
-        <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 backdrop-blur-sm">
-          <div className="text-xs text-purple-400 uppercase tracking-wider font-semibold">Applied</div>
-          <div className="text-2xl font-black text-purple-400 mt-1">{stats.applied}</div>
+        <div className="bg-purple-900/10 p-5 rounded-2xl border border-purple-800/30 backdrop-blur-xl shadow-sm flex flex-col justify-center">
+          <div className="text-[11px] text-purple-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Send className="w-3.5 h-3.5"/> Applied</div>
+          <div className="text-3xl font-black text-purple-100">{stats.applied}</div>
         </div>
-        <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 backdrop-blur-sm">
-          <div className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Interviewing</div>
-          <div className="text-2xl font-black text-amber-400 mt-1">{stats.interview}</div>
+        <div className="bg-amber-900/10 p-5 rounded-2xl border border-amber-800/30 backdrop-blur-xl shadow-sm flex flex-col justify-center">
+          <div className="text-[11px] text-amber-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5"/> Interviewing</div>
+          <div className="text-3xl font-black text-amber-100">{stats.interview}</div>
         </div>
-        <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 backdrop-blur-sm">
-          <div className="text-xs text-green-400 uppercase tracking-wider font-semibold">Offers</div>
-          <div className="text-2xl font-black text-green-400 mt-1">{stats.offer}</div>
+        <div className="bg-green-900/10 p-5 rounded-2xl border border-green-800/30 backdrop-blur-xl shadow-sm flex flex-col justify-center">
+          <div className="text-[11px] text-green-400 uppercase tracking-widest font-bold mb-1 flex items-center gap-1.5"><Target className="w-3.5 h-3.5"/> Offers</div>
+          <div className="text-3xl font-black text-green-100">{stats.offer}</div>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80 backdrop-blur-md flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Location / Place Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 font-semibold uppercase tracking-wider">Place:</span>
-            <select
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="bg-zinc-950 border border-zinc-800 text-zinc-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="all">📍 All Locations</option>
-              <option value="bengaluru">Bengaluru / Bangalore</option>
-              <option value="mumbai">Mumbai</option>
-              <option value="pune">Pune</option>
-              <option value="hyderabad">Hyderabad</option>
-              <option value="delhi">Delhi / NCR / Noida</option>
-              <option value="chennai">Chennai</option>
-              <option value="pan india">Pan India</option>
-              <option value="remote">Remote</option>
-              {availableLocations.map((loc) => {
-                const lower = loc.toLowerCase()
-                if (['bengaluru', 'bangalore', 'mumbai', 'pune', 'hyderabad', 'delhi', 'chennai', 'remote', 'pan india'].some(p => lower.includes(p))) {
-                  return null
-                }
-                return <option key={loc} value={loc}>{loc}</option>
-              })}
-            </select>
-          </div>
-
-          {locationFilter !== 'all' && (
-            <button
-              onClick={() => setLocationFilter('all')}
-              className="text-xs text-blue-400 hover:underline"
-            >
-              Reset place
-            </button>
-          )}
-        </div>
-
-        {/* Search & View Switcher */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <span className="absolute left-3 top-2 text-zinc-500 text-xs">🔍</span>
+      {/* Filters & View Toggle */}
+      <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800/80 backdrop-blur-xl flex flex-col md:flex-row gap-4 justify-between items-center shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+          <div className="relative w-full sm:w-80 group">
+            <Search className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500 group-focus-within:text-indigo-400 transition-colors" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search company, role, notes..."
-              className="w-full bg-zinc-950 border border-zinc-800 text-white pl-8 pr-3 py-1.5 rounded-lg text-xs placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Search companies, roles, notes..."
+              className="w-full bg-zinc-950 border border-zinc-800 text-white pl-10 pr-8 py-2.5 rounded-xl text-[13px] placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
             />
           </div>
-
-          <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`px-3 py-1 text-xs font-semibold rounded ${viewMode === 'kanban' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+          
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-zinc-500" />
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="bg-zinc-950 border border-zinc-800 text-zinc-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-[13px] font-medium appearance-none pr-8 cursor-pointer relative"
+              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%2371717a%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpolyline points=%276 9 12 15 18 9%27%3E%3C/polyline%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
-              Columns
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-1 text-xs font-semibold rounded ${viewMode === 'list' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-            >
-              List
-            </button>
+              <option value="all">All Locations</option>
+              {availableLocations.map((loc) => (
+                <option key={loc} value={loc}>{loc}</option>
+              ))}
+            </select>
           </div>
+        </div>
+
+        <div className="bg-zinc-950 border border-zinc-800 p-1 rounded-xl flex">
+          <button
+            onClick={() => setViewMode('kanban')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'kanban' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" /> Board
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${viewMode === 'list' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            <List className="w-3.5 h-3.5" /> List
+          </button>
         </div>
       </div>
 
-      {/* Loading State */}
       {isLoading && (
-        <div className="p-12 text-center text-zinc-500 animate-pulse">Loading tracked applications...</div>
+        <div className="p-16 text-center text-zinc-500 animate-pulse font-medium flex items-center justify-center gap-2">
+           Loading tracked applications...
+        </div>
       )}
 
-      {/* KANBAN PIPELINE VIEW */}
-      {viewMode === 'kanban' && !isLoading && (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
-          {STATUS_COLUMNS.map((col) => {
-            const colApps = filteredApplications.filter((a: any) => a.status === col.id)
-            return (
-              <div key={col.id} className="bg-zinc-900/40 rounded-xl border border-zinc-800 p-3 space-y-3 min-h-[400px]">
-                {/* Column Header */}
-                <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 px-1">
-                  <div className="flex items-center gap-1.5 font-bold text-sm text-zinc-200">
-                    <span>{col.icon}</span>
-                    <span>{col.label}</span>
-                  </div>
-                  <span className="text-xs bg-zinc-800 text-zinc-400 font-mono px-2 py-0.5 rounded-full font-bold">
-                    {colApps.length}
-                  </span>
-                </div>
-
-                {/* Cards in this Column */}
-                <div className="space-y-2.5">
-                  {colApps.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-zinc-600 border border-dashed border-zinc-800/60 rounded-lg">
-                      No applications
+      {/* Main Content Area */}
+      {!isLoading && (
+        <div className="min-h-[60vh]">
+          {viewMode === 'kanban' ? (
+            <div className="flex gap-4 overflow-x-auto pb-6 snap-x">
+              {STATUS_COLUMNS.map(col => {
+                const colApps = filteredApplications.filter((a: any) => a.status === col.id)
+                return (
+                  <div key={col.id} className="min-w-[320px] max-w-[320px] shrink-0 bg-zinc-900/30 rounded-2xl border border-zinc-800/50 p-4 flex flex-col snap-center">
+                    <div className="flex items-center justify-between mb-4 px-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`text-[13px] font-bold text-zinc-200 tracking-wide`}>{col.label}</div>
+                      </div>
+                      <span className="bg-zinc-800 text-zinc-400 text-[10px] font-bold px-2 py-0.5 rounded-full">{colApps.length}</span>
                     </div>
-                  ) : (
-                    colApps.map((app: any) => {
-                      const job = app.jobs || {}
-                      const analysis = job.job_analyses && job.job_analyses[0]
-                      return (
-                        <div
-                          key={app.id}
-                          className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 hover:border-zinc-700 shadow-sm space-y-3 transition-all group"
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <h3 className="font-bold text-white text-sm leading-snug">
-                                {job.id && job.source !== 'manual_tracker' ? (
-                                  <Link href={`/jobs/${job.id}`} className="hover:text-blue-400 hover:underline">
-                                    {job.role_title || 'Role Title'}
-                                  </Link>
-                                ) : (
-                                  job.role_title || 'Role Title'
-                                )}
-                              </h3>
-                              {analysis && (
-                                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                                  analysis.match_score >= 80 ? 'text-green-400 bg-green-500/10' : 'text-amber-400 bg-amber-500/10'
-                                }`}>
-                                  {analysis.match_score}%
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-zinc-400 font-medium mt-1">
-                              {job.company || 'Company'}
-                            </div>
-                          </div>
 
-                          <div className="text-[11px] text-zinc-500 space-y-1">
-                            <div className="flex items-center gap-1">
-                              <span>📍</span>
-                              <span className="truncate">{job.location || 'Location Unclear'}</span>
+                    <div className="space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1">
+                      {colApps.map((app: any) => (
+                        <div key={app.id} className={`bg-zinc-950 p-4 rounded-xl border ${col.color} shadow-sm group hover:border-indigo-500/50 transition-colors flex flex-col gap-3 relative`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-bold text-white text-[15px] leading-tight mb-1">{app.jobs?.role_title}</div>
+                              <div className="text-xs font-medium text-indigo-400 flex items-center gap-1">
+                                <Building2 className="w-3.5 h-3.5" /> {app.jobs?.company}
+                              </div>
                             </div>
-                            {app.applied_at && (
-                              <div className="text-zinc-600">
-                                Applied: {new Date(app.applied_at).toLocaleDateString()}
-                              </div>
-                            )}
-                            {app.notes && (
-                              <div className="text-zinc-400 bg-zinc-900/80 p-1.5 rounded text-[11px] border border-zinc-800/50 mt-1 line-clamp-2">
-                                💬 {app.notes}
-                              </div>
+                            {app.job_id && (
+                              <Link href={`/jobs/${app.job_id}`} className="text-zinc-500 hover:text-indigo-400 transition-colors">
+                                <ArrowUpRight className="w-4 h-4" />
+                              </Link>
                             )}
                           </div>
 
-                          {/* Quick Status Shift Dropdown & Actions */}
-                          <div className="pt-2 border-t border-zinc-800/60 flex items-center justify-between gap-1 text-[11px]">
+                          <div className="text-[11px] text-zinc-400 flex items-center gap-2 flex-wrap">
+                            <span className="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded-md border border-zinc-800/80"><MapPin className="w-3 h-3 text-zinc-500"/> {app.jobs?.location || 'Unclear'}</span>
+                            <span className="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded-md border border-zinc-800/80"><CalendarClock className="w-3 h-3 text-zinc-500"/> {new Date(app.created_at).toLocaleDateString()}</span>
+                          </div>
+
+                          <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between">
                             <select
                               value={app.status}
                               onChange={(e) => updateStatusMutation.mutate({ id: app.id, status: e.target.value })}
-                              className="bg-zinc-900 text-zinc-300 border border-zinc-800 rounded px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="bg-zinc-900 border border-zinc-800 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none pr-6 cursor-pointer"
+                              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%2371717a%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpolyline points=%276 9 12 15 18 9%27%3E%3C/polyline%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
                             >
-                              <option value="saved">📌 Wishlist</option>
-                              <option value="applied">📨 Applied</option>
-                              <option value="interview">📞 Interview</option>
-                              <option value="offer">🎯 Offer</option>
-                              <option value="rejected">❌ Inactive</option>
+                              {STATUS_COLUMNS.map(c => (
+                                <option key={c.id} value={c.id}>{c.label}</option>
+                              ))}
                             </select>
 
-                            <div className="flex items-center gap-1.5">
-                              {job.url && job.url !== 'Screenshot Upload' && (
-                                <a
-                                  href={job.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-zinc-400 hover:text-white px-1.5 py-0.5 bg-zinc-900 rounded border border-zinc-800 hover:bg-zinc-800"
-                                  title="Open Job URL"
-                                >
-                                  ↗
-                                </a>
-                              )}
-                              <button
-                                onClick={() => deleteAppMutation.mutate(app.id)}
-                                className="text-zinc-600 hover:text-red-400 p-1 transition-colors"
-                                title="Remove from Tracker"
-                              >
-                                ✕
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => {
+                                if (confirm('Remove this application from tracker?')) deleteAppMutation.mutate(app.id)
+                              }}
+                              className="text-zinc-600 hover:text-red-400 p-1 rounded-md transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* TABLE / LIST VIEW */}
-      {viewMode === 'list' && !isLoading && (
-        <div className="bg-zinc-900/40 rounded-xl border border-zinc-800 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-400 uppercase tracking-wider text-[10px] bg-zinc-950/50">
-                  <th className="py-3 px-4">Role Title</th>
-                  <th className="py-3 px-4">Company</th>
-                  <th className="py-3 px-4">Place / Location</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Applied Date</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                {filteredApplications.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-zinc-500">
-                      No applications match your filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredApplications.map((app: any) => {
-                    const job = app.jobs || {}
-                    return (
-                      <tr key={app.id} className="hover:bg-zinc-900/30">
-                        <td className="py-3 px-4 font-semibold text-white">
-                          {job.id && job.source !== 'manual_tracker' ? (
-                            <Link href={`/jobs/${job.id}`} className="hover:text-blue-400 hover:underline">
-                              {job.role_title || 'Untitled Role'}
-                            </Link>
-                          ) : (
-                            job.role_title || 'Untitled Role'
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-zinc-300">{job.company || '—'}</td>
-                        <td className="py-3 px-4 text-zinc-400">{job.location || 'Location Unclear'}</td>
-                        <td className="py-3 px-4">
-                          <select
-                            value={app.status}
-                            onChange={(e) => updateStatusMutation.mutate({ id: app.id, status: e.target.value })}
-                            className="bg-zinc-950 border border-zinc-800 text-zinc-200 rounded px-2 py-1 text-xs focus:outline-none"
-                          >
-                            <option value="saved">📌 Wishlist</option>
-                            <option value="applied">📨 Applied</option>
-                            <option value="interview">📞 Interview</option>
-                            <option value="offer">🎯 Offer</option>
-                            <option value="rejected">❌ Inactive</option>
-                          </select>
-                        </td>
-                        <td className="py-3 px-4 text-zinc-500 font-mono">
-                          {app.applied_at ? new Date(app.applied_at).toLocaleDateString() : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right space-x-2">
-                          {job.url && job.url !== 'Screenshot Upload' && (
-                            <a
-                              href={job.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:underline inline-block"
-                            >
-                              Apply ↗
-                            </a>
-                          )}
-                          <button
-                            onClick={() => deleteAppMutation.mutate(app.id)}
-                            className="text-zinc-500 hover:text-red-400 font-bold"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Add Custom Application Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h2 className="text-xl font-bold text-white">Track New Job Application</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-white">✕</button>
+                      ))}
+                      {colApps.length === 0 && (
+                        <div className="text-center py-8 text-[11px] text-zinc-600 font-medium border border-dashed border-zinc-800/80 rounded-xl bg-zinc-900/20">
+                          Empty
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
+          ) : (
+            <div className="bg-zinc-900/40 rounded-2xl border border-zinc-800/80 overflow-hidden backdrop-blur-sm shadow-sm">
+              <table className="w-full text-left text-[13px]">
+                <thead className="bg-zinc-950/80 border-b border-zinc-800">
+                  <tr className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="p-4 pl-6">Company & Role</th>
+                    <th className="p-4">Location</th>
+                    <th className="p-4">Applied Date</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4 text-right pr-6">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/60">
+                  {filteredApplications.map((app: any) => (
+                    <tr key={app.id} className="hover:bg-zinc-900/80 transition-colors group">
+                      <td className="p-4 pl-6">
+                        <div className="font-bold text-white text-[14px]">{app.jobs?.role_title}</div>
+                        <div className="text-indigo-400 font-medium text-[12px] flex items-center gap-1 mt-0.5">
+                          <Building2 className="w-3.5 h-3.5"/> {app.jobs?.company}
+                        </div>
+                      </td>
+                      <td className="p-4 text-zinc-400">
+                        <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {app.jobs?.location || 'Unclear'}</span>
+                      </td>
+                      <td className="p-4 text-zinc-400 font-mono text-xs">
+                        {new Date(app.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={app.status}
+                          onChange={(e) => updateStatusMutation.mutate({ id: app.id, status: e.target.value })}
+                          className={`border text-[11px] font-bold rounded-lg px-2.5 py-1.5 focus:outline-none appearance-none pr-7 cursor-pointer ${STATUS_COLUMNS.find(c => c.id === app.status)?.color}`}
+                          style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27currentColor%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpolyline points=%276 9 12 15 18 9%27%3E%3C/polyline%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
+                        >
+                          {STATUS_COLUMNS.map(c => (
+                            <option key={c.id} value={c.id}>{c.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-4 text-right pr-6 space-x-2">
+                        {app.job_id && (
+                          <Link href={`/jobs/${app.job_id}`} className="inline-flex p-1.5 bg-zinc-900 text-zinc-400 hover:text-indigo-400 rounded-md transition-colors border border-zinc-800">
+                            <ArrowUpRight className="w-4 h-4" />
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (confirm('Remove application?')) deleteAppMutation.mutate(app.id)
+                          }}
+                          className="inline-flex p-1.5 bg-zinc-900 text-zinc-500 hover:text-red-400 rounded-md transition-colors border border-zinc-800"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredApplications.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-12 text-center text-zinc-500">
+                        <ClipboardList className="w-12 h-12 text-zinc-700 mx-auto mb-3" />
+                        No applications found in the tracker.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
-            <form onSubmit={handleCreateApplication} className="space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-3">
+      {/* Manual Application Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative animate-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="absolute right-4 top-4 text-zinc-500 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-indigo-500" />
+              Manual Entry
+            </h2>
+            <form onSubmit={handleCreateApplication} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Company *</label>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1.5">Company *</label>
                   <input
                     type="text"
                     required
                     value={newCompany}
                     onChange={(e) => setNewCompany(e.target.value)}
-                    placeholder="e.g. Barclays, HSBC, Google"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Role Title *</label>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1.5">Role Title *</label>
                   <input
                     type="text"
                     required
                     value={newRole}
                     onChange={(e) => setNewRole(e.target.value)}
-                    placeholder="e.g. Analyst, Associate, SDE"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
                   />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Location / Place</label>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1.5">Location</label>
                   <input
                     type="text"
                     value={newLocation}
                     onChange={(e) => setNewLocation(e.target.value)}
-                    placeholder="e.g. Bengaluru, Mumbai, Remote"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Expected / Offered CTC</label>
-                  <input
-                    type="text"
-                    value={newSalary}
-                    onChange={(e) => setNewSalary(e.target.value)}
-                    placeholder="e.g. ₹19.66L CTC"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Application Status</label>
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1.5">Status</label>
                   <select
                     value={newStatus}
                     onChange={(e) => setNewStatus(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner appearance-none"
                   >
-                    <option value="saved">📌 Wishlist / Saved</option>
-                    <option value="applied">📨 Applied</option>
-                    <option value="interview">📞 Interviewing</option>
-                    <option value="offer">🎯 Offered</option>
+                    {STATUS_COLUMNS.map(c => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Application URL</label>
-                  <input
-                    type="url"
-                    value={newUrl}
-                    onChange={(e) => setNewUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-zinc-400 mb-1">Notes / Referral Info</label>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wide mb-1.5">Notes</label>
                 <textarea
-                  rows={2}
                   value={newNotes}
                   onChange={(e) => setNewNotes(e.target.value)}
-                  placeholder="e.g. Applied via referral, follow up next Tuesday..."
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-blue-500 text-xs"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[13px] text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner min-h-[80px]"
                 />
               </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white bg-zinc-900"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !newCompany || !newRole}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-xs font-bold disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Adding...' : 'Add to Tracker'}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl hover:bg-indigo-500 transition-all disabled:opacity-50 mt-2 shadow-[0_4px_14px_rgba(79,70,229,0.3)]"
+              >
+                {isSubmitting ? 'Saving...' : 'Save Application'}
+              </button>
             </form>
           </div>
         </div>
