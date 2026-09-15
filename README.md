@@ -1,6 +1,6 @@
-# ?? JobCopilot — AI-Powered Job Application Platform
+# ?? JobCopilot â€” AI-Powered Job Application Platform
 
-> Analyze job postings, score your resume match, track applications, and auto-discover roles — all in one place.
+> Analyze job postings, score your resume match, track applications, and auto-discover roles â€” all in one place.
 
 ![Stack](https://img.shields.io/badge/Next.js-16-black?logo=next.js) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green?logo=fastapi) ![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?logo=supabase) ![Gemini](https://img.shields.io/badge/Gemini-AI-4285F4?logo=google) ![Groq](https://img.shields.io/badge/Groq-LLaMA-F55036)
 
@@ -26,7 +26,7 @@
 | Feature | Description |
 |---|---|
 | **JD Analysis** | Paste any job description ? AI extracts skills, pay, seniority, remote type |
-| **Resume Match Scoring** | 0–100 score against your resume + verdict (Apply / Stretch / Skip) |
+| **Resume Match Scoring** | 0â€“100 score against your resume + verdict (Apply / Stretch / Skip) |
 | **Screenshot Upload** | Upload a job screenshot ? OCR via Gemini Vision ? instant analysis |
 | **URL Scrape** | Paste a job URL ? auto-fetches and analyzes the posting |
 | **Company Deep Dive** | 3-tier discovery: known ATS API ? ATS search ? careers page scrape |
@@ -36,6 +36,8 @@
 | **Daily Digest** | Top matches from the last 24h, sorted by score |
 | **Resume Manager** | Upload multiple tailored resumes; AI extracts skills for matching |
 | **Job Bookmarking** | Bookmark roles for later review |
+| **Tailored Resume Generator** | Automatically generate AI-tailored .docx resumes for specific jobs |
+| **Copilot Coach** | Interactive chat interface with full history for job application strategy and prep |
 
 ---
 
@@ -49,7 +51,7 @@ Frontend (Next.js 16)
                                 +-- Job Fetcher (Greenhouse/Lever/Ashby/Scraper)
                                 +-- Company Researcher (LLM + DDG)
                                 +-- Application Prep (LLM)
-                                +-- Scheduler (APScheduler — daily digest)
+                                +-- Scheduler (APScheduler â€” daily digest)
 
 LLM Waterfall (6 models, never crashes):
   Gemini 2.0 Flash ? Gemini 1.5 Flash ? Gemini 1.5 Flash-8B
@@ -62,7 +64,7 @@ Data Layer:
 ### Key Design Decisions
 
 - **6-model LLM waterfall**: Falls through Gemini and Groq models automatically on rate limits or errors.
-- **Next.js rewrite proxy**: All frontend calls go to `/api/*` — point `NEXT_PUBLIC_BACKEND_URL` to any backend URL without touching code.
+- **Next.js rewrite proxy**: All frontend calls go to `/api/*` â€” point `NEXT_PUBLIC_BACKEND_URL` to any backend URL without touching code.
 - **3-tier job discovery**: Direct ATS API ? DDG search for ATS ? Generic careers page scrape + LLM extraction.
 
 ---
@@ -250,13 +252,13 @@ npm run dev
 
 ## ?? LLM Fallback System
 
-Every AI call goes through a **6-model waterfall** — the system never crashes due to rate limits:
+Every AI call goes through a **6-model waterfall** â€” the system never crashes due to rate limits:
 
 ```
 Primary chain (Gemini):
   gemini-2.0-flash ? gemini-1.5-flash ? gemini-1.5-flash-8b
 
-Fallback chain (Groq — activates if all Gemini fail):
+Fallback chain (Groq â€” activates if all Gemini fail):
   llama-3.1-8b-instant ? llama3-70b-8192 ? mixtral-8x7b-32768
 ```
 
@@ -314,7 +316,7 @@ All endpoints are prefixed with `/api/`. In development they go through the Next
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/research/company` | Company deep dive — returns company info + discovered jobs |
+| `POST` | `/api/research/company` | Company deep dive â€” returns company info + discovered jobs |
 
 **Request body for `/api/research/company`:**
 ```json
@@ -342,15 +344,15 @@ git push origin feat/my-feature
 ```
 
 ### Rules
-- All LLM calls must go through `llm_client.py` — never instantiate Gemini/Groq clients elsewhere.
-- All frontend API calls must use `/api/...` path — never hardcode `localhost:8000`.
+- All LLM calls must go through `llm_client.py` â€” never instantiate Gemini/Groq clients elsewhere.
+- All frontend API calls must use `/api/...` path â€” never hardcode `localhost:8000`.
 - New tables need a corresponding SQL migration file.
 
 ---
 
 ## ?? License
 
-MIT — free to use, fork, and build on.
+MIT â€” free to use, fork, and build on.
 
 ---
 
