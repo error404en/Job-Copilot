@@ -9,7 +9,7 @@ class TailoredBullets(BaseModel):
 BANNED_WORDS = (
     "delve, dive, navigate, landscape, tapestry, thrilled, excited, passionate, honored, "
     "robust, dynamic, seamless, cutting-edge, unparalleled, testament to, pivotal, transformative, "
-    "In today's fast-paced, Spearheaded, Synergized"
+    "In today's fast-paced, Spearheaded, Synergized, —, -, em dash"
 )
 
 def tailor_resume_bullets(resume_summary: str, jd_text: str, missing_keywords: List[str]) -> List[str]:
@@ -121,7 +121,7 @@ def _parse_json_response(raw: str) -> dict:
     return json.loads(raw.strip())
 
 
-def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywords: List[str]) -> Dict:
+def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywords: List[str], one_page_only: bool = False, custom_instructions: str = "") -> Dict:
     """
     Two-pass LLM pipeline to generate a fully tailored resume JSON:
     
@@ -205,6 +205,17 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     # ─────────────────────────────────────────────────────────
     keywords_str = ", ".join(missing_keywords) if missing_keywords else "None"
 
+    if one_page_only:
+        # Prune structure before tailoring to ensure it fits on one page
+        if "experience" in resume_json:
+            resume_json["experience"] = resume_json["experience"][:3]
+            for exp in resume_json["experience"]:
+                exp["bullets"] = exp.get("bullets", [])[:3]
+        if "projects" in resume_json:
+            resume_json["projects"] = resume_json["projects"][:2]
+            for proj in resume_json["projects"]:
+                proj["bullets"] = proj.get("bullets", [])[:2]
+
     # Collect all bullets into one list with a section label for traceability
     all_bullets = []
     for i, exp in enumerate(resume_json.get("experience", [])):
@@ -219,6 +230,9 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
 
     bullets_input = json.dumps([item["original"] for item in all_bullets], indent=2)
 
+    one_page_rule = "8. MANDATORY: The user wants a strictly 1-page resume. Aggressively cut down older, less relevant experience, projects, or less impactful bullets if they don't strongly match the JD." if one_page_only else ""
+    custom_rule = f"9. CUSTOM INSTRUCTIONS: {custom_instructions}" if custom_instructions else ""
+
     tailor_prompt = f"""
     You are an elite technical resume writer. Rewrite the following resume bullet points
     to better align with the target job description using JD-aligned vocabulary.
@@ -228,9 +242,11 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     2. Do NOT add tools, libraries, databases, or frameworks that are not already in the bullet text.
     3. Reframe using JD vocabulary only (e.g., "scalability", "low-latency", "high-throughput").
     4. If a JD keyword from the list has NO real counterpart in a bullet, do NOT force it in.
-    5. Never use: {BANNED_WORDS}
+    5. Never use: {BANNED_WORDS} (no em dashes, hyphens replacing em dashes, or generic AI markers).
     6. Preserve the XYZ structure wherever it exists. Keep metrics verbatim.
-    7. Return EXACTLY the same number of bullets as the input, in the same order, as a JSON array of strings.
+    7. Return EXACTLY the same number of bullets as the input, in the same order, as a JSON array of strings (unless pruning for 1-page requirement).
+    {one_page_rule}
+    {custom_rule}
     
     Input bullets (rewrite these, same count, same order):
     {bullets_input}

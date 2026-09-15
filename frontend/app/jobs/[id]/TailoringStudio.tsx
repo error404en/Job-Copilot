@@ -17,6 +17,9 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
   const [coverLetter, setCoverLetter] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [docxError, setDocxError] = useState<string | null>(null)
+  
+  const [onePageOnly, setOnePageOnly] = useState(false)
+  const [customInstructions, setCustomInstructions] = useState("")
 
   const tailorMutation = useMutation({
     mutationFn: async (type: 'resume' | 'cover-letter') => {
@@ -43,7 +46,10 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
       const res = await apiFetch(`/api/jobs/${jobId}/tailor/download-docx`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({
+          one_page_only: onePageOnly,
+          custom_instructions: customInstructions
+        })
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
@@ -151,7 +157,27 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
             </button>
 
             {/* Download Tailored .docx Resume */}
-            <div className="border-t border-zinc-800/60 pt-3">
+            <div className="border-t border-zinc-800/60 pt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="onePageOnly"
+                  checked={onePageOnly}
+                  onChange={(e) => setOnePageOnly(e.target.checked)}
+                  className="rounded bg-zinc-900 border-zinc-700 text-emerald-600 focus:ring-emerald-600"
+                />
+                <label htmlFor="onePageOnly" className="text-sm text-zinc-300 cursor-pointer font-medium">
+                  Strictly 1-Page Resume
+                </label>
+              </div>
+              <div>
+                <textarea
+                  placeholder="Additional custom instructions (e.g., focus on frontend, keep project X)..."
+                  value={customInstructions}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  className="w-full bg-zinc-900/50 border border-zinc-700/50 rounded-lg p-2 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all custom-scrollbar resize-y min-h-[60px]"
+                />
+              </div>
               <button
                 onClick={() => docxMutation.mutate()}
                 disabled={docxMutation.isPending}

@@ -586,6 +586,8 @@ def create_application_draft(job_id: str, req: DraftRequest, user_id: str = Depe
 
 class TailorRequest(BaseModel):
     resume_version_id: Optional[str] = None
+    one_page_only: Optional[bool] = False
+    custom_instructions: Optional[str] = None
 
 @router.post("/{job_id}/tailor/resume")
 def generate_tailored_bullets_endpoint(job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):
@@ -741,7 +743,9 @@ def download_tailored_docx(job_id: str, req: TailorRequest, user_id: str = Depen
         tailored_json = generate_tailored_resume_json(
             raw_content=raw_content,
             jd_text=job_data.get("raw_jd", ""),
-            missing_keywords=missing_keywords
+            missing_keywords=missing_keywords,
+            one_page_only=req.one_page_only,
+            custom_instructions=req.custom_instructions or ""
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
