@@ -14,6 +14,7 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
   const [activeTab, setActiveTab] = useState<'bullets' | 'cover-letter'>('bullets')
   
   const [bullets, setBullets] = useState<string[] | null>(null)
+  const [brokenLinks, setBrokenLinks] = useState<any[] | null>(null)
   const [coverLetter, setCoverLetter] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [docxError, setDocxError] = useState<string | null>(null)
@@ -34,6 +35,7 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
     onSuccess: (data, type) => {
       if (type === 'resume') {
         setBullets(data.bullets)
+        setBrokenLinks(data.broken_links || [])
       } else {
         setCoverLetter(data.cover_letter)
       }
@@ -228,6 +230,24 @@ export default function TailoringStudio({ jobId, missingKeywords }: TailoringStu
                   {copied ? 'Copied!' : 'Copy All'}
                 </button>
               </div>
+              
+              {brokenLinks && brokenLinks.length > 0 && (
+                <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl mb-4">
+                  <h4 className="text-red-400 font-bold text-sm flex items-center gap-2 mb-2">
+                    <span>⚠️</span> Broken Links Detected in Base Resume
+                  </h4>
+                  <ul className="text-red-300/80 text-xs space-y-1 list-disc list-inside">
+                    {brokenLinks.map((link: any, idx: number) => (
+                      <li key={idx}>
+                        <a href={link.url} target="_blank" rel="noreferrer" className="underline hover:text-red-300">{link.url}</a> 
+                        <span className="opacity-75 ml-2">({link.error})</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-red-400/60 text-xs mt-2 mt-2">Please fix these links in your resume to ensure recruiters can view your work.</p>
+                </div>
+              )}
+
               <ul className="space-y-3">
                 {bullets.map((bullet: string, i: number) => (
                   <li key={i} className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl text-zinc-300 text-sm leading-relaxed flex items-start gap-3 group hover:border-zinc-700 transition-colors">

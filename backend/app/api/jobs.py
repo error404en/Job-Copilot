@@ -14,6 +14,7 @@ from app.services.tailor import tailor_resume_bullets, generate_targeted_cover_l
 from app.services.docx_generator import generate_docx_from_structured_resume
 from app.services.llm_client import extract_text_from_image
 from app.services.company_researcher import research_company
+from app.services.link_checker import check_resume_links
 from app.middleware.auth import get_current_user
 from app.api.profile import get_or_create_user_profile
 
@@ -631,7 +632,10 @@ def generate_tailored_bullets_endpoint(job_id: str, req: TailorRequest, user_id:
         missing_keywords=missing_keywords
     )
     
-    return {"bullets": bullets}
+    # 5. Check Links
+    broken_links = check_resume_links(resume_summary)
+    
+    return {"bullets": bullets, "broken_links": broken_links}
 
 @router.post("/{job_id}/tailor/cover-letter")
 def generate_tailored_cover_letter_endpoint(job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):

@@ -77,10 +77,10 @@ def generate_docx_from_structured_resume(resume_data: dict) -> bytes:
 
     # ── Contact line (centered)
     contact_parts = []
-    if resume_data.get("phone"): contact_parts.append(str(resume_data["phone"]).strip())
-    if resume_data.get("email"): contact_parts.append(str(resume_data["email"]).strip())
-    if resume_data.get("linkedin"): contact_parts.append(str(resume_data["linkedin"]).strip())
+    if resume_data.get("portfolio_website"): contact_parts.append(str(resume_data["portfolio_website"]).strip())
     if resume_data.get("github"): contact_parts.append(str(resume_data["github"]).strip())
+    if resume_data.get("linkedin"): contact_parts.append(str(resume_data["linkedin"]).strip())
+    if resume_data.get("email"): contact_parts.append(str(resume_data["email"]).strip())
 
     contact_para = doc.add_paragraph()
     contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER

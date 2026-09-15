@@ -3,8 +3,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 from app.db.supabase_client import supabase
 from app.middleware.auth import get_current_user
+from app.services.link_checker import check_resume_links
 
 router = APIRouter()
+
+class CheckLinksRequest(BaseModel):
+    text: str
 
 class UserProfileUpdate(BaseModel):
     base_location: str
@@ -65,4 +69,10 @@ def update_profile(profile_data: UserProfileUpdate, user_id: str = Depends(get_c
     # Update it
     update_response = supabase.table("user_profile").update(profile_data.model_dump()).eq("id", profile_id).eq("user_id", user_id).execute()
     return update_response.data[0]
+
+@router.post("/check-links")
+def check_links_endpoint(req: CheckLinksRequest, user_id: str = Depends(get_current_user)):
+    """Extracts and verifies all URLs in the provided text, returning broken ones."""
+    broken_links = check_resume_links(req.text)
+    return {"broken_links": broken_links}
 

@@ -49,7 +49,8 @@ document.getElementById('analyzeBtn').addEventListener('click', async () => {
     chrome.runtime.sendMessage({
       action: 'parseJobBackground',
       raw_jd: rawText,
-      url: url
+      url: url,
+      session: session
     }, (response) => {
       // Note: If the popup is closed, this callback just won't run, which is fine!
       if (chrome.runtime.lastError) {

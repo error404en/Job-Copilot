@@ -199,7 +199,8 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     RULES:
     - Extract ONLY information that is explicitly present in the text. 
     - Do NOT invent, infer, or fill missing values. If a field is missing, use null or an empty list.
-    - If a field is absent, use null or "" (NEVER output the literal string "None").
+    - Do NOT extract or include any phone numbers.
+    - Explicitly prioritize extracting links for GitHub, LinkedIn, and any personal portfolio website.
     - For projects: "name" is the project name (e.g. "LitLens AI"), "tech" is the project repo link or key stack (e.g. "github.com/error404en/LitLensAI").
     - For "bullets" under experience/projects: copy the existing bullet points verbatim.
     - For "skills", split skills into:
@@ -212,9 +213,9 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     {{
       "name": "string",
       "email": "string",
-      "phone": "string",
       "linkedin": "string",
       "github": "string",
+      "portfolio_website": "string",
       "summary": "string or null",
       "experience": [
         {{

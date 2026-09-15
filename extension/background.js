@@ -47,7 +47,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'parseJobBackground') {
     (async () => {
       try {
-        const session = await getAuthSession();
+        const session = request.session || await getAuthSession();
         if (!session || !session.token) {
           throw new Error('You must be signed into the JobCopilot web dashboard first.');
         }
