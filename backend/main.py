@@ -7,7 +7,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import jobs, profile, auto_apply, resumes, research, applications, companies
+from app.api import jobs, profile, auto_apply, resumes, research, applications, companies, chat
 from app.services.scheduler import start_scheduler
 from contextlib import asynccontextmanager
 
@@ -37,6 +37,7 @@ app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(auto_apply.router, prefix="/api/auto-apply", tags=["Auto-Apply"])
 app.include_router(resumes.router, prefix="/api/resumes", tags=["Resumes"])
 app.include_router(research.router, prefix="/api/research", tags=["Research"])
+app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 
 @app.get("/health")
 def health_check():

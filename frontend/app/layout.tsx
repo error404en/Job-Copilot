@@ -38,6 +38,9 @@ export default function RootLayout({
           <div className="flex items-center gap-6">
             <div className="flex gap-5 text-sm font-medium mr-4">
             <Link href="/" className="text-zinc-400 hover:text-white transition-colors">Dashboard</Link>
+            <Link href="/coach" className="text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 font-semibold">
+              <span>🧠</span> Coach
+            </Link>
             <Link href="/tracker" className="text-zinc-400 hover:text-white transition-colors flex items-center gap-1">
               <span>📋</span> Tracker
             </Link>

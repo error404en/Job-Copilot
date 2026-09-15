@@ -637,7 +637,7 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
             results = list(ddgs.text(f"{company_name} official careers portal India", max_results=3))
             for r in results:
                 href = r.get("href", "")
-                if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
+                if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work", "myworkdayjobs", "successfactors"]):
                     careers_url = href
                     break
     except Exception as e:
@@ -673,7 +673,7 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
                     "source": "live_search",
                     "company": company_name,
                     "role_title": cleaned_title,
-                    "url": href or careers_url,
+                    "url": href or careers_url or f"https://www.google.com/search?q={company_name}+careers+{cleaned_title.replace(' ', '+')}",
                     "location": loc,
                     "experience_level": exp_meta["experience_level"],
                     "seniority_required": exp_meta["seniority_required"],
@@ -681,6 +681,31 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
                 })
     except Exception as e:
         print(f"[scrape_careers_page] Live search fallback failed for {company_name}: {e}")
+
+    # Tier 3: The Playwright Workday Scraper Catch-All
+    if len(jobs) == 0 and careers_url:
+        print(f"[scrape_careers_page] Tier 2 DDG returned 0 jobs. Falling back to Tier 3 Playwright Scraper for {careers_url}")
+        try:
+            from app.services.playwright_scraper import scrape_dynamic_page
+            raw_text = scrape_dynamic_page(careers_url)
+            if raw_text and len(raw_text) > 50:
+                extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
+                for job in extracted:
+                    if not job.get("role_title"):
+                        continue
+                    exp_meta = _infer_experience_metadata(job.get("role_title", ""), "")
+                    jobs.append({
+                        "source": "playwright_scraper",
+                        "company": company_name,
+                        "role_title": job.get("role_title", "Unknown Role"),
+                        "url": job.get("url") or careers_url or f"https://www.google.com/search?q={company_name}+careers+{job.get('role_title', '').replace(' ', '+')}",
+                        "location": job.get("location", "India"),
+                        "experience_level": exp_meta["experience_level"],
+                        "seniority_required": exp_meta["seniority_required"],
+                        "raw_jd": f"{job.get('role_title', '')}\nCompany: {company_name}\nLocation: {job.get('location', 'India')}\nExperience: {exp_meta['experience_level']}\n\n[Extracted via Playwright AI Parsing]"
+                    })
+        except Exception as e:
+            print(f"[scrape_careers_page] Playwright fallback failed: {e}")
 
     print(f"[scrape_careers_page] Returning {len(jobs)} jobs for {company_name}")
     return {"careers_url": careers_url, "jobs": jobs}

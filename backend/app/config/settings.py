@@ -15,3 +15,6 @@ GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 # compound-beta is the correct Groq model ID (not "groq/compound")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "compound-beta")
 
+# Dedicated model for high-nuance writing tasks (like tailoring)
+GROQ_TAILORING_MODEL = os.getenv("GROQ_TAILORING_MODEL", "llama-3.3-70b-versatile")
+

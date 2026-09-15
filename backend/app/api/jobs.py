@@ -8,6 +8,7 @@ from app.services.jd_parser import parse_job_description
 from app.services.match_scorer import score_match
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback, resolve_redirects_and_detect_promo
 from app.services.application_prep import generate_cover_letter
+from app.services.tailor import tailor_resume_bullets, generate_targeted_cover_letter
 from app.services.llm_client import extract_text_from_image
 from app.services.company_researcher import research_company
 from app.middleware.auth import get_current_user
@@ -579,6 +580,79 @@ def create_application_draft(job_id: str, req: DraftRequest, user_id: str = Depe
     insert_res = supabase.table("application_drafts").insert(draft_insert).execute()
     
     return insert_res.data[0]
+
+class TailorRequest(BaseModel):
+    resume_version_id: Optional[str] = None
+
+@router.post("/{job_id}/tailor/resume")
+def generate_tailored_bullets_endpoint(job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):
+    # 1. Fetch Job and Analysis
+    job_res = supabase.table("jobs").select("*, job_analyses(*)").eq("id", job_id).eq("user_id", user_id).execute()
+    if not job_res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_data = job_res.data[0]
+    
+    analysis = None
+    if job_data.get("job_analyses") and len(job_data["job_analyses"]) > 0:
+        analysis = job_data["job_analyses"][0]
+        
+    missing_keywords = analysis.get("missing_keywords", []) if analysis else []
+    
+    # 2. Determine Resume Version
+    resume_id = req.resume_version_id
+    if not resume_id and analysis and analysis.get("recommended_resume_version_id"):
+        resume_id = analysis["recommended_resume_version_id"]
+        
+    # 3. Fetch Resume Summary
+    if resume_id:
+        resume_res = supabase.table("resume_versions").select("skills_summary").eq("id", resume_id).execute()
+        resume_summary = resume_res.data[0].get("skills_summary", "") if resume_res.data else "Software Engineer"
+    else:
+        resume_summary = "Software Engineer"
+        
+    # 4. Generate Bullets
+    bullets = tailor_resume_bullets(
+        resume_summary=resume_summary,
+        jd_text=job_data["raw_jd"],
+        missing_keywords=missing_keywords
+    )
+    
+    return {"bullets": bullets}
+
+@router.post("/{job_id}/tailor/cover-letter")
+def generate_tailored_cover_letter_endpoint(job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):
+    # 1. Fetch Job and Analysis
+    job_res = supabase.table("jobs").select("*, job_analyses(*)").eq("id", job_id).eq("user_id", user_id).execute()
+    if not job_res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_data = job_res.data[0]
+    
+    analysis = None
+    if job_data.get("job_analyses") and len(job_data["job_analyses"]) > 0:
+        analysis = job_data["job_analyses"][0]
+        
+    # 2. Determine Resume Version
+    resume_id = req.resume_version_id
+    if not resume_id and analysis and analysis.get("recommended_resume_version_id"):
+        resume_id = analysis["recommended_resume_version_id"]
+        
+    # 3. Fetch Resume Summary
+    if resume_id:
+        resume_res = supabase.table("resume_versions").select("skills_summary").eq("id", resume_id).execute()
+        resume_summary = resume_res.data[0].get("skills_summary", "") if resume_res.data else "Software Engineer"
+    else:
+        resume_summary = "Software Engineer"
+        
+    # 4. Generate Letter
+    letter = generate_targeted_cover_letter(
+        resume_summary=resume_summary,
+        jd_text=job_data["raw_jd"],
+        role_title=job_data.get("role_title", "Position"),
+        company=job_data.get("company", "Company")
+    )
+    
+    return {"cover_letter": letter}
+
 
 class JobUpdateRequest(BaseModel):
     deadline: Optional[str] = None

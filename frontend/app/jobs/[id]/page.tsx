@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useState } from 'react'
 import { useApiClient } from '@/lib/useApiClient'
+import TailoringStudio from './TailoringStudio'
+import CopilotCoach from '@/components/CopilotCoach'
 
 export default function JobDetailPage() {
   const params = useParams()
@@ -355,8 +357,19 @@ export default function JobDetailPage() {
         </div>
       )}
 
-      {/* Application Prep Section */}
-      <div className="bg-zinc-900/40 p-8 rounded-2xl border border-zinc-800/50 shadow-sm backdrop-blur-sm relative overflow-hidden">
+      {/* Tailoring Studio */}
+      <TailoringStudio jobId={jobId} missingKeywords={analysis.missing_keywords || []} />
+
+      {/* Contextual AI Coach */}
+      <div className="bg-zinc-900/40 p-8 rounded-2xl border border-zinc-800/50 shadow-sm backdrop-blur-sm mt-8">
+        <h2 className="text-xl font-bold text-white tracking-tight mb-6 flex items-center gap-2">
+          <span>🧠</span> Discuss this Job with Coach
+        </h2>
+        <CopilotCoach jobId={jobId} inline={true} />
+      </div>
+
+      {/* Legacy Application Prep Section (Saved Drafts) */}
+      <div className="bg-zinc-900/40 p-8 rounded-2xl border border-zinc-800/50 shadow-sm backdrop-blur-sm relative overflow-hidden mt-8">
         {/* Subtle decorative glow */}
         <div className="absolute -top-24 -right-24 w-64 h-64 bg-blue-500/10 blur-3xl rounded-full pointer-events-none"></div>
 

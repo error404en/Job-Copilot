@@ -2,7 +2,7 @@ import json
 import os
 from pydantic import BaseModel
 from typing import Type, TypeVar, Optional
-from app.config.settings import GEMINI_API_KEY, GROQ_API_KEY, GEMINI_MODEL, GEMINI_VISION_MODEL, GROQ_MODEL
+from app.config.settings import GEMINI_API_KEY, GROQ_API_KEY, GEMINI_MODEL, GEMINI_VISION_MODEL, GROQ_MODEL, GROQ_TAILORING_MODEL
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -230,6 +230,25 @@ def get_completion(prompt: str, use_groq: bool = False) -> str:
         "All LLM providers exhausted (Gemini + Groq + Local Ollama). "
         "Check your API keys, rate limits, or ensure Ollama is running locally."
     )
+
+
+def generate_tailoring_text(prompt: str) -> str:
+    """
+    Dedicated generator for high-nuance writing tasks (cover letters, bullet points).
+    Strictly attempts to use the high-tier Groq model (Llama 3.3 70B) first.
+    If it fails, it falls back to the standard text completion waterfall.
+    """
+    if groq_client:
+        try:
+            print(f"[LLM] Attempting tailored generation with {GROQ_TAILORING_MODEL}...")
+            result = _groq_text(GROQ_TAILORING_MODEL, prompt)
+            return result
+        except Exception as e:
+            print(f"[LLM] Tailoring model {GROQ_TAILORING_MODEL} failed: {e}. Falling back to standard waterfall.")
+    
+    # Fallback to standard waterfall, preferring Groq
+    return get_completion(prompt, use_groq=True)
+
 
 
 def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = False) -> T:
