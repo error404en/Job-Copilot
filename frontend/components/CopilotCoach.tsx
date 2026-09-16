@@ -87,19 +87,23 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
   })
 
   // Attached files and image preview
-  const [attachedFile, setAttachedFile] = useState<File | null>(null)
-  const [filePreview, setFilePreview] = useState<string | null>(null)
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [filePreviews, setFilePreviews] = useState<{file: File, url: string}[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (attachedFile && attachedFile.type.startsWith('image/')) {
-      const url = URL.createObjectURL(attachedFile)
-      setFilePreview(url)
-      return () => URL.revokeObjectURL(url)
-    } else {
-      setFilePreview(null)
+    const newPreviews: {file: File, url: string}[] = []
+    attachedFiles.forEach(f => {
+      if (f.type.startsWith('image/')) {
+        newPreviews.push({ file: f, url: URL.createObjectURL(f) })
+      }
+    })
+    setFilePreviews(newPreviews)
+    
+    return () => {
+      newPreviews.forEach(p => URL.revokeObjectURL(p.url))
     }
-  }, [attachedFile])
+  }, [attachedFiles])
 
   // Optimistic messages for instant responsiveness and SSE streaming
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>([])
@@ -171,8 +175,8 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
 
       const formData = new FormData()
       formData.append('content', content)
-      if (attachedFile) {
-        formData.append('file', attachedFile)
+      if (attachedFiles.length > 0) {
+        attachedFiles.forEach(f => formData.append('files', f))
       }
 
       const res = await apiFetch(`/api/chat/threads/${tid}/messages`, {
@@ -243,7 +247,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       setIsStreaming(false)
       await queryClient.invalidateQueries({ queryKey: ['chat_messages', tid] })
       setOptimisticMessages([])
-      setAttachedFile(null)
+      setAttachedFiles([])
     },
     onError: (err: any, sentContent: string) => {
       setIsStreaming(false)
@@ -270,21 +274,24 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setAttachedFile(e.target.files[0])
+      setAttachedFiles(prev => [...prev, ...Array.from(e.target.files!)])
     }
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (e.clipboardData.items) {
+      const newFiles: File[] = []
       for (const item of Array.from(e.clipboardData.items)) {
         if (item.type.startsWith('image/')) {
           const file = item.getAsFile()
           if (file) {
-            setAttachedFile(file)
-            e.preventDefault()
-            return
+            newFiles.push(file)
           }
         }
+      }
+      if (newFiles.length > 0) {
+        setAttachedFiles(prev => [...prev, ...newFiles])
+        e.preventDefault()
       }
     }
   }
@@ -523,34 +530,36 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       {/* Input Area */}
       <div className="p-4 bg-zinc-950 border-t border-zinc-800/70 flex flex-col gap-2.5">
         {/* Attachment Card Preview */}
-        {attachedFile && (
-          <div className="flex items-center justify-between bg-zinc-900/90 border border-zinc-800 px-3 py-2 rounded-xl">
-            <div className="flex items-center gap-3 overflow-hidden">
-              {filePreview ? (
-                <img 
-                  src={filePreview} 
-                  alt="Attachment preview" 
-                  className="w-10 h-10 object-cover rounded-lg border border-zinc-700 shrink-0" 
-                />
-              ) : (
-                <span className="text-xl">📎</span>
-              )}
-              <div className="truncate">
-                <p className="text-xs font-medium text-zinc-200 truncate">{attachedFile.name}</p>
-                <p className="text-[10px] text-zinc-500">{(attachedFile.size / 1024).toFixed(1)} KB</p>
-              </div>
-            </div>
-            <button 
-              type="button" 
-              onClick={() => {
-                setAttachedFile(null)
-                if (fileInputRef.current) fileInputRef.current.value = ''
-              }} 
-              className="text-zinc-500 hover:text-red-400 px-2 py-1 text-sm transition-colors"
-              title="Remove attachment"
-            >
-              ✕
-            </button>
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 bg-zinc-900/50 border border-zinc-800/80 px-2 py-2 rounded-xl">
+            {attachedFiles.map((f, i) => {
+               const preview = filePreviews.find(p => p.file === f)?.url
+               return (
+                 <div key={i} className="flex items-center gap-2 bg-zinc-900/90 border border-zinc-800 px-2 py-1.5 rounded-lg shadow-sm">
+                   {preview ? (
+                     <img 
+                       src={preview} 
+                       alt="Attachment preview" 
+                       className="w-8 h-8 object-cover rounded shrink-0 border border-zinc-700/50" 
+                     />
+                   ) : (
+                     <span className="text-lg">📎</span>
+                   )}
+                   <div className="truncate max-w-[120px]">
+                     <p className="text-[10px] font-medium text-zinc-200 truncate">{f.name}</p>
+                     <p className="text-[9px] text-zinc-500">{(f.size / 1024).toFixed(1)} KB</p>
+                   </div>
+                   <button 
+                     type="button" 
+                     onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== i))} 
+                     className="text-zinc-500 hover:text-red-400 px-1 py-0.5 text-xs transition-colors ml-1"
+                     title="Remove attachment"
+                   >
+                     ✕
+                   </button>
+                 </div>
+               )
+            })}
           </div>
         )}
 
@@ -561,6 +570,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
             onChange={handleFileChange} 
             className="hidden" 
             accept="image/*,.pdf,.txt,.docx"
+            multiple
           />
 
           <button 

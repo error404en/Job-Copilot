@@ -119,7 +119,7 @@ def get_thread_messages(thread_id: str, user_id: str = Depends(get_current_user)
 async def send_message(
     thread_id: str, 
     content: str = Form(...),
-    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -143,37 +143,38 @@ async def send_message(
                 "job_id": None
             })
 
-        # 2. Process Attachment if present
+        # 2. Process Attachment(s) if present
         attachment_text = ""
-        if file:
-            file_bytes = await file.read()
-            mime_type = file.content_type or ""
-            if mime_type.startswith("image/"):
-                try:
-                    attachment_text = extract_text_from_image(file_bytes, mime_type)
-                    attachment_text = f"\n[User Attached Image. Extracted Text:]\n{attachment_text}\n"
-                except Exception as e:
-                    raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
-            elif mime_type == "application/pdf":
-                try:
-                    extracted = ""
-                    if fitz is not None:
-                        pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
-                        for page in pdf_doc:
-                            extracted += page.get_text() + "\n"
-                    else:
-                        import PyPDF2
-                        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-                        extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
-                    attachment_text = f"\n[User Attached PDF. Extracted Text:]\n{extracted}\n"
-                except Exception as e:
-                    raise HTTPException(status_code=400, detail=f"Failed to process PDF: {e}")
-            else:
-                try:
-                    text = file_bytes.decode("utf-8")
-                    attachment_text = f"\n[User Attached File. Extracted Text:]\n{text}\n"
-                except Exception:
-                    raise HTTPException(status_code=400, detail="Unsupported file format")
+        if files:
+            for file in files:
+                file_bytes = await file.read()
+                mime_type = file.content_type or ""
+                if mime_type.startswith("image/"):
+                    try:
+                        extracted = extract_text_from_image(file_bytes, mime_type)
+                        attachment_text += f"\n[User Attached Image ({file.filename}). Extracted Text:]\n{extracted}\n"
+                    except Exception as e:
+                        raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
+                elif mime_type == "application/pdf":
+                    try:
+                        extracted = ""
+                        if fitz is not None:
+                            pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+                            for page in pdf_doc:
+                                extracted += page.get_text() + "\n"
+                        else:
+                            import PyPDF2
+                            reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                            extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
+                        attachment_text += f"\n[User Attached PDF ({file.filename}). Extracted Text:]\n{extracted}\n"
+                    except Exception as e:
+                        raise HTTPException(status_code=400, detail=f"Failed to process PDF: {e}")
+                else:
+                    try:
+                        text = file_bytes.decode("utf-8")
+                        attachment_text += f"\n[User Attached File ({file.filename}). Extracted Text:]\n{text}\n"
+                    except Exception:
+                        raise HTTPException(status_code=400, detail="Unsupported file format")
 
         final_user_content = content + attachment_text
         user_msg_id = str(uuid.uuid4())
@@ -270,6 +271,15 @@ async def send_message(
             history = [{"role": m["role"], "content": m["content"]} for m in session_messages[thread_id]]
 
         recent_history = history[-15:] if history else [{"role": "user", "content": final_user_content}]
+        
+        # 5.5 Check Agent Router
+        try:
+            from app.services.agent_router import process_agent_routing
+            agent_result = process_agent_routing(final_user_content, recent_history)
+            if agent_result:
+                system_prompt += f"\n\n[SYSTEM INJECTED ACTION RESULT - You just performed this action for the user]:\n{agent_result}\n\nFactor this result into your response.\n"
+        except Exception as e:
+            print(f"[Chat] Agent Router failed: {e}")
         
         full_prompt = f"{system_prompt}\n--- CHAT HISTORY ---\n"
         for msg in recent_history:
