@@ -4,7 +4,7 @@ import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.db.supabase_client import supabase
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs
-from app.api.jobs import ParseRequest, _parse_and_score_job
+from app.services.job_pipeline import ParseRequest, process_and_store_job
 
 scheduler = AsyncIOScheduler()
 
@@ -69,7 +69,7 @@ def fetch_latest_jobs_task():
                         company_name=company,
                         use_groq=False
                     )
-                    res = _parse_and_score_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
+                    res = process_and_store_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
                     if not res.get("is_duplicate"):
                         new_count += 1
                 except Exception as e:
@@ -126,7 +126,7 @@ def fetch_dream_company_jobs_task():
                                 company_name=company,
                                 use_groq=False
                             )
-                            res = _parse_and_score_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
+                            res = process_and_store_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
                             if not res.get("is_duplicate"):
                                 new_count += 1
                         except Exception as e:

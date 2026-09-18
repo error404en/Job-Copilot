@@ -60,3 +60,26 @@ def check_resume_links(raw_text: str) -> list[dict]:
                 broken_links.append(result)
                 
     return broken_links
+
+def resolve_redirects_and_detect_promo(url: str) -> dict:
+    """
+    Resolves shortened links/redirects to find the final destination URL.
+    Detects if the link is likely a promotional/third-party funnel.
+    """
+    if not url:
+        return {"final_url": None, "is_promo": False}
+        
+    try:
+        validate_safe_url(url)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = requests.head(url, headers=headers, allow_redirects=True, timeout=5)
+        
+        final_url = res.url
+        
+        # Check for promo funnels
+        promo_domains = ['linktr.ee', 'bit.ly', 'tinyurl.com', 'forms.gle', 'click.']
+        is_promo = any(d in final_url for d in promo_domains)
+        
+        return {"final_url": final_url, "is_promo": is_promo}
+    except Exception as e:
+        return {"final_url": url, "is_promo": False}

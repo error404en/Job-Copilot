@@ -14,6 +14,7 @@ export function Navigation() {
     { href: '/tracker', label: 'Tracker', icon: Kanban },
     { href: '/companies', label: 'Target Companies', icon: Building2 },
     { href: '/digest', label: 'Digest', icon: Flame },
+    { href: '/inbox', label: 'Inbox', icon: Flame, color: 'indigo' },
     { href: '/resumes', label: 'Resumes', icon: FileText },
   ];
 

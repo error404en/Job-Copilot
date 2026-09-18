@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from app.services.job_fetcher import parse_experience_requirements, fetch_workday_jobs
-from app.api.jobs import _parse_and_score_job, ParseRequest
+from app.services.job_pipeline import process_and_store_job, ParseRequest
 from fastapi import HTTPException
 
 # --- 1. Hybrid Experience Parser Tests ---
@@ -73,7 +73,10 @@ def test_workday_pagination_multi_page():
                 jobs = fetch_workday_jobs("mastercard/test_site", ["job"])
                 assert len(jobs) == 21
                 assert mock_post.call_count == 2
-                assert jobs[0]["external_job_id"] == "0"
+                
+                # Jobs are fetched concurrently, so sort them by title to verify
+                jobs.sort(key=lambda j: int(j["external_job_id"]) if j["external_job_id"].isdigit() else 0)
+                assert "0" in [j["external_job_id"] for j in jobs]
                 assert jobs[20]["external_job_id"] == "20"
                 assert jobs[0]["source_type"] == "workday"
 
@@ -89,7 +92,21 @@ def test_job_insert_duplicate_handling():
         external_job_id="123"
     )
     
-    with patch('app.api.jobs.supabase') as mock_supabase:
+    with patch('app.services.job_pipeline.supabase') as mock_supabase, \
+         patch('app.services.job_pipeline.parse_job_description') as mock_parse_jd:
+         
+        # Mock parse
+        from app.models.job import ParsedJob
+        mock_parse_jd.return_value = ParsedJob(
+            role_title="Dummy",
+            seniority_required="0-2",
+            is_fresher_eligible=True,
+            required_skills=[],
+            nice_to_have_skills=[],
+            work_mode="Remote",
+            company="Acme"
+        )
+        
         # Mock insert to raise an exception indicating duplicate
         mock_insert = mock_supabase.table().insert().execute
         mock_insert.side_effect = Exception("duplicate key value violates unique constraint 'idx_jobs_stable_identity'")
@@ -98,11 +115,15 @@ def test_job_insert_duplicate_handling():
         mock_update = mock_supabase.table().update().eq().eq().eq().eq().execute
         mock_update.return_value = MagicMock()
         
+        # Mock select for existing job
+        mock_select = mock_supabase.table().select().eq().eq().eq().eq().execute
+        mock_select.return_value = MagicMock(data=[{"id": "dummy-job-id"}])
+        
         # Call parse and score
-        res = _parse_and_score_job(req, "test_user_id", skip_analysis=True)
+        res = process_and_store_job(req, "test_user_id", skip_analysis=True)
         
         assert res["is_duplicate"] is True
-        assert res["job_id"] is None
+        assert res["job_id"] == "dummy-job-id"
         assert mock_update.called
 
 # --- 4. ATS Discovery Tests ---

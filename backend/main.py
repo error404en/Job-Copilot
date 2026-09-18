@@ -7,7 +7,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import jobs, profile, auto_apply, resumes, research, applications, companies, chat
+from app.api import jobs, profile, auto_apply, resumes, research, applications, companies, chat, inbox
 from app.services.scheduler import start_scheduler
 from contextlib import asynccontextmanager
 from slowapi.errors import RateLimitExceeded
@@ -42,6 +42,7 @@ app.include_router(auto_apply.router, prefix="/api/auto-apply", tags=["Auto-Appl
 app.include_router(resumes.router, prefix="/api/resumes", tags=["Resumes"])
 app.include_router(research.router, prefix="/api/research", tags=["Research"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
+app.include_router(inbox.router, prefix="/api/inbox", tags=["Inbox"])
 
 @app.get("/health")
 def health_check():

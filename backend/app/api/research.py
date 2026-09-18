@@ -57,13 +57,13 @@ def discover_careers_url_and_ats(company_name: str) -> dict:
         return {"careers_url": url, "ats_info": {"system": "smartrecruiters", "token": sr_match.group(1)}}
         
     # Check Workday
-    wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)/([^/]+)", url)
+    wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)(?:/([^/]+))?", url)
     if wd_match:
         host_prefix = wd_match.group(1)
         part1 = wd_match.group(2)
         part2 = wd_match.group(3)
         
-        if part1.lower() == "en-us" or len(part1) == 2:
+        if part2 and (part1.lower() == "en-us" or len(part1) == 2):
             site = part2
             tenant = host_prefix.split(".")[0]
         elif part1 == "wday":
@@ -75,13 +75,13 @@ def discover_careers_url_and_ats(company_name: str) -> dict:
                     site = sub_parts[1]
                 else:
                     tenant = host_prefix.split(".")[0]
-                    site = part2
+                    site = part2 if part2 else part1
             else:
                 tenant = host_prefix.split(".")[0]
-                site = part2
+                site = part2 if part2 else part1
         else:
             tenant = host_prefix.split(".")[0]
-            site = part2
+            site = part1
             
         return {"careers_url": url, "ats_info": {"system": "workday", "token": f"{host_prefix}/{tenant}/{site}"}}
         

@@ -23,16 +23,7 @@ from app.api.profile import get_or_create_user_profile
 
 router = APIRouter()
 
-class ParseRequest(BaseModel):
-    raw_jd: str
-    source: str = "manual"
-    source_type: str = "manual"
-    source_confidence: float = 0.0
-    url: Optional[str] = None
-    official_apply_url: Optional[str] = None
-    external_job_id: Optional[str] = None
-    company_name: Optional[str] = None
-    use_groq: bool = False
+from app.services.job_pipeline import ParseRequest, process_and_store_job
 
 class FetchAtsRequest(BaseModel):
     company_tokens: List[str]
@@ -322,91 +313,10 @@ def get_job(id: str, user_id: str = Depends(get_current_user)):
             
     return job
 
-def _parse_and_score_job(req: ParseRequest, user_id: str, background_tasks: BackgroundTasks = None, skip_analysis: bool = False):
-    target_url = req.url.strip() if req.url else None
-    
-    # 0. Check if job already exists via stable identity
-    if req.company_name or target_url:
-        company_val = req.company_name or "Unknown Company"
-        # The DB unique index handles duplicates on (user_id, source_type, company, COALESCE(external_job_id, url))
-        # But we still check beforehand to skip parsing if it's already there
-        # For simplicity, if it's in the DB we can skip or update last_seen_at
-        pass
-
-    # 1. Get user profile (auto-create default if user is new)
-    user_profile = get_or_create_user_profile(user_id)
-
-    # 2. Get all resumes to find the best match
-    resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
-    if resumes_resp.data:
-        resume_summaries = "\n".join([f"[{r['target_type']}]: {r['skills_summary']}" for r in resumes_resp.data])
-    else:
-        resume_summaries = "Software Engineering Candidate Profile. (No specific resume uploaded yet)."
-
-    # 3. Parse JD
-    parsed_job = parse_job_description(req.raw_jd, use_groq=req.use_groq)
-    
-    # Override company if explicitly provided
-    if req.company_name:
-        parsed_job.company = req.company_name
-
-    # 6. Save to DB First (Fast)
-    resolved_url = target_url or parsed_job.apply_link
-    job_insert = {
-        "source": req.source,
-        "source_type": req.source_type,
-        "source_url": target_url,
-        "official_apply_url": req.official_apply_url or resolved_url,
-        "external_job_id": req.external_job_id,
-        "source_confidence": req.source_confidence,
-        "url": resolved_url,
-        "company": parsed_job.company,
-        "role_title": parsed_job.role_title,
-        "raw_jd": req.raw_jd,
-        "location": parsed_job.location,
-        "remote_type": parsed_job.remote_type,
-        "pay_min": parsed_job.pay_min,
-        "pay_max": parsed_job.pay_max,
-        "pay_currency": parsed_job.pay_currency,
-        "pay_confidence": parsed_job.pay_confidence,
-        "posting_date": parsed_job.posting_date,
-        "region_wise_salary": parsed_job.region_wise_salary,
-        "deadline": parsed_job.deadline_date,
-        "seniority_required": parsed_job.seniority_required,
-        "required_skills": parsed_job.required_skills,
-        "nice_to_have_skills": parsed_job.nice_to_have_skills,
-        "user_id": user_id,
-        "analysis_status": "pending" if not skip_analysis else "pending"
-    }
-    
-    try:
-        # Use ON CONFLICT to prevent duplicates based on our new index
-        # We don't have a direct on_conflict param in supabase python insert yet, so we insert and catch the specific Postgres error 23505
-        job_resp = supabase.table("jobs").insert(job_insert).execute()
-        job_id = job_resp.data[0]["id"]
-    except Exception as e:
-        err_str = str(e)
-        if "duplicate key value" in err_str or "23505" in err_str:
-            # Update last_seen_at for the existing job
-            dedup_col = "external_job_id" if req.external_job_id else "url"
-            dedup_val = req.external_job_id if req.external_job_id else resolved_url
-            try:
-                supabase.table("jobs").update({"last_seen_at": datetime.now(timezone.utc).isoformat()}).eq("user_id", user_id).eq("source_type", req.source_type).eq("company", parsed_job.company).eq(dedup_col, dedup_val).execute()
-            except Exception as update_e:
-                print(f"Failed to update last_seen_at for duplicate job: {update_e}")
-            return {"job_id": None, "is_duplicate": True}
-        raise HTTPException(status_code=400, detail=f"Failed to insert job: {err_str}")
-
-    # We no longer run analysis here inline or via raw background_tasks.
-    # The job is inserted with analysis_status = 'pending'.
-    # The APScheduler task in scheduler.py will pick it up and process it.
-    
-    return {"job_id": job_id}
-
 @router.post("/parse")
 @limiter.limit("5/minute")
 def parse_and_score_job_route(request: Request, req: ParseRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
-    return _parse_and_score_job(req, user_id, background_tasks)
+    return process_and_store_job(req, user_id, background_tasks)
 
 
 @router.post("/parse-image")
@@ -448,14 +358,8 @@ def parse_and_score_image(request: Request, background_tasks: BackgroundTasks, f
             pass
 
     # 4. Use the existing parse_and_score_job logic
-    req = ParseRequest(
-        raw_jd=f"[Extracted from Screenshot]\n{extracted_text}",
-        source="screenshot",
-        url=detected_url,
-        use_groq=False
-    )
-    
-    return _parse_and_score_job(req, user_id, background_tasks)
+    req = ParseRequest(raw_jd=extracted_text, source="image", source_type="manual", url=detected_url)
+    return process_and_store_job(req, user_id, background_tasks)
 
 @router.get("/subscriptions/list")
 def get_subscriptions(user_id: str = Depends(get_current_user)):
