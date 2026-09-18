@@ -4,6 +4,26 @@ This document tracks all major architectural changes, feature additions, and sys
 
 ---
 
+## [v2.0.0] - Security & Performance Overhaul
+### 1. Zero-Trust Security Hardening (Phases 1-8)
+**Why:** The platform was vulnerable to Insecure Direct Object Reference (IDOR), Server-Side Request Forgery (SSRF), and DoS attacks via unbounded file uploads.
+**How:**
+- Implemented robust Row-Level Security (RLS) in Supabase via `14_phase3_db_security.sql`.
+- Overhauled authentication to correctly decouple Clerk JWT AuthN from Supabase AuthZ.
+- Added strict SSRF IP filters in `validate_safe_url()` to prevent internal VPC scanning via the JD scraper.
+- Enforced cryptographic magic-byte checking and synchronous 5MB chunking for PDF/Image uploads.
+- Introduced global IP/User-based rate limiting via `slowapi` on all endpoints.
+
+### 2. Concurrency & Event Loop Optimization (Phase 9)
+**Why:** The FastAPI server would lock up for all users when a single user ran a background ATS scrape or triggered a long LLM generation, due to synchronous IO blocking the main `asyncio` event loop.
+**How:**
+- Re-architected heavy endpoints (`chat.py`, `jobs.py`, `resumes.py`) from `async def` to `def`, successfully offloading blocking Supabase and LLM API calls to FastAPI's external threadpool.
+- Wrapped necessary blocking DB calls inside persistent `async def` routes using `asyncio.to_thread`.
+- Modified `fetch_and_analyze_ats` to lazy-load LLM scoring via `skip_analysis=True`, preventing thread starvation during bulk background scraping.
+- Resolved React rendering cascades and hydration mismatches in the frontend (`AIOrb.tsx`, `CopilotCoach.tsx`).
+
+---
+
 ## [v1.2.0] - 2026-09-15
 ### 1. Smart Resume Deduplication
 **Why:** Users were wasting AI API tokens and cluttering the database by uploading the exact same resume multiple times. We needed a way to instantly identify exact duplicates.

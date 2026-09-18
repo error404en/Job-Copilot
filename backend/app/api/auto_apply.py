@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from app.db.supabase_client import supabase
 from app.middleware.auth import get_current_user
+from app.middleware.rate_limit import limiter
 
 router = APIRouter()
 
 @router.get("/data")
-def get_auto_apply_data(url: str, user_id: str = Depends(get_current_user)):
+@limiter.limit("5/minute")
+def get_auto_apply_data(request: Request, url: str, user_id: str = Depends(get_current_user)):
     """
     Fetches the user profile and the most recent cover letter draft for a given job URL.
     This is used by the Chrome Extension to pre-fill Greenhouse/Lever application forms.

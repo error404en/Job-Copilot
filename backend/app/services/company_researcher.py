@@ -1,7 +1,7 @@
 import json
 from pydantic import BaseModel
 from typing import Optional
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from app.services.llm_client import generate_structured
 
 class SalaryLevel(BaseModel):

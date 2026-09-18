@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
+import asyncio
 from datetime import datetime, timezone
 from app.db.supabase_client import supabase
 from app.middleware.auth import get_current_user
@@ -69,8 +70,13 @@ def create_or_track_application(req: ApplicationCreateRequest, user_id: str = De
         if not job_res.data:
             raise HTTPException(status_code=500, detail="Failed to create backing job record.")
         target_job_id = job_res.data[0]["id"]
+    # 1. Check if the job actually belongs to the user
+    if target_job_id:
+        job_check = supabase.table("jobs").select("id").eq("id", target_job_id).eq("user_id", user_id).execute()
+        if not job_check.data:
+            raise HTTPException(status_code=404, detail="Job not found or does not belong to user.")
 
-    # Check if this job is already being tracked by this user
+    # 2. Check if this job is already being tracked by this user
     existing = supabase.table("applications").select("id").eq("job_id", target_job_id).eq("user_id", user_id).execute()
     if existing.data and len(existing.data) > 0:
         # Update existing
@@ -145,18 +151,23 @@ async def auto_apply_job(req: AutoApplyRequest, user_id: str = Depends(get_curre
     result = await run_hermes_apply(req.url, req.job_id or "unknown")
     
     if result["status"] == "success" and req.job_id:
+        # Check if the job actually belongs to the user
+        job_check = await asyncio.to_thread(lambda: supabase.table("jobs").select("id").eq("id", req.job_id).eq("user_id", user_id).execute())
+        if not job_check.data:
+            raise HTTPException(status_code=404, detail="Job not found or does not belong to user.")
+
         # Mark as applied in tracker automatically
-        existing = supabase.table("applications").select("id").eq("job_id", req.job_id).eq("user_id", user_id).execute()
+        existing = await asyncio.to_thread(lambda: supabase.table("applications").select("id").eq("job_id", req.job_id).eq("user_id", user_id).execute())
         applied_timestamp = datetime.now(timezone.utc).isoformat()
         if existing.data and len(existing.data) > 0:
-            supabase.table("applications").update({"status": "applied", "applied_at": applied_timestamp}).eq("id", existing.data[0]["id"]).execute()
+            await asyncio.to_thread(lambda: supabase.table("applications").update({"status": "applied", "applied_at": applied_timestamp}).eq("id", existing.data[0]["id"]).execute())
         else:
-            supabase.table("applications").insert({
+            await asyncio.to_thread(lambda: supabase.table("applications").insert({
                 "job_id": req.job_id,
                 "status": "applied",
                 "applied_at": applied_timestamp,
                 "notes": "Auto-applied via Hermes Agent",
                 "user_id": user_id
-            }).execute()
+            }).execute())
 
     return result

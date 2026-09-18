@@ -3,6 +3,7 @@ import time
 from typing import Optional
 from playwright.sync_api import sync_playwright, TimeoutError
 from app.services.llm_client import _try_groq_json, get_completion
+from app.utils.security import validate_safe_url
 
 class AutoApplyAgent:
     def __init__(self, user_profile: dict, resume_text: str):
@@ -55,6 +56,7 @@ class AutoApplyAgent:
             return {"action": "error", "reason": str(e)}
 
     def apply(self, url: str) -> dict:
+        validate_safe_url(url)
         print(f"[AutoApplyAgent] Starting auto-apply for {url}")
         
         with sync_playwright() as p:
@@ -62,6 +64,7 @@ class AutoApplyAgent:
             page = browser.new_page()
             
             try:
+                validate_safe_url(url)
                 page.goto(url, wait_until="networkidle", timeout=30000)
                 
                 steps_taken = 0

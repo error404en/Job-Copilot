@@ -52,6 +52,7 @@ export default function AddJobPage() {
   const [researchData, setResearchData] = useState<any>(null)
   const [deepDiveLocFilter, setDeepDiveLocFilter] = useState('all')
   const [deepDiveExpFilter, setDeepDiveExpFilter] = useState('all')
+  const [deepDiveSalaryFilter, setDeepDiveSalaryFilter] = useState('all')
   const [trackedJobs, setTrackedJobs] = useState<Record<string, boolean>>({})
   const [roleScores, setRoleScores] = useState<Record<number, any>>({})
   const [scoringRoleIdx, setScoringRoleIdx] = useState<number | null>(null)
@@ -344,11 +345,20 @@ export default function AddJobPage() {
     }
   }
 
-  // Filter deep dive jobs by location and experience level
+  // Filter deep dive jobs by location, experience, and salary
   const filteredDeepDiveJobs = (researchData?.jobs || []).filter((j: any) => {
-    if (deepDiveLocFilter !== 'all' && !(j.location || '').toLowerCase().includes(deepDiveLocFilter.toLowerCase())) {
-      return false
+    // 1. Location filtering
+    if (deepDiveLocFilter !== 'all') {
+      if (deepDiveLocFilter === 'india') {
+        const indianCities = ['india', 'bengaluru', 'bangalore', 'mumbai', 'pune', 'hyderabad', 'delhi', 'ncr', 'gurugram', 'noida', 'chennai', 'remote']
+        const loc = (j.location || '').toLowerCase()
+        if (!indianCities.some(city => loc.includes(city))) return false
+      } else {
+        if (!(j.location || '').toLowerCase().includes(deepDiveLocFilter.toLowerCase())) return false
+      }
     }
+
+    // 2. Experience filtering
     if (deepDiveExpFilter !== 'all') {
       const exp = (j.experience_level || '').toLowerCase()
       const sen = (j.seniority_required || '').toLowerCase()
@@ -364,6 +374,18 @@ export default function AddJobPage() {
         if (!isSenior) return false
       }
     }
+
+    // 3. Salary filtering
+    if (deepDiveSalaryFilter !== 'all') {
+      const comp = (j.compensation_range || j.raw_jd || '').toLowerCase();
+      // Simple heuristic: look for high numbers in CTC string
+      if (deepDiveSalaryFilter === 'high') {
+         if (!comp.includes('₹15') && !comp.includes('₹16') && !comp.includes('₹17') && !comp.includes('₹18') && !comp.includes('₹19') && !comp.includes('₹2') && !comp.includes('₹3') && !comp.includes('₹4') && !comp.includes('₹5') && !comp.includes('₹6') && !comp.includes('₹7') && !comp.includes('₹8') && !comp.includes('₹9')) return false;
+      } else if (deepDiveSalaryFilter === 'top') {
+         if (!comp.includes('₹3') && !comp.includes('₹4') && !comp.includes('₹5') && !comp.includes('₹6') && !comp.includes('₹7') && !comp.includes('₹8') && !comp.includes('₹9')) return false;
+      }
+    }
+
     return true
   })
 
@@ -805,6 +827,7 @@ export default function AddJobPage() {
                           className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
                         >
                           <option value="all">All Locations</option>
+                          <option value="india">🇮🇳 India (Any)</option>
                           <option value="bengaluru">Bengaluru / Bangalore</option>
                           <option value="mumbai">Mumbai</option>
                           <option value="pune">Pune</option>
@@ -830,11 +853,26 @@ export default function AddJobPage() {
                         </select>
                       </div>
 
-                      {(deepDiveLocFilter !== 'all' || deepDiveExpFilter !== 'all') && (
+                      {/* Salary Filter */}
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-zinc-400 font-semibold uppercase">Salary:</label>
+                        <select
+                          value={deepDiveSalaryFilter}
+                          onChange={(e) => setDeepDiveSalaryFilter(e.target.value)}
+                          className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        >
+                          <option value="all">All Salaries</option>
+                          <option value="high">₹15.0L+ CTC</option>
+                          <option value="top">₹30.0L+ CTC</option>
+                        </select>
+                      </div>
+
+                      {(deepDiveLocFilter !== 'all' || deepDiveExpFilter !== 'all' || deepDiveSalaryFilter !== 'all') && (
                         <button
                           onClick={() => {
                             setDeepDiveLocFilter('all')
                             setDeepDiveExpFilter('all')
+                            setDeepDiveSalaryFilter('all')
                           }}
                           className="text-xs text-purple-400 hover:underline"
                         >

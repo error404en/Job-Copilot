@@ -1,12 +1,18 @@
+import re
 import requests
+import json
+from datetime import datetime, timezone
 from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
+from app.utils.security import validate_safe_url
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import html
-from ddgs import DDGS
+import concurrent.futures
+import time
 
 def clean_html(raw_html: str) -> str:
     if not raw_html:
         return ""
-    # Unescape HTML entities
     decoded_html = html.unescape(raw_html)
     # Parse and extract text
     soup = BeautifulSoup(decoded_html, "lxml")
@@ -23,6 +29,7 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
         
     url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true"
     try:
+        validate_safe_url(url)
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -42,10 +49,13 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
         clean_content = clean_html(raw_content)
         
         jobs.append({
-            "source": "greenhouse",
+            "source_type": "greenhouse",
+            "source_confidence": 1.0,
             "company": board_token,
             "role_title": title,
             "url": job.get("absolute_url"),
+            "official_apply_url": job.get("absolute_url"),
+            "external_job_id": str(job.get("id")),
             "location": job.get("location", {}).get("name", ""),
             "raw_jd": f"{title}\nLocation: {job.get('location', {}).get('name', '')}\n\n{clean_content}"
         })
@@ -61,6 +71,7 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
         
     url = f"https://api.lever.co/v0/postings/{board_token}?mode=json"
     try:
+        validate_safe_url(url)
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -85,15 +96,168 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
         full_jd = f"{title}\nLocation: {job.get('categories', {}).get('location', '')}\n\n{desc}\n{clean_html(lists_text)}"
         
         jobs.append({
-            "source": "lever",
+            "source_type": "lever",
+            "source_confidence": 1.0,
             "company": board_token,
             "role_title": title,
             "url": job.get("hostedUrl"),
+            "official_apply_url": job.get("hostedUrl"),
+            "external_job_id": job.get("id"),
             "location": job.get("categories", {}).get("location", ""),
             "raw_jd": full_jd
         })
         
     return jobs
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
+def _safe_post(url, **kwargs):
+    response = requests.post(url, **kwargs)
+    if response.status_code == 429 or response.status_code >= 500:
+        response.raise_for_status() # Trigger retry
+    return response
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
+def _safe_get(url, **kwargs):
+    response = requests.get(url, **kwargs)
+    if response.status_code == 429 or response.status_code >= 500:
+        response.raise_for_status() # Trigger retry
+    return response
+
+def _fetch_single_workday_jd(job_stub: dict, headers: dict) -> dict:
+    """Helper to fetch a single Workday JD concurrently"""
+    jd_url = job_stub["jd_url"]
+    clean_content = ""
+    try:
+        validate_safe_url(jd_url)
+        jd_resp = _safe_get(jd_url, headers=headers, timeout=8)
+        if jd_resp.status_code == 200:
+            jd_data = jd_resp.json()
+            raw_html = jd_data.get("jobPostingInfo", {}).get("jobDescription", "")
+            clean_content = clean_html(raw_html)
+    except Exception as e:
+        print(f"Failed JD fetch {jd_url}: {e}")
+        
+    job_stub["raw_jd"] = f"{job_stub['role_title']}\nLocation: {job_stub['location']}\n\n{clean_content}"
+    return job_stub
+
+def fetch_workday_jobs(board_token: str, target_keywords: list = None) -> list:
+    """
+    Fetches jobs from a Workday board API.
+    board_token is formatted as "tenant/site" OR "host_prefix/tenant/site"
+    (e.g. "pwc/Global_Experienced_Careers" or "mastercard.wd1/mastercard/CorporateCareers")
+    """
+    if not target_keywords:
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst"]
+        
+    parts = board_token.split("/")
+    if len(parts) == 3:
+        host_prefix, tenant, site = parts
+    elif len(parts) == 2:
+        tenant, site = parts
+        host_prefix = tenant
+    else:
+        print(f"Invalid Workday token format: {board_token}")
+        return []
+
+    url = f"https://{host_prefix}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    limit = 20
+    offset = 0
+    max_pages = 10  # safety ceiling
+    pages_fetched = 0
+    
+    try:
+        validate_safe_url(url)
+    except Exception as e:
+        print(f"Invalid Workday URL {url}: {e}")
+        return []
+
+    pending_jobs = []
+
+    # 1. Fetch Listings
+    while pages_fetched < max_pages:
+        payload = {
+            "appliedFacets": {},
+            "limit": limit,
+            "offset": offset,
+            "searchText": ""
+        }
+        
+        try:
+            response = _safe_post(url, json=payload, headers=headers, timeout=10)
+            if response.status_code != 200:
+                print(f"Workday API returned {response.status_code} for {board_token}")
+                break
+            data = response.json()
+        except Exception as e:
+            print(f"Failed to fetch Workday list for {board_token}: {e}")
+            break
+
+        postings = data.get("jobPostings", [])
+        if not postings:
+            break
+
+        for job in postings:
+            title = job.get("title", "")
+            
+            # STAGE 1: Cheap Deterministic Pre-Filtering
+            if target_keywords:
+                if not any(kw.lower() in title.lower() for kw in target_keywords):
+                    continue
+
+            external_path = job.get("externalPath", "")
+            external_job_id = external_path.split("_")[-1] if "_" in external_path else None
+            
+            jd_url = f"https://{host_prefix}.myworkdayjobs.com/wday/cxs/{tenant}/{site}{external_path}"
+            job_url = f"https://{host_prefix}.myworkdayjobs.com/en-US/{site}{external_path}"
+            
+            pending_jobs.append({
+                "source_type": "workday",
+                "source_confidence": 1.0,
+                "company": tenant,
+                "role_title": title,
+                "url": job_url,
+                "official_apply_url": job_url,
+                "external_job_id": external_job_id,
+                "location": job.get("locationsText", ""),
+                "jd_url": jd_url
+            })
+            
+        offset += limit
+        pages_fetched += 1
+        
+        total = data.get("total", 0)
+        if offset >= total:
+            break
+            
+    if pages_fetched >= max_pages:
+        print(f"Workday pagination hit ceiling ({max_pages} pages) for {board_token}. Marked as partially scanned.")
+
+    # 2. Concurrently fetch full JD for filtered jobs
+    start_time = time.time()
+    final_jobs = []
+    failed_jds = 0
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(_fetch_single_workday_jd, job, headers): job for job in pending_jobs}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                res = future.result()
+                del res["jd_url"]  # remove temporary url
+                final_jobs.append(res)
+            except Exception as e:
+                failed_jds += 1
+                
+    duration = time.time() - start_time
+    avg_latency = duration / len(pending_jobs) if pending_jobs else 0
+    
+    print(f"Workday fetch complete: {len(pending_jobs)} listings | {len(final_jobs)} JDs fetched | {failed_jds} failed | {duration:.2f}s total ({avg_latency:.2f}s avg)")
+    
+    return final_jobs
 
 def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
     if not target_keywords:
@@ -101,6 +265,7 @@ def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
     
     url = f"https://api.ashbyhq.com/posting-api/job-board/{board_token}"
     try:
+        validate_safe_url(url)
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -118,10 +283,13 @@ def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
         full_jd = f"{title}\nLocation: {job.get('location', '')}\n\n{clean_html(desc)}"
         
         jobs.append({
-            "source": "ashby",
+            "source_type": "ashby",
+            "source_confidence": 1.0,
             "company": board_token,
             "role_title": title,
             "url": job.get("jobUrl"),
+            "official_apply_url": job.get("jobUrl"),
+            "external_job_id": job.get("id"),
             "location": job.get("location", ""),
             "raw_jd": full_jd
         })
@@ -133,6 +301,7 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
     
     url = f"https://api.smartrecruiters.com/v1/companies/{board_token}/postings"
     try:
+        validate_safe_url(url)
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -148,6 +317,7 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
         
         detail_url = f"https://api.smartrecruiters.com/v1/companies/{board_token}/postings/{job.get('id')}"
         try:
+            validate_safe_url(detail_url)
             d_res = requests.get(detail_url, timeout=5)
             d_data = d_res.json()
             job_desc = d_data.get("jobAd", {}).get("sections", {})
@@ -158,11 +328,15 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
         except:
             full_jd = title
             
+        job_url = f"https://jobs.smartrecruiters.com/{board_token}/{job.get('id')}"
         jobs.append({
-            "source": "smartrecruiters",
+            "source_type": "smartrecruiters",
+            "source_confidence": 1.0,
             "company": board_token,
             "role_title": title,
-            "url": f"https://jobs.smartrecruiters.com/{board_token}/{job.get('id')}",
+            "url": job_url,
+            "official_apply_url": job_url,
+            "external_job_id": job.get("id"),
             "location": job.get("location", {}).get("city", ""),
             "raw_jd": full_jd
         })
@@ -170,6 +344,7 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
 
 def fetch_generic_fallback(url: str, target_keywords: list = None) -> list:
     try:
+        validate_safe_url(url)
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
@@ -195,6 +370,53 @@ def fetch_generic_fallback(url: str, target_keywords: list = None) -> list:
         print(f"Failed generic fallback for {url}: {e}")
         return []
 
+def fetch_generic_fallback(careers_url: str, company_name: str, target_keywords: list = None) -> list:
+    """
+    Generic Official Careers Fallback.
+    Uses Playwright to scrape the DOM, and LLM to parse job listings, preserving SSRF protections.
+    """
+    from app.services.playwright_scraper import scrape_dynamic_page
+    from app.services.llm_client import extract_jobs_from_page
+    
+    if not target_keywords:
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst"]
+        
+    try:
+        validate_safe_url(careers_url)
+    except Exception as e:
+        print(f"Generic Fallback aborted. Invalid URL {careers_url}: {e}")
+        return []
+        
+    jobs = []
+    try:
+        print(f"[Generic Fallback] Extracting from {careers_url}...")
+        raw_text = scrape_dynamic_page(careers_url)
+        if raw_text and len(raw_text) > 50:
+            extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
+            for job in extracted:
+                title = job.get("role_title")
+                if not title:
+                    continue
+                    
+                # Apply cheap Stage 1 filtering on the Playwright result
+                if not any(kw.lower() in title.lower() for kw in target_keywords):
+                    continue
+
+                jobs.append({
+                    "source_type": "generic_playwright",
+                    "source_confidence": 0.8,
+                    "company": company_name,
+                    "role_title": title,
+                    "url": job.get("url") or careers_url,
+                    "official_apply_url": job.get("url") or careers_url,
+                    "location": job.get("location", "Unknown"),
+                    "external_job_id": None,
+                    "raw_jd": f"{title}\nCompany: {company_name}\nLocation: {job.get('location', 'Unknown')}\n\n[Extracted via Playwright AI Parsing]"
+                })
+    except Exception as e:
+        print(f"Generic fallback extraction failed for {careers_url}: {e}")
+        
+    return jobs
 
 def resolve_redirects_and_detect_promo(url: str) -> dict:
     """
@@ -216,6 +438,7 @@ def resolve_redirects_and_detect_promo(url: str) -> dict:
     try:
         # Special handling for lnkd.in interstitial redirect page
         if "lnkd.in" in current_url:
+            validate_safe_url(current_url)
             res = requests.get(current_url, headers=headers, timeout=8)
             soup = BeautifulSoup(res.text, "html.parser")
             for a in soup.find_all("a", href=True):
@@ -229,6 +452,7 @@ def resolve_redirects_and_detect_promo(url: str) -> dict:
             if current_url in visited:
                 break
             visited.add(current_url)
+            validate_safe_url(current_url)
             r = requests.get(current_url, headers=headers, allow_redirects=True, timeout=8)
             if r.url and r.url != current_url:
                 current_url = r.url
@@ -619,36 +843,105 @@ VERIFIED_COMPANY_ROLES = {
 }
 
 
-def _infer_experience_metadata(title: str, text: str = "") -> dict:
+def parse_experience_requirements(title: str, text: str = "") -> dict:
     """
-    Infers experience bracket and seniority code from title and snippet.
+    Hybrid Experience Engine: Uses regex for obvious numeric bounds, 
+    and LLM for ambiguous/conflicting requirements like "preferred vs required".
     """
+    from app.services.llm_client import _try_groq_json
     combined = (title + " " + text).lower()
+    title_lower = title.lower()
     
-    # 1. Freshers / Entry / 0-2 yrs
-    fresher_indicators = ["analyst", "graduate", "trainee", "get", "intern", "junior", "entry", "sde 1", "sde-1", "sde i", "sde-i", "associate", "0-1", "0-2", "fresher", "freshers"]
-    if any(ind in combined for ind in fresher_indicators):
-        return {
-            "experience_level": "0-2 Yrs (Freshers & Entry)",
-            "seniority_required": "0-2yr",
-            "fresher_friendly": True
-        }
-        
-    # 2. Senior / Lead / 5+ yrs
-    senior_indicators = ["senior", "lead", "principal", "architect", "staff", "avp", "director", "manager", "5+", "6+", "7+", "8+"]
-    if any(ind in combined for ind in senior_indicators):
-        return {
-            "experience_level": "5+ Yrs (Senior & Lead)",
-            "seniority_required": "senior",
-            "fresher_friendly": False
-        }
-        
-    # 3. Mid-level (2-5 yrs default)
-    return {
-        "experience_level": "2-5 Yrs (Mid-Level)",
-        "seniority_required": "2-5yr",
-        "fresher_friendly": False
+    # Defaults
+    res = {
+        "experience_min_years": 0,
+        "experience_max_years": 5,
+        "experience_required": False,
+        "experience_preferred": False,
+        "seniority": "2-5yr",
+        "fresher_eligibility": False,
+        "eligibility_reason": "No explicit experience boundaries detected.",
+        "confidence": 0.5
     }
+    
+    # If there's ambiguous text like 'preferred' near numbers, we route straight to LLM
+    has_ambiguous_modifiers = bool(re.search(r'\b(preferred|nice to have|plus|bonus|not required)\b', combined))
+    
+    if not has_ambiguous_modifiers:
+        # 1. Senior / Lead / 5+ yrs
+        if bool(re.search(r'\b(5\+|6\+|7\+|8\+|9\+|10\+|15\+)\s*(?:years?|yrs?|yoa)\b', combined)) or \
+           bool(re.search(r'\b(senior|lead|principal|architect|staff|director|vp|avp)\b', title_lower)):
+            res.update({
+                "experience_min_years": 5,
+                "experience_max_years": 15,
+                "experience_required": True,
+                "seniority": "senior",
+                "fresher_eligibility": False,
+                "eligibility_reason": "Senior title or 5+ years required via regex.",
+                "confidence": 0.9
+            })
+            return res
+
+        # 2. Freshers / Entry / 0-2 yrs
+        fresher_regex = r'(?<!not for\s)(?<!no\s)(?<!not looking for\s)\b(fresher|freshers|0-1|0-2|0 to 2|entry[- ]level|intern|internship|trainee|graduate|junior)\b'
+        if bool(re.search(fresher_regex, combined)) or \
+           bool(re.search(r'\b(sde\s*1|sde-1|sde\s*i|analyst|get)\b', title_lower)) or \
+           bool(re.search(r'\b(0|zero)\s*(?:years?|yrs?)\b', combined)):
+            res.update({
+                "experience_min_years": 0,
+                "experience_max_years": 2,
+                "fresher_eligibility": True,
+                "seniority": "0-2yr",
+                "eligibility_reason": "Fresher/Entry-level keywords detected via regex.",
+                "confidence": 0.9
+            })
+            return res
+
+        # 3. Mid-level (2-5 yrs)
+        if bool(re.search(r'\b([2-4]\+?)\s*(?:years?|yrs?|yoa)\b', combined)) or \
+           bool(re.search(r'\b(mid-level|sde\s*2|sde-2|sde\s*ii|associate)\b', title_lower)):
+            res.update({
+                "experience_min_years": 2,
+                "experience_max_years": 5,
+                "experience_required": True,
+                "seniority": "2-5yr",
+                "fresher_eligibility": False,
+                "eligibility_reason": "Mid-level keywords detected via regex.",
+                "confidence": 0.9
+            })
+            return res
+
+    # LLM Fallback for ambiguous cases
+    prompt = f"""
+    Extract structured experience requirements from this Job Title and Description snippet.
+    Distinguish between 'required' and 'preferred' experience.
+    
+    Title: {title}
+    Text: {text[:2000]}
+    
+    Return a JSON object matching this schema:
+    {{
+        "experience_min_years": (int, 0 if fresher/entry, else extract minimum required years),
+        "experience_max_years": (int, 5 if mid, 15 if senior),
+        "experience_required": (boolean, true if the min_years is strictly required),
+        "experience_preferred": (boolean, true if the min_years is only preferred/nice-to-have),
+        "seniority": (string, "0-2yr", "2-5yr", or "senior"),
+        "fresher_eligibility": (boolean, true if 0 years experience is accepted),
+        "eligibility_reason": (string, briefly explain why),
+        "confidence": (float between 0.0 and 1.0)
+    }}
+    """
+    try:
+        parsed_str = _try_groq_json(prompt)
+        if parsed_str:
+            import json
+            parsed = json.loads(parsed_str)
+            if "experience_min_years" in parsed:
+                return parsed
+    except Exception as e:
+        print(f"Hybrid parser LLM fallback failed: {e}")
+        
+    return res
 
 
 def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict:
@@ -689,9 +982,39 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
     except Exception as e:
         print(f"[scrape_careers_page] Careers URL search skipped: {e}")
 
-    # Step B: Live search for current openings with experience inference
-    kw_str = " ".join(target_keywords[:2]) if target_keywords else "Software Engineer Analyst"
-    query = f'"{company_name}" hiring ("Software Engineer" OR "Analyst" OR "Associate" OR "Developer") ("India" OR "Bengaluru" OR "Pune" OR "Hyderabad" OR "Mumbai" OR "Noida" OR "Gurugram" OR "Chennai")'
+    # Step B: Scrape with Playwright if careers URL found
+    if careers_url:
+        print(f"[scrape_careers_page] Attempting to scrape {careers_url} with Playwright...")
+        try:
+            from app.services.playwright_scraper import scrape_dynamic_page
+            raw_text = scrape_dynamic_page(careers_url)
+            if raw_text and len(raw_text) > 50:
+                extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
+                for job in extracted:
+                    if not job.get("role_title"):
+                        continue
+                    exp_meta = parse_experience_requirements(job.get("role_title", ""), "")
+                    exp_level = "0-2 Yrs" if exp_meta["fresher_eligibility"] else "2-5 Yrs" if exp_meta["experience_min_years"] < 5 else "5+ Yrs"
+                    
+                    jobs.append({
+                        "source_type": "playwright_scraper",
+                        "source_confidence": 0.8,
+                        "company": company_name,
+                        "role_title": job.get("role_title", "Unknown Role"),
+                        "url": job.get("url") or careers_url or f"https://www.google.com/search?q={company_name}+careers+{job.get('role_title', '').replace(' ', '+')}",
+                        "official_apply_url": job.get("url"),
+                        "location": job.get("location", "India"),
+                        "seniority_required": exp_meta["seniority"],
+                        "raw_jd": f"{job.get('role_title', '')}\nCompany: {company_name}\nLocation: {job.get('location', 'India')}\nExperience: {exp_level}\n\n[Extracted via Playwright AI Parsing]"
+                    })
+        except Exception as e:
+            print(f"[scrape_careers_page] Playwright scraping failed: {e}")
+
+    # Step C: Live search fallback if Playwright failed or no careers URL found
+    if len(jobs) == 0:
+        print(f"[scrape_careers_page] Playwright returned 0 jobs. Falling back to live DDG search.")
+        kw_str = " ".join(target_keywords[:2]) if target_keywords else "Software Engineer Analyst"
+        query = f'"{company_name}" hiring ("Software Engineer" OR "Analyst" OR "Associate" OR "Developer") ("India" OR "Bengaluru" OR "Pune" OR "Hyderabad" OR "Mumbai" OR "Noida" OR "Gurugram" OR "Chennai")'
     
     try:
         with DDGS(timeout=4) as ddgs:
@@ -731,53 +1054,32 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
                 if salary_match:
                     salary = salary_match.group(1)
                 else:
-                    exp_level = _infer_experience_metadata(cleaned_title, body)["experience_level"]
-                    if "0-2" in exp_level:
+                    exp_meta = parse_experience_requirements(cleaned_title, body)
+                    exp_level = "0-2 Yrs" if exp_meta["fresher_eligibility"] else "2-5 Yrs" if exp_meta["experience_min_years"] < 5 else "5+ Yrs"
+                    
+                    if exp_meta["fresher_eligibility"]:
                         salary = "₹8.0L - ₹15.0L CTC (Estimated)"
-                    elif "2-5" in exp_level:
+                    elif exp_meta["experience_min_years"] < 5:
                         salary = "₹15.0L - ₹30.0L CTC (Estimated)"
                     else:
                         salary = "₹30.0L+ CTC (Estimated)"
 
-                exp_meta = _infer_experience_metadata(cleaned_title, body)
+                exp_meta = parse_experience_requirements(cleaned_title, body)
+                exp_level = "0-2 Yrs" if exp_meta["fresher_eligibility"] else "2-5 Yrs" if exp_meta["experience_min_years"] < 5 else "5+ Yrs"
 
                 jobs.append({
-                    "source": "live_search",
+                    "source_type": "live_search",
+                    "source_confidence": 0.4,
                     "company": company_name,
                     "role_title": cleaned_title,
                     "url": href or careers_url or f"https://www.google.com/search?q={company_name}+careers+{cleaned_title.replace(' ', '+')}",
+                    "official_apply_url": href,
                     "location": loc,
-                    "experience_level": exp_meta["experience_level"],
-                    "seniority_required": exp_meta["seniority_required"],
-                    "raw_jd": f"{cleaned_title}\nCompany: {company_name}\nLocation: {loc}\nExperience: {exp_meta['experience_level']}\nCompensation: {salary}\n\n{body}"
+                    "seniority_required": exp_meta["seniority"],
+                    "raw_jd": f"{cleaned_title}\nCompany: {company_name}\nLocation: {loc}\nExperience: {exp_level}\nCompensation: {salary}\n\n{body}"
                 })
     except Exception as e:
         print(f"[scrape_careers_page] Live search fallback failed for {company_name}: {e}")
-
-    # Tier 3: The Playwright Workday Scraper Catch-All
-    if len(jobs) == 0 and careers_url:
-        print(f"[scrape_careers_page] Tier 2 DDG returned 0 jobs. Falling back to Tier 3 Playwright Scraper for {careers_url}")
-        try:
-            from app.services.playwright_scraper import scrape_dynamic_page
-            raw_text = scrape_dynamic_page(careers_url)
-            if raw_text and len(raw_text) > 50:
-                extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
-                for job in extracted:
-                    if not job.get("role_title"):
-                        continue
-                    exp_meta = _infer_experience_metadata(job.get("role_title", ""), "")
-                    jobs.append({
-                        "source": "playwright_scraper",
-                        "company": company_name,
-                        "role_title": job.get("role_title", "Unknown Role"),
-                        "url": job.get("url") or careers_url or f"https://www.google.com/search?q={company_name}+careers+{job.get('role_title', '').replace(' ', '+')}",
-                        "location": job.get("location", "India"),
-                        "experience_level": exp_meta["experience_level"],
-                        "seniority_required": exp_meta["seniority_required"],
-                        "raw_jd": f"{job.get('role_title', '')}\nCompany: {company_name}\nLocation: {job.get('location', 'India')}\nExperience: {exp_meta['experience_level']}\n\n[Extracted via Playwright AI Parsing]"
-                    })
-        except Exception as e:
-            print(f"[scrape_careers_page] Playwright fallback failed: {e}")
 
     print(f"[scrape_careers_page] Returning {len(jobs)} jobs for {company_name}")
     return {"careers_url": careers_url, "jobs": jobs}

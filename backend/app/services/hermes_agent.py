@@ -2,6 +2,7 @@ import asyncio
 import logging
 from playwright.async_api import async_playwright
 import sqlite3
+from app.utils.security import validate_safe_url
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ async def run_hermes_apply(url: str, job_id: str):
     logger.info(f"Hermes Agent starting auto-apply for job {job_id} at {url}")
     
     try:
+        validate_safe_url(url)
         async with async_playwright() as p:
             # Use chromium, headless for background processing
             browser = await p.chromium.launch(headless=True)
@@ -33,6 +35,7 @@ async def run_hermes_apply(url: str, job_id: str):
             page = await context.new_page()
             
             logger.info("Navigating to URL...")
+            validate_safe_url(url)
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             
             # Wait a bit for dynamic content / ATS forms to render

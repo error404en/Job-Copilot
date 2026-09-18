@@ -57,7 +57,7 @@ export function AIOrb({ state = 'idle', className = '' }: AIOrbProps) {
         transition: {
           repeat: Infinity,
           duration: 1,
-          delay: Math.random() * 1,
+          delay: distance * 0.15,
           ease: 'easeInOut',
         }
       }

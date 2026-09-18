@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Form, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Body, Form, File, UploadFile, Request
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
 from pydantic import BaseModel
@@ -7,6 +7,8 @@ from app.middleware.auth import get_current_user
 from app.services.llm_client import get_completion, generate_tailoring_text, generate_tailoring_text_stream, extract_text_from_image
 import json
 import io
+from app.utils.security import safe_read_file, validate_image_content, validate_pdf_content, sanitize_filename
+from app.middleware.rate_limit import limiter
 
 try:
     import fitz  # PyMuPDF
@@ -105,6 +107,11 @@ def get_thread_messages(thread_id: str, user_id: str = Depends(get_current_user)
     if thread_id in session_messages and len(session_messages[thread_id]) > 0:
         return session_messages[thread_id]
         
+    # 1. Verify thread belongs to user
+    thread_check = supabase.table("chat_threads").select("id").eq("id", thread_id).eq("user_id", user_id).execute()
+    if not thread_check.data:
+        raise HTTPException(status_code=404, detail="Chat thread not found")
+
     try:
         response = supabase.table("chat_messages").select("*").eq("thread_id", thread_id).order("created_at", desc=False).execute()
         if response.data:
@@ -116,7 +123,9 @@ def get_thread_messages(thread_id: str, user_id: str = Depends(get_current_user)
 
 
 @router.post("/threads/{thread_id}/messages")
-async def send_message(
+@limiter.limit("20/minute")
+def send_message(
+    request: Request,
     thread_id: str, 
     content: str = Form(...),
     files: Optional[List[UploadFile]] = File(None),
@@ -129,7 +138,7 @@ async def send_message(
         # 1. Verify thread context (check DB, fallback to session)
         thread = None
         try:
-            thread_res = supabase.table("chat_threads").select("*").eq("id", thread_id).execute()
+            thread_res = supabase.table("chat_threads").select("*").eq("id", thread_id).eq("user_id", user_id).execute()
             if thread_res.data:
                 thread = thread_res.data[0]
         except Exception:
@@ -145,36 +154,51 @@ async def send_message(
 
         # 2. Process Attachment(s) if present
         attachment_text = ""
+        MAX_FILES = 3
         if files:
+            if len(files) > MAX_FILES:
+                raise HTTPException(status_code=400, detail=f"Maximum {MAX_FILES} attachments allowed.")
+                
             for file in files:
-                file_bytes = await file.read()
+                # Limit each attachment to 5MB
+                file_bytes = safe_read_file(file, 5 * 1024 * 1024)
+                safe_fname = sanitize_filename(file.filename)
                 mime_type = file.content_type or ""
+                
                 if mime_type.startswith("image/"):
                     try:
+                        validate_image_content(file_bytes)
                         extracted = extract_text_from_image(file_bytes, mime_type)
-                        attachment_text += f"\n[User Attached Image ({file.filename}). Extracted Text:]\n{extracted}\n"
+                        attachment_text += f"\n[User Attached Image ({safe_fname}). Extracted Text:]\n{extracted}\n"
                     except Exception as e:
-                        raise HTTPException(status_code=400, detail=f"Failed to process image: {e}")
+                        raise HTTPException(status_code=400, detail=f"Failed to process image {safe_fname}: {e}")
                 elif mime_type == "application/pdf":
                     try:
+                        validate_pdf_content(file_bytes)
                         extracted = ""
+                        MAX_PAGES = 10
                         if fitz is not None:
                             pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
-                            for page in pdf_doc:
+                            for i, page in enumerate(pdf_doc):
+                                if i >= MAX_PAGES:
+                                    break
                                 extracted += page.get_text() + "\n"
                         else:
                             import PyPDF2
                             reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-                            extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
-                        attachment_text += f"\n[User Attached PDF ({file.filename}). Extracted Text:]\n{extracted}\n"
+                            for i, page in enumerate(reader.pages):
+                                if i >= MAX_PAGES:
+                                    break
+                                extracted += (page.extract_text() or "") + "\n"
+                        attachment_text += f"\n[User Attached PDF ({safe_fname}). Extracted Text:]\n{extracted}\n"
                     except Exception as e:
-                        raise HTTPException(status_code=400, detail=f"Failed to process PDF: {e}")
+                        raise HTTPException(status_code=400, detail=f"Failed to process PDF {safe_fname}: {e}")
                 else:
                     try:
                         text = file_bytes.decode("utf-8")
-                        attachment_text += f"\n[User Attached File ({file.filename}). Extracted Text:]\n{text}\n"
+                        attachment_text += f"\n[User Attached File ({safe_fname}). Extracted Text:]\n{text}\n"
                     except Exception:
-                        raise HTTPException(status_code=400, detail="Unsupported file format")
+                        raise HTTPException(status_code=400, detail=f"Unsupported file format for {safe_fname}. Only Text, Images, and PDFs are supported.")
 
         final_user_content = content + attachment_text
         user_msg_id = str(uuid.uuid4())
@@ -191,6 +215,7 @@ async def send_message(
         try:
             supabase.table("chat_messages").insert({
                 "thread_id": thread_id,
+                "user_id": user_id,  # Phase 3 Security Fix
                 "role": "user",
                 "content": final_user_content
             }).execute()
@@ -246,7 +271,7 @@ async def send_message(
 
         if thread.get("job_id"):
             try:
-                job_res = supabase.table("jobs").select("*").eq("id", thread["job_id"]).execute()
+                job_res = supabase.table("jobs").select("*").eq("id", thread["job_id"]).eq("user_id", user_id).execute()
                 if job_res.data:
                     job = job_res.data[0]
                     system_prompt += f"CONTEXTUAL JOB ROLE:\nTitle: {job.get('role_title')}\nCompany: {job.get('company')}\nJD: {job.get('raw_jd')[:3000]}\n"
@@ -289,7 +314,7 @@ async def send_message(
         full_prompt += "Coach:"
 
         # 6. Stream Response via SSE
-        async def response_generator():
+        def response_generator():
             full_response_text = ""
             try:
                 for chunk in generate_tailoring_text_stream(full_prompt):
@@ -303,6 +328,7 @@ async def send_message(
                     try:
                         supabase.table("chat_messages").insert({
                             "thread_id": thread_id,
+                            "user_id": user_id,  # Phase 3 Security Fix
                             "role": "assistant",
                             "content": full_response_text
                         }).execute()

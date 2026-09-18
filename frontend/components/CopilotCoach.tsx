@@ -71,7 +71,10 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
   useEffect(() => {
     if (threads && threads.length > 0 && jobId && !currentThreadId) {
       const existing = threads.find(t => t.job_id === jobId)
-      if (existing) setCurrentThreadId(existing.id)
+      if (existing) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCurrentThreadId(existing.id)
+      }
     }
   }, [threads, jobId, currentThreadId])
 
@@ -98,6 +101,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
         newPreviews.push({ file: f, url: URL.createObjectURL(f) })
       }
     })
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilePreviews(newPreviews)
     
     return () => {

@@ -1,6 +1,8 @@
 import re
 import requests
 import concurrent.futures
+from fastapi import HTTPException
+from app.utils.security import validate_safe_url
 
 def extract_urls(text: str) -> list[str]:
     """Extracts all http/https URLs from a given string."""
@@ -28,11 +30,14 @@ def extract_urls(text: str) -> list[str]:
 def check_single_url(url: str) -> dict:
     """Tests a single URL. Returns dict with status and error message if any."""
     try:
+        validate_safe_url(url)
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         res = requests.get(url, headers=headers, timeout=5, stream=True)
         if res.status_code >= 400:
             return {"url": url, "is_broken": True, "error": f"HTTP {res.status_code}"}
         return {"url": url, "is_broken": False, "error": None}
+    except HTTPException as e:
+        return {"url": url, "is_broken": True, "error": f"Forbidden URL ({e.detail})"}
     except requests.exceptions.Timeout:
         return {"url": url, "is_broken": True, "error": "Timeout"}
     except requests.exceptions.RequestException as e:

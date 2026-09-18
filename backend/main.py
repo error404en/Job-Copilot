@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import jobs, profile, auto_apply, resumes, research, applications, companies, chat
 from app.services.scheduler import start_scheduler
 from contextlib import asynccontextmanager
+from slowapi.errors import RateLimitExceeded
+from app.middleware.rate_limit import limiter, _rate_limit_exceeded_handler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,6 +19,8 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="JobCopilot API", version="1.0.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS: set ALLOWED_ORIGINS env var in production (comma-separated).
 # Example: ALLOWED_ORIGINS=https://myapp.vercel.app,https://www.myapp.com

@@ -130,16 +130,30 @@
 ---
 
 ### Bug 11: Missing Re-analyze & Delete Endpoints
-- **Symptom:** Users had no way to retry analysis on existing jobs or delete obsolete jobs from the UI.
-- **Root Cause:** Backend only supported creating new jobs via `/parse`, lacking dedicated retry or delete endpoints.
-- **Fix:** Implemented in `backend/app/api/jobs.py`:
-  - `POST /api/jobs/{job_id}/reanalyze`: Resets the timestamp, deletes previous partial analysis, and triggers a fresh LLM evaluation.
-  - `DELETE /api/jobs/{job_id}`: Removes the job and cascaded analyses from Supabase.
-- **Takeaway:** Every asynchronous AI processing pipeline must provide user-facing retry and deletion endpoints for recovery.
+- **Symptom:** Users could not delete jobs from their dashboard or manually re-trigger an analysis if the first one failed (or was skipped).
+- **Root Cause:** MVP constraint. Endpoints for `DELETE /api/jobs/{id}` and `POST /api/jobs/{id}/re-analyze` were missing in `backend/app/api/jobs.py`.
+- **Fix:** Implemented both endpoints. Delete endpoint removes the job and cascades to its analyses. Re-analyze endpoint calls the parser and performs an upsert via `.upsert()`.
+- **Takeaway:** Always provide basic CRUD parity in dashboards dealing with generated AI content.
 
 ---
 
-### Bug 12: New User Onboarding ('User profile not found in DB' & False 'Backend Offline')
+### Bug 12: Event Loop Starvation from LLM and DB Blocks
+- **Symptom:** During bulk background ATS fetching or when one user initiated a heavy chat generation, all other API requests for all users would hang/timeout.
+- **Root Cause:** FastAPI `async def` endpoints were executing synchronous blocking functions (e.g. `google-genai` network calls and `supabase-py` HTTP queries). This stalled the single event loop.
+- **Fix:** Converted `app/api/chat.py`, `jobs.py`, and `resumes.py` routes to use standard `def`. This allowed FastAPI to offload those blocking executions to its internal threadpool. For routes that absolutely needed to remain `async def` (like Playwright interactions), `asyncio.to_thread` was wrapped around DB calls.
+- **Takeaway:** Never execute blocking synchronous I/O directly inside an `async def` block in FastAPI.
+
+---
+
+### Bug 13: IDOR and Unrestricted File Uploads (Security)
+- **Symptom:** An authenticated user could fetch or manipulate job/resume records belonging to another user by simply modifying the ID in the request path. In addition, users could upload 500MB PDF files, causing DoS.
+- **Root Cause:** The backend was using the `SUPABASE_SERVICE_ROLE_KEY`, effectively bypassing Row Level Security. File upload logic lacked magic-byte validation and loaded entire files into memory concurrently.
+- **Fix:** We wrote a strict `14_phase3_db_security.sql` migration to enforce database-level Row Level Security (RLS) on all tables, isolating data by `auth.uid()`. Upload endpoints were patched to use synchronous chunked reading (`file.file.read(max_size)`) and strictly check magic bytes (`%PDF-`).
+- **Takeaway:** Never trust client-side identifiers. Always enforce data access boundaries at the database layer (RLS) as a failsafe against application-layer logic bugs.
+
+---
+
+### Bug 14: New User Onboarding ('User profile not found in DB' & False 'Backend Offline')
 - **Symptom:** When a new user (or second account) signed into JobCopilot and attempted to parse a job with the extension, the in-page button flashed `❌ Backend Offline` and popup failed with `User profile not found in DB`.
 - **Root Cause:**
   1. No auto-provisioning existed for newly registered Clerk accounts in Supabase `user_profile`.

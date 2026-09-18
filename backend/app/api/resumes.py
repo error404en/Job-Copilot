@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 import io
 import hashlib
 import PyPDF2
@@ -9,6 +9,8 @@ from datetime import datetime
 from app.db.supabase_client import supabase
 from app.services.llm_client import parse_resume_with_llm
 from app.middleware.auth import get_current_user
+from app.utils.security import safe_read_file, validate_pdf_content, sanitize_filename
+from app.middleware.rate_limit import limiter
 
 router = APIRouter()
 
@@ -26,12 +28,19 @@ def list_resumes(user_id: str = Depends(get_current_user)):
     return res.data
 
 @router.post("/upload")
-async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
+@limiter.limit("10/minute")
+def upload_resume(request: Request, file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
-    # Read file content
-    content = await file.read()
+    # Read file content safely (max 5MB)
+    content = safe_read_file(file, 5 * 1024 * 1024)
+    
+    # Validate PDF magic bytes
+    validate_pdf_content(content)
+    
+    # Sanitize filename
+    safe_filename = sanitize_filename(file.filename)
     
     # Calculate SHA-256 hash of the content
     file_hash = hashlib.sha256(content).hexdigest()
@@ -46,7 +55,7 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
         )
     
     # 2. Check identical filename upload
-    file_path_placeholder = f"local_upload_{file.filename}"
+    file_path_placeholder = f"local_upload_{safe_filename}"
     existing_by_filename = supabase.table("resume_versions").select("id, title, file_hash").eq("user_id", user_id).eq("file_path", file_path_placeholder).execute()
     if existing_by_filename.data and len(existing_by_filename.data) > 0:
         existing_title = existing_by_filename.data[0].get("title", "Unknown")
@@ -58,14 +67,17 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
                 pass
         raise HTTPException(
             status_code=409,
-            detail=f"Duplicate resume detected. A file named '{file.filename}' was already uploaded as '{existing_title}'."
+            detail=f"Duplicate resume detected. A file named '{safe_filename}' was already uploaded as '{existing_title}'."
         )
     
     # Extract text — try PyPDF2 first, fall back to PyMuPDF for complex PDFs
     raw_text = ""
+    MAX_PAGES = 15
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
-        for page in pdf_reader.pages:
+        for i, page in enumerate(pdf_reader.pages):
+            if i >= MAX_PAGES:
+                break
             raw_text += (page.extract_text() or "") + "\n"
     except Exception:
         pass
@@ -75,7 +87,9 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(stream=content, filetype="pdf")
-            for page in doc:
+            for i, page in enumerate(doc):
+                if i >= MAX_PAGES:
+                    break
                 raw_text += page.get_text() + "\n"
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
@@ -123,22 +137,27 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
 
 @router.delete("/{resume_id}")
 def delete_resume(resume_id: str, user_id: str = Depends(get_current_user)):
-    # Disassociate foreign keys before deleting so constraint does not block
+    # 1. Verify ownership before doing anything
+    verify = supabase.table("resume_versions").select("id").eq("id", resume_id).eq("user_id", user_id).execute()
+    if not verify.data:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    # 2. Disassociate foreign keys before deleting so constraint does not block
+    # Since we verified ownership above, these updates are safe.
     try:
-        supabase.table("job_analyses").update({"recommended_resume_version_id": None}).eq("recommended_resume_version_id", resume_id).execute()
+        supabase.table("job_analyses").update({"recommended_resume_version_id": None}).eq("recommended_resume_version_id", resume_id).eq("user_id", user_id).execute()
     except Exception:
         pass
     try:
-        supabase.table("application_drafts").update({"resume_version_id": None}).eq("resume_version_id", resume_id).execute()
+        supabase.table("application_drafts").update({"resume_version_id": None}).eq("resume_version_id", resume_id).eq("user_id", user_id).execute()
     except Exception:
         pass
     try:
-        supabase.table("applications").update({"resume_version_id": None}).eq("resume_version_id", resume_id).execute()
+        supabase.table("applications").update({"resume_version_id": None}).eq("resume_version_id", resume_id).eq("user_id", user_id).execute()
     except Exception:
         pass
 
+    # 3. Delete the resume
     res = supabase.table("resume_versions").delete().eq("id", resume_id).eq("user_id", user_id).execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Resume not found")
     return {"status": "success"}
 

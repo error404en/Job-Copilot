@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 import time
+from app.utils.security import validate_safe_url
 
 def scrape_dynamic_page(url: str) -> str:
     """
@@ -10,6 +11,7 @@ def scrape_dynamic_page(url: str) -> str:
     
     # We use sync_playwright since the calling functions are synchronous
     try:
+        validate_safe_url(url)
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()

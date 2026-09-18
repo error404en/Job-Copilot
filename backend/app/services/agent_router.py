@@ -3,13 +3,16 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from fastapi import HTTPException
 from app.services.llm_client import generate_structured
+from app.utils.security import validate_safe_url
 import traceback
 
 class RouterDecision(BaseModel):
-    requires_tool: bool = Field(description="Set to true if the user's message explicitly asks the coach to fetch a link, search the web, scrape a URL, or fetch jobs.")
-    tool_name: Optional[str] = Field(description="The name of the tool to use: 'search_web' or 'scrape_url'. Leave null if requires_tool is false.")
-    tool_args: Optional[Dict[str, Any]] = Field(description="A dictionary of arguments for the tool. For 'search_web', provide {'query': '...'} . For 'scrape_url', provide {'url': '...'} .")
+    requires_tool: bool = Field(description="Set to true if the user's message explicitly asks the coach to fetch a link, search the web, scrape a URL, extract job links from a page, or fetch jobs.")
+    tool_name: Optional[str] = Field(description="The name of the tool to use: 'search_web', 'scrape_url', or 'extract_job_links'. Leave null if requires_tool is false.")
+    tool_args: Optional[Dict[str, Any]] = Field(description="A dictionary of arguments for the tool. For 'search_web', provide {'query': '...'} . For 'scrape_url' or 'extract_job_links', provide {'url': '...'} .")
 
 def perform_search_web(query: str) -> str:
     """Uses DuckDuckGo to search the web and returns a summary of top results."""
@@ -31,6 +34,7 @@ def perform_search_web(query: str) -> str:
 def perform_scrape_url(url: str) -> str:
     """Fetches a URL and extracts readable text using BeautifulSoup."""
     try:
+        validate_safe_url(url)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
@@ -52,6 +56,44 @@ def perform_scrape_url(url: str) -> str:
     except Exception as e:
         return f"[Error scraping URL: {str(e)}]"
 
+def perform_extract_job_links(url: str) -> str:
+    """Fetches an aggregator URL and extracts all hyperlink tags, filtering for job-like links."""
+    try:
+        from urllib.parse import urljoin
+        validate_safe_url(url)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        links = soup.find_all('a')
+        
+        extracted_links = []
+        for l in links:
+            href = l.get('href')
+            text = l.get_text(strip=True)
+            # Basic heuristic: ignore empty links, anchor links, and common non-job nav items
+            if href and text and not href.startswith('#') and len(text) > 3:
+                ignore_keywords = ['login', 'sign in', 'register', 'contact', 'about', 'privacy', 'terms']
+                if not any(k in text.lower() for k in ignore_keywords):
+                    full_url = urljoin(url, href)
+                    extracted_links.append(f"- {text}: {full_url}")
+                    
+        # Remove duplicates while preserving order
+        unique_links = list(dict.fromkeys(extracted_links))
+        
+        if not unique_links:
+            return "No job links found on this page."
+            
+        # Return up to 100 links to prevent context overflow
+        result = "Found the following links on the page. Please present the most relevant ones to the user:\n"
+        result += "\n".join(unique_links[:100])
+        return result
+    except Exception as e:
+        return f"[Error extracting links from URL: {str(e)}]"
+
 def process_agent_routing(user_message: str, chat_history: List[Dict[str, str]]) -> Optional[str]:
     """
     Evaluates the user's message to determine if an action needs to be taken.
@@ -64,7 +106,9 @@ def process_agent_routing(user_message: str, chat_history: List[Dict[str, str]])
     AVAILABLE TOOLS:
     1. 'search_web': Use this if the user asks you to find an apply link, search for a company's jobs, or look up information on the web.
        - Args: {{"query": "search terms here"}}
-    2. 'scrape_url': Use this if the user explicitly pastes a URL (like a Google Sheet, Notion page, or job board link) and asks you to read or extract jobs from it.
+    2. 'scrape_url': Use this if the user explicitly pastes a URL (like a Google Sheet, Notion page, or job board link) and asks you to read or extract text from it.
+       - Args: {{"url": "https://..."}}
+    3. 'extract_job_links': Use this if the user explicitly pastes an aggregator URL (like thejobcompany.co.in) and asks you to find, scrape, or list the actual job links/openings from it.
        - Args: {{"url": "https://..."}}
 
     USER MESSAGE:
@@ -85,7 +129,11 @@ def process_agent_routing(user_message: str, chat_history: List[Dict[str, str]])
             
         elif decision.tool_name == "scrape_url":
             url = decision.tool_args.get("url", "")
-            return f"[System Action: Scraped content from URL '{url}']\nResult:\n" + perform_scrape_url(url)
+            return f"[System Action: Scraped text content from URL '{url}']\nResult:\n" + perform_scrape_url(url)
+            
+        elif decision.tool_name == "extract_job_links":
+            url = decision.tool_args.get("url", "")
+            return f"[System Action: Extracted job links from aggregator URL '{url}']\nResult:\n" + perform_extract_job_links(url)
             
         return None
         

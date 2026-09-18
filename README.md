@@ -16,25 +16,23 @@
 - [Running the App](#-running-the-app)
 - [Deployment](#-deployment)
 - [API Reference](#-api-reference)
-- [Contributing](#-contributing)
+- [Security & Rate Limiting](#-security--rate-limiting)
 
 ---
 
 ## ✨ Features
 
-JobCopilot has evolved into a complete, end-to-end career management system featuring cutting-edge AI integrations:
+JobCopilot is an end-to-end career management system featuring cutting-edge AI integrations and hardened security:
 
 | Feature | Description |
 |---|---|
-| **Hermes Auto-Apply Agent** | AI agent capable of structuring applicant data and automating aspects of the application process dynamically. |
+| **Hermes Auto-Apply Agent** | Playwright-powered background agent for automating ATS data entry and job applications. |
 | **Multi-Modal Copilot Coach** | Interactive chat interface featuring real-time token streaming (SSE), rolling context memory, and multi-modal support (upload PDFs & images for OCR via Gemini Vision). Configured with permissive guardrails for deep technical interview prep. |
 | **Advanced Tailoring Studio** | Automatically generate AI-tailored `.docx` resumes optimized for ATS parsers, following strict formatting guidelines. Includes 1-page constraints and custom instruction support. |
-| **Smart Resume Deduplication** | Employs SHA-256 cryptographic hashing to prevent redundant uploads, saving AI tokens and database storage. |
 | **JD Analysis & Match Scoring** | Paste any job description or URL. The AI extracts skills, pay, seniority, and remote status, scoring it 0–100 against your resume with an actionable verdict (Apply / Stretch / Skip). |
 | **Screenshot Upload & OCR** | Upload a job screenshot. The platform uses Gemini Vision OCR to extract and instantly analyze the posting. |
 | **Company Deep Dive & Discovery** | 3-tier discovery protocol: direct ATS API queries → ATS search → career page scraping to discover hidden roles. |
-| **ATS Subscriptions** | Subscribe to Greenhouse, Lever, and Ashby boards to receive a daily digest of new roles matching your profile. |
-| **Modern 'Collect' UI** | A completely redesigned, premium frontend featuring an interactive AI Orb, status date pickers, horizontal-scroll fixes, and dynamic hover states for a native application feel. |
+| **ATS Subscriptions** | Subscribe to Greenhouse, Lever, and Ashby boards to receive a daily digest of new roles matching your profile. LLM analysis is skipped during background scraping to prevent blocking. |
 
 ---
 
@@ -43,12 +41,11 @@ JobCopilot has evolved into a complete, end-to-end career management system feat
 ```text
 Frontend (Next.js 16)
   +-- Proxy Rewrite (/api/*) ➔ Backend (FastAPI)
-                                +-- Hermes Auto-Apply Agent
-                                +-- JD Parser & Match Scorer (LLM)
+                                +-- Hermes Auto-Apply Agent (Playwright, async)
+                                +-- JD Parser & Match Scorer (LLM, threadpool)
                                 +-- Job Fetcher (Greenhouse/Lever/Ashby/Scraper)
                                 +-- Multi-Modal Chat (SSE Streams + RAG + PyMuPDF)
                                 +-- ATS Resume Generator (Docx)
-                                +-- APScheduler (Daily Digests)
 
 LLM Waterfall (6 models for zero downtime):
   Gemini 2.0 Flash ➔ Gemini 1.5 Flash ➔ Gemini 1.5 Flash-8B
@@ -59,10 +56,10 @@ Data Layer (Supabase PostgreSQL):
 ```
 
 ### Key Technical Innovations
-- **Real-Time Streaming Engine**: Implements Server-Sent Events (SSE) combined with optimistic React Query updates and `TextDecoder` parsing to deliver instantaneous, Claude-parity chat experiences.
+- **Synchronous Threadpool Offloading**: To prevent main event-loop blocking, heavy DB queries and blocking LLM network requests are routed to synchronous `def` endpoints, seamlessly offloading work to FastAPI's external threadpool. Only non-blocking async Playwright operations use `async def`.
 - **6-Model LLM Waterfall Engine**: Seamlessly falls back through Google Gemini and Groq models if rate limits or errors occur, ensuring 100% uptime.
-- **Cryptographic File Management**: SHA-256 hashing on uploaded resumes instantly catches duplicates (HTTP 409) prior to expensive LLM processing.
 - **Rolling Context Memory**: The chat backend intelligently slices context history (`history_res.data[-15:]`) alongside permanent RAG context to stay strictly within token limits without losing conversational awareness.
+- **Smart ATS Background Task**: The background scraper `BackgroundTasks` processes bulk jobs synchronously but skips expensive LLM processing to prevent thread starvation.
 
 ---
 
@@ -126,18 +123,17 @@ npm install
 |---|---|---|---|
 | `SUPABASE_URL` | ✅ | Supabase project URL | Supabase → Project Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Service role secret key | Supabase → Project Settings → API |
+| `CLERK_SECRET_KEY` | ✅ | Used to verify JWTs securely in middleware | Clerk Dashboard |
+| `CLERK_PUBLISHABLE_KEY`| ✅ | Used by frontend | Clerk Dashboard |
 | `GEMINI_API_KEY` | ✅ | Google Gemini API key | [Google AI Studio](https://aistudio.google.com/app/apikey) |
 | `GROQ_API_KEY` | ✅ | Groq API key (LLM fallback) | [Groq Console](https://console.groq.com/keys) |
-| `GEMINI_MODEL` | ❌ | Override primary Gemini model | Default: `gemini-2.0-flash` |
-| `GEMINI_VISION_MODEL` | ❌ | Override vision model | Default: `gemini-2.0-flash` |
-| `GROQ_MODEL` | ❌ | Override primary Groq model | Default: `llama-3.1-8b-instant` |
-| `ALLOWED_ORIGINS` | ❌ | CORS origins (comma-separated) | Default: `http://localhost:3000` |
 
 ### Frontend (`frontend/.env.local`)
 
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_BACKEND_URL` | ❌ | Backend URL. Default: `http://localhost:8000` |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ | Clerk public key |
 
 ---
 
@@ -150,15 +146,21 @@ npm install
 ### Step 2: Run SQL Migrations
 Open **Supabase SQL Editor** and run each file in order (from `backend/supabase/migrations/` and `backend/`):
 ```text
-01_initial_schema.sql         ➔ Core tables (jobs, resumes, analyses)
-02_seed.sql                   ➔ Creates initial profile row
+# Base Schema
+01_initial_schema.sql
+02_seed.sql
 03_add_application_data.sql
 04_add_deadlines_bookmarks.sql
 05_add_company_info.sql
 06_add_personal_info.sql
 07_add_ats_subscriptions.sql
-09_add_chat_history.sql       ➔ Supports Copilot Coach rolling memory
-10_add_resume_hash.sql        ➔ Supports smart resume deduplication
+08_add_user_auth.sql
+09_add_chat_history.sql
+10_add_resume_hash.sql
+11_add_job_fields.sql
+
+# Security & Permissions
+14_phase3_db_security.sql     ➔ RLS Policies, FK cascades, and Auth validation
 ```
 
 ---
@@ -173,7 +175,6 @@ uvicorn main:app --reload --port 8000
 ```
 - API running at: `http://localhost:8000`
 - Interactive docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
 
 ### Start the Frontend
 ```bash
@@ -186,61 +187,22 @@ npm run dev
 
 ## ☁️ Deployment
 
-### Frontend ➔ Vercel
-1. Push code to GitHub
-2. Import the repo at [vercel.com](https://vercel.com) (set root to `frontend/`)
-3. Add environment variable: `NEXT_PUBLIC_BACKEND_URL = https://your-backend.railway.app`
-4. Deploy 🚀
-
-### Backend ➔ Railway
-1. New project at [railway.app](https://railway.app) → connect GitHub
-2. Set root directory to `backend/`
-3. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-4. Add environment variables (Supabase URLs, Gemini/Groq API keys, Allowed Origins)
-5. Deploy 🚀
+*Refer to `DEPLOYMENT.md` for full production deployment instructions.*
 
 ---
 
 ## 📚 API Reference
 
-All endpoints are prefixed with `/api/`. In development, they proxy through Next.js to `localhost:8000`.
-
-### Core Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/jobs` | List all analyzed jobs with analyses |
-| `POST` | `/api/jobs/parse` | Analyze a job description (text) |
-| `POST` | `/api/jobs/parse-image` | Analyze from screenshot (multipart upload) |
-| `GET` | `/api/jobs/scrape-url?url=` | Fetch and analyze from URL |
-| `GET` | `/api/jobs/digest` | Top matches from last 24 hours |
-| `POST` | `/api/jobs/{id}/application-draft` | Generate AI cover letter / trigger Hermes |
-| `POST` | `/api/resumes/upload` | Upload PDF resume (SHA-256 hashed to prevent duplicates) |
-| `POST` | `/api/chat/messages` | Multi-modal chat endpoint returning SSE stream (Supports images/PDFs) |
-| `POST` | `/api/research/company` | Company deep dive (returns company info + discovered jobs) |
+*Refer to `API_DOCS.md` for full API specifications.*
 
 ---
 
-## 🤝 Contributing
-
-1. Fork → clone → create branch (`feat/my-feature`)
-2. Make changes, then verify backend imports are clean:
-   ```bash
-   cd backend
-   python -c "import sys; sys.path.insert(0,'.'); from app.api import jobs, resumes, profile, research, chat; print('OK')"
-   ```
-3. Commit and open a PR.
-
-### Strict Architectural Rules
-- **LLM Abstraction**: All LLM calls must go through `llm_client.py` — never instantiate Gemini/Groq clients directly in endpoint logic.
-- **Frontend Routing**: All frontend API calls must use the `/api/...` path. Never hardcode `localhost:8000` to ensure seamless Vercel deployment.
-- **Database Migrations**: Any schema change must be accompanied by a sequentially numbered SQL migration file in the backend.
-
----
-
-## 📜 License
-
-MIT — free to use, fork, and build on.
+## 🛡️ Security & Rate Limiting
+JobCopilot implements a robust defense-in-depth security model:
+1. **Authentication vs Authorization:** Authentication is handled by Clerk via JWTs. However, the backend validates JWTs directly in middleware, extracting the `user_id`, and enforces strict Row-Level Security (RLS) policies on every database transaction to prevent IDOR (Insecure Direct Object Reference).
+2. **SSRF Protections:** All outgoing network requests initiated by users (e.g., scraping a URL) are sanitized against private IP routing (e.g. `169.254.169.254`, `127.0.0.1`, RFC 1918 blocks) via `validate_safe_url()`.
+3. **Global Rate Limiting:** `slowapi` enforces strict endpoint quotas (e.g. `5/minute` for LLM drafting, `20/minute` for chat) stored in-memory using an `InMemoryStorage` Redis-compatible backend.
+4. **Cryptographic Deduplication:** Resumes are hashed (SHA-256) pre-upload to reject duplicate processing attempts globally per user.
 
 ---
 
