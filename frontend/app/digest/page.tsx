@@ -18,7 +18,9 @@ export default function DigestPage() {
 
   if (isLoading) return <div>Loading digest...</div>
 
-  const filteredJobs = jobs || []
+  const filteredJobs = jobs?.matched || []
+  const pendingJobs = jobs?.analysis_pending || []
+  const failedJobs = jobs?.analysis_failed || []
 
   const verdictColors: Record<string, string> = {
     apply: 'bg-green-500/10 text-green-400 border-green-500/20',
@@ -32,6 +34,20 @@ export default function DigestPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2 text-white">Daily Digest</h1>
           <p className="text-zinc-400">High-quality jobs from the last 24 hours that passed your pay floor.</p>
+          {(pendingJobs.length > 0 || failedJobs.length > 0) && (
+            <div className="flex gap-2 mt-4">
+              {pendingJobs.length > 0 && (
+                <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded text-sm font-medium">
+                  ⏳ {pendingJobs.length} analyzing...
+                </span>
+              )}
+              {failedJobs.length > 0 && (
+                <span className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-sm font-medium">
+                  ❌ {failedJobs.length} failed analysis
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
