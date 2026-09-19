@@ -2,7 +2,7 @@ import re
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 from app.services.company_researcher import research_company
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, scrape_careers_page
 from app.middleware.auth import get_current_user
