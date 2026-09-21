@@ -126,6 +126,46 @@ def test_job_insert_duplicate_handling():
         assert res["job_id"] == "dummy-job-id"
         assert mock_update.called
 
+
+def test_v2_pipeline_inserts_pending_job_for_the_authenticated_user():
+    req = ParseRequest(
+        raw_jd="Backend Engineer\nPython and APIs",
+        source="ats_bulk",
+        source_type="greenhouse",
+        source_confidence=1.0,
+        url="https://boards.greenhouse.io/acme/jobs/123",
+        official_apply_url="https://boards.greenhouse.io/acme/jobs/123",
+        external_job_id="123",
+        company_name="acme",
+    )
+
+    with patch("app.services.job_pipeline.supabase") as mock_supabase, patch(
+        "app.services.job_pipeline.get_or_create_user_profile"
+    ), patch("app.services.job_pipeline.parse_job_description") as mock_parse_jd:
+        from app.models.job import ParsedJob
+
+        mock_parse_jd.return_value = ParsedJob(
+            role_title="Backend Engineer",
+            seniority_required="0-2yr",
+            is_fresher_eligible=True,
+            required_skills=["Python"],
+            nice_to_have_skills=[],
+            work_mode="Remote",
+            company="acme",
+        )
+        mock_supabase.table().insert().execute.return_value = MagicMock(data=[{"id": "job-1"}])
+
+        result = process_and_store_job(req, "user-a", skip_analysis=True)
+
+    assert result == {"job_id": "job-1", "is_duplicate": False}
+    insert_payload = mock_supabase.table().insert.call_args.args[0]
+    assert insert_payload["user_id"] == "user-a"
+    assert insert_payload["analysis_status"] == "pending"
+    assert insert_payload["source_type"] == "greenhouse"
+    assert insert_payload["source_url"] == "https://boards.greenhouse.io/acme/jobs/123"
+    assert insert_payload["official_apply_url"] == "https://boards.greenhouse.io/acme/jobs/123"
+    assert insert_payload["external_job_id"] == "123"
+
 # --- 4. ATS Discovery Tests ---
 
 def test_discover_workday_urls():
@@ -139,16 +179,16 @@ def test_discover_workday_urls():
         mock_instance.text.return_value = [{"href": "https://pwc.myworkdayjobs.com/en-US/Global_Experienced_Careers"}]
         
         res1 = discover_careers_url_and_ats("PwC")
-        assert res1["ats_info"] is not None
-        assert res1["ats_info"]["system"] == "workday"
-        assert res1["ats_info"]["token"] == "pwc/pwc/Global_Experienced_Careers"
+        assert res1.ats_info is not None
+        assert res1.ats_info.system.value == "workday"
+        assert res1.ats_info.token == "pwc/pwc/Global_Experienced_Careers"
         
         # Test 2: wd5 subdomain with wday/cxs
         mock_instance.text.return_value = [{"href": "https://gehc.wd5.myworkdayjobs.com/wday/cxs/gehc/GEHC_ExternalSite/jobs"}]
         res2 = discover_careers_url_and_ats("GE HealthCare")
-        assert res2["ats_info"]["token"] == "gehc.wd5/gehc/GEHC_ExternalSite"
+        assert res2.ats_info.token == "gehc.wd5/gehc/GEHC_ExternalSite"
         
         # Test 3: wd1 subdomain with standard site path
         mock_instance.text.return_value = [{"href": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers"}]
         res3 = discover_careers_url_and_ats("Mastercard")
-        assert res3["ats_info"]["token"] == "mastercard.wd1/mastercard/CorporateCareers"
+        assert res3.ats_info.token == "mastercard.wd1/mastercard/CorporateCareers"

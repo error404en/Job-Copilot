@@ -1,6 +1,5 @@
 "use client"
 import { useState, useEffect } from "react"
-import { useAuth } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -8,51 +7,61 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Upload, FileText, CheckCircle, AlertCircle, XCircle } from "lucide-react"
+import { useApiClient } from "@/lib/useApiClient"
 
 export default function InboxPage() {
-  const { getToken } = useAuth()
+  const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [actioningId, setActioningId] = useState<string | null>(null)
   const [opportunities, setOpportunities] = useState<any[]>([])
   const [textInput, setTextInput] = useState("")
   const [fileInput, setFileInput] = useState<File | null>(null)
   
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return
     fetchOpportunities()
     // Polling since processing happens async
     const interval = setInterval(fetchOpportunities, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [isLoaded, isSignedIn])
+
+  const responseError = async (res: Response, fallback: string) => {
+    try {
+      const data = await res.json()
+      return data.detail || fallback
+    } catch {
+      return fallback
+    }
+  }
 
   const fetchOpportunities = async () => {
     try {
-      const token = await getToken()
-      const res = await fetch("http://localhost:8000/api/inbox/opportunities", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setOpportunities(data.opportunities)
-      }
+      const res = await apiFetch("/api/inbox/opportunities")
+      if (!res.ok) throw new Error(await responseError(res, "Failed to load opportunities"))
+      const data = await res.json()
+      setOpportunities(data.opportunities)
     } catch (e) {
       console.error(e)
+      setError(e instanceof Error ? e.message : "Failed to load opportunities")
     }
   }
 
   const handleTextSubmit = async () => {
     if (!textInput.trim()) return
     setLoading(true)
+    setError(null)
     try {
-      const token = await getToken()
-      await fetch("http://localhost:8000/api/inbox/text", {
+      const res = await apiFetch("/api/inbox/text", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: textInput, source_type: "text" })
       })
+      if (!res.ok) throw new Error(await responseError(res, "Failed to extract opportunities"))
       setTextInput("")
-      fetchOpportunities()
+      await fetchOpportunities()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to extract opportunities")
     } finally {
       setLoading(false)
     }
@@ -61,8 +70,8 @@ export default function InboxPage() {
   const handleFileUpload = async () => {
     if (!fileInput) return
     setLoading(true)
+    setError(null)
     try {
-      const token = await getToken()
       const formData = new FormData()
       formData.append("file", fileInput)
       // Determine type crudely
@@ -70,15 +79,35 @@ export default function InboxPage() {
       const sType = ['pdf', 'docx', 'xlsx', 'csv'].includes(ext!) ? ext : 'image'
       formData.append("source_type", sType!)
       
-      await fetch("http://localhost:8000/api/inbox/upload", {
+      const res = await apiFetch("/api/inbox/upload", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: formData
       })
+      if (!res.ok) throw new Error(await responseError(res, "Failed to upload opportunities"))
       setFileInput(null)
-      fetchOpportunities()
+      await fetchOpportunities()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to upload opportunities")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleOpportunityAction = async (opportunityId: string, action: "reject" | "save") => {
+    setActioningId(opportunityId)
+    setError(null)
+    try {
+      const res = await apiFetch(`/api/inbox/opportunities/${opportunityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      })
+      if (!res.ok) throw new Error(await responseError(res, `Failed to ${action} opportunity`))
+      await fetchOpportunities()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Failed to ${action} opportunity`)
+    } finally {
+      setActioningId(null)
     }
   }
 
@@ -97,6 +126,13 @@ export default function InboxPage() {
         <h1 className="text-3xl font-bold tracking-tight mb-2">Opportunity Inbox</h1>
         <p className="text-muted-foreground">Paste messages from WhatsApp, Telegram, or LinkedIn. Upload screenshots or lists.</p>
       </div>
+
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="font-bold hover:text-white" aria-label="Dismiss error">×</button>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-3 gap-8">
         <div className="md:col-span-1 space-y-6">
@@ -203,8 +239,22 @@ export default function InboxPage() {
                         ) : "No URL provided"}
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" className="text-destructive">Reject</Button>
-                        <Button size="sm">Save to Jobs</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => handleOpportunityAction(opp.id, "reject")}
+                          disabled={actioningId === opp.id}
+                        >
+                          Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleOpportunityAction(opp.id, "save")}
+                          disabled={actioningId === opp.id || opp.status === "ineligible"}
+                        >
+                          {actioningId === opp.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save to Jobs"}
+                        </Button>
                       </div>
                     </div>
                   </div>

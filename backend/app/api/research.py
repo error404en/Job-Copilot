@@ -6,6 +6,7 @@ from duckduckgo_search import DDGS
 from app.services.company_researcher import research_company
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, scrape_careers_page
 from app.middleware.auth import get_current_user
+from app.models.discovery import ATSInfo, ATSSystem, CareersDiscoveryResult
 
 router = APIRouter()
 
@@ -13,48 +14,48 @@ class ResearchRequest(BaseModel):
     company_name: str
     target_keywords: Optional[str] = None
 
-def discover_careers_url_and_ats(company_name: str) -> dict:
+def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] = None) -> CareersDiscoveryResult:
     """
     Company -> official domain -> official careers URL -> detect known ATS
     """
     query = f"{company_name} official careers portal"
-    careers_url = None
     
-    try:
-        with DDGS(timeout=5) as ddgs:
-            results = list(ddgs.text(query, max_results=3))
-            for r in results:
-                href = r.get("href", "")
-                if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
-                    careers_url = href
-                    break
-    except Exception as e:
-        print(f"Careers URL discovery failed: {e}")
+    if not careers_url:
+        try:
+            with DDGS(timeout=5) as ddgs:
+                results = list(ddgs.text(query, max_results=3))
+                for r in results:
+                    href = r.get("href", "")
+                    if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
+                        careers_url = href
+                        break
+        except Exception as e:
+            print(f"Careers URL discovery failed: {e}")
         
     if not careers_url:
-        return {"careers_url": None, "ats_info": None}
+        return CareersDiscoveryResult()
         
     url = careers_url
     
     # Check Greenhouse
     gh_match = re.search(r"boards\.greenhouse\.io/([^/]+)", url)
     if gh_match:
-        return {"careers_url": url, "ats_info": {"system": "greenhouse", "token": gh_match.group(1)}}
+        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token=gh_match.group(1)))
         
     # Check Lever
     lever_match = re.search(r"jobs\.lever\.co/([^/]+)", url)
     if lever_match:
-        return {"careers_url": url, "ats_info": {"system": "lever", "token": lever_match.group(1)}}
+        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.LEVER, token=lever_match.group(1)))
         
     # Check Ashby
     ashby_match = re.search(r"jobs\.ashbyhq\.com/([^/]+)", url)
     if ashby_match:
-        return {"careers_url": url, "ats_info": {"system": "ashby", "token": ashby_match.group(1)}}
+        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.ASHBY, token=ashby_match.group(1)))
         
     # Check SmartRecruiters
     sr_match = re.search(r"jobs\.smartrecruiters\.com/([^/]+)", url)
     if sr_match:
-        return {"careers_url": url, "ats_info": {"system": "smartrecruiters", "token": sr_match.group(1)}}
+        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr_match.group(1)))
         
     # Check Workday
     wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)(?:/([^/]+))?", url)
@@ -83,9 +84,9 @@ def discover_careers_url_and_ats(company_name: str) -> dict:
             tenant = host_prefix.split(".")[0]
             site = part1
             
-        return {"careers_url": url, "ats_info": {"system": "workday", "token": f"{host_prefix}/{tenant}/{site}"}}
+        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token=f"{host_prefix}/{tenant}/{site}"))
         
-    return {"careers_url": url, "ats_info": None}
+    return CareersDiscoveryResult(careers_url=url)
 
 @router.post("/company")
 def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_user)):
@@ -113,8 +114,8 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
     else:
         # 1. Discover Official Careers URL and ATS
         discovery = discover_careers_url_and_ats(req.company_name)
-        careers_url = discovery.get("careers_url")
-        ats_info = discovery.get("ats_info")
+        careers_url = discovery.careers_url
+        ats_info = discovery.ats_info
         
         # If the careers_url itself isn't an ATS link, we might want to do a deeper check, but the user explicitly requested this exact flow.
         # Fallback: if discovery didn't find the direct ATS link because it's a vanity url, we can check a direct DDG search for the ATS just in case
@@ -127,15 +128,15 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
                         u = r.get("href", "")
                         if "myworkdayjobs.com" in u or "greenhouse.io" in u or "lever.co" in u or "ashbyhq.com" in u or "smartrecruiters.com" in u:
                             # Re-run detection on this specific URL
-                            ats_info = discover_careers_url_and_ats(u).get("ats_info")
+                            ats_info = discover_careers_url_and_ats(req.company_name, u).ats_info
                             if ats_info:
                                 break
             except Exception:
                 pass
 
         if ats_info:
-            system = ats_info["system"]
-            token = ats_info["token"]
+            system = ats_info.system.value
+            token = ats_info.token
             try:
                 if system == "greenhouse":
                     discovered_jobs = fetch_greenhouse_jobs(token, keywords)
@@ -170,8 +171,7 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
             
     return {
         "company_info": company_info,
-        "ats_info": ats_info,
+        "ats_info": ats_info.model_dump() if ats_info else None,
         "careers_url": careers_url,
         "jobs": discovered_jobs
     }
-

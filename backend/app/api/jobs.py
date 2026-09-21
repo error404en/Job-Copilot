@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timezone
+import logging
 import io
 import requests
 from bs4 import BeautifulSoup
@@ -22,6 +23,7 @@ from app.middleware.auth import get_current_user
 from app.api.profile import get_or_create_user_profile
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 from app.services.job_pipeline import ParseRequest, process_and_store_job
 
@@ -389,31 +391,61 @@ def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTask
                 print(f"Failed to subscribe {token}: {e}") # Likely a duplicate
 
     def process_jobs(user_id: str = user_id):
-        jobs_to_process = []
         for token in req.company_tokens:
-            if req.system == "greenhouse":
-                jobs_to_process.extend(fetch_greenhouse_jobs(token, req.target_keywords))
-            elif req.system == "lever":
-                jobs_to_process.extend(fetch_lever_jobs(token, req.target_keywords))
-            elif req.system == "ashby":
-                jobs_to_process.extend(fetch_ashby_jobs(token, req.target_keywords))
-            elif req.system == "smartrecruiters":
-                jobs_to_process.extend(fetch_smartrecruiters_jobs(token, req.target_keywords))
-            elif req.system == "generic":
-                jobs_to_process.extend(fetch_generic_fallback(token, req.target_keywords))
-                
-        # Send them to parse_and_score_job logic
-        for job_data in jobs_to_process:
             try:
-                p_req = ParseRequest(
-                    raw_jd=job_data["raw_jd"],
-                    source=job_data["source"],
-                    url=job_data["url"],
-                    use_groq=req.use_groq
-                )
-                _parse_and_score_job(p_req, user_id, None, skip_analysis=True)
-            except Exception as e:
-                print(f"Failed to process ATS job {job_data['url']}: {e}")
+                if req.system == "greenhouse":
+                    jobs_to_process = fetch_greenhouse_jobs(token, req.target_keywords)
+                elif req.system == "lever":
+                    jobs_to_process = fetch_lever_jobs(token, req.target_keywords)
+                elif req.system == "ashby":
+                    jobs_to_process = fetch_ashby_jobs(token, req.target_keywords)
+                elif req.system == "smartrecruiters":
+                    jobs_to_process = fetch_smartrecruiters_jobs(token, req.target_keywords)
+                elif req.system == "generic":
+                    jobs_to_process = fetch_generic_fallback(token, req.target_keywords)
+                else:
+                    logger.error("Unsupported bulk ATS system '%s' for token '%s'", req.system, token)
+                    continue
+            except Exception:
+                logger.exception("Bulk ATS fetch failed for system '%s', token '%s'", req.system, token)
+                continue
+
+            for job_data in jobs_to_process:
+                try:
+                    # V2 is the single persistence path for bulk discoveries. It
+                    # records full source provenance and leaves the job pending for
+                    # the scheduler's analysis worker.
+                    p_req = ParseRequest(
+                        raw_jd=job_data["raw_jd"],
+                        source="ats_bulk",
+                        source_type=job_data.get("source_type", req.system),
+                        source_confidence=job_data.get("source_confidence", 1.0),
+                        url=job_data.get("url"),
+                        official_apply_url=job_data.get("official_apply_url"),
+                        external_job_id=job_data.get("external_job_id"),
+                        company_name=job_data.get("company") or token,
+                        use_groq=req.use_groq,
+                    )
+                    result = process_and_store_job(p_req, user_id, skip_analysis=True)
+                    logger.info(
+                        "Bulk ATS V2 ingestion completed for user '%s': system=%s token=%s job_id=%s duplicate=%s",
+                        user_id,
+                        req.system,
+                        token,
+                        result.get("job_id"),
+                        result.get("is_duplicate", False),
+                    )
+                except Exception:
+                    # The V2 pipeline persists successful jobs as pending for the
+                    # analysis worker. A failed ingestion has no safe job record to
+                    # update, so retain the full traceback rather than swallowing it.
+                    logger.exception(
+                        "Bulk ATS V2 ingestion failed for user '%s': system=%s token=%s url=%s",
+                        user_id,
+                        req.system,
+                        token,
+                        job_data.get("url"),
+                    )
 
     background_tasks.add_task(process_jobs)
     return {"message": f"Started processing jobs for {len(req.company_tokens)} companies in the background."}

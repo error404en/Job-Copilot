@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.api.research import deep_dive_company, ResearchRequest
+from app.models.discovery import ATSInfo, ATSSystem, CareersDiscoveryResult
 from unittest.mock import patch
 
 def validate_company(name: str, known_url: str = None):
@@ -18,14 +19,14 @@ def validate_company(name: str, known_url: str = None):
         mock_research.return_value = {"name": name, "description": "Mock description"}
         
         if name == "Akamai":
-            mock_discover.return_value = {"careers_url": known_url, "ats_info": {"system": "workday", "token": "akamai.wd1/akamai/Akamai_External_Career_Site"}}
+            mock_discover.return_value = CareersDiscoveryResult(careers_url=known_url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token="akamai.wd1/akamai/Akamai_External_Career_Site"))
         elif name == "GE HealthCare":
-            mock_discover.return_value = {"careers_url": known_url, "ats_info": {"system": "workday", "token": "gehc.wd5/gehc/GEHC_ExternalSite"}}
+            mock_discover.return_value = CareersDiscoveryResult(careers_url=known_url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token="gehc.wd5/gehc/GEHC_ExternalSite"))
         elif name == "Mastercard":
-            mock_discover.return_value = {"careers_url": known_url, "ats_info": {"system": "workday", "token": "mastercard.wd1/mastercard/CorporateCareers"}}
+            mock_discover.return_value = CareersDiscoveryResult(careers_url=known_url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token="mastercard.wd1/mastercard/CorporateCareers"))
         elif name == "AMD":
             # AMD doesn't have a known ATS token, so ats_info is None. Fallback will trigger Playwright.
-            mock_discover.return_value = {"careers_url": known_url, "ats_info": None}
+            mock_discover.return_value = CareersDiscoveryResult(careers_url=known_url)
             
         req = ResearchRequest(company_name=name, target_keywords="software, engineer, developer, data, analyst")
         res = deep_dive_company(req, user_id="test_user")

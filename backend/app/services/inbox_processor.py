@@ -1,20 +1,44 @@
 from app.services.inbox_extractor import extract_opportunities_from_text, extract_text_from_file
 from app.api.research import discover_careers_url_and_ats
 from app.services.link_checker import resolve_redirects_and_detect_promo
-from app.services.job_fetcher import fetch_workday_jobs, fetch_greenhouse_jobs, fetch_generic_fallback
+from app.services.job_fetcher import fetch_workday_jobs, fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback
 from app.models.inbox import InboxOpportunity, InboxOpportunityStatus, VerificationStatus, SourceType
+from app.models.discovery import ATSInfo, ATSSystem
 from app.db.supabase_client import supabase
 from typing import List, Optional
 import uuid
 import datetime
 import asyncio
 
+
+ATS_FETCHERS = {
+    ATSSystem.GREENHOUSE: fetch_greenhouse_jobs,
+    ATSSystem.LEVER: fetch_lever_jobs,
+    ATSSystem.ASHBY: fetch_ashby_jobs,
+    ATSSystem.SMARTRECRUITERS: fetch_smartrecruiters_jobs,
+    ATSSystem.WORKDAY: fetch_workday_jobs,
+}
+
+
+async def fetch_discovered_ats_jobs(ats_info: ATSInfo, role_title: str) -> List[dict]:
+    """Use the canonical discovery result to delegate to an existing ATS adapter."""
+    fetcher = ATS_FETCHERS[ats_info.system]
+    return await asyncio.to_thread(fetcher, ats_info.token, target_keywords=[role_title])
+
 async def process_inbox_source(source_id: str, content: str, source_type: SourceType, user_id: str) -> List[dict]:
     # 1. Extract raw text if it's a file
     if source_type != SourceType.TEXT and source_type != SourceType.URL:
-        # Assuming content is the file_path in these cases
-        content = extract_text_from_file(content, source_type.value)
-    
+        # content contains the file_path in these cases
+        extracted_text = extract_text_from_file(content, source_type.value)
+        if not extracted_text or not extracted_text.strip():
+            supabase.table("inbox_sources").update({"status": "failed", "raw_content": None}).eq("id", source_id).eq("user_id", user_id).execute()
+            print(f"Extraction failed for source {source_id}")
+            return []
+        content = extracted_text
+        
+        # Persist the extracted text instead of the temp file path
+        supabase.table("inbox_sources").update({"raw_content": content}).eq("id", source_id).eq("user_id", user_id).execute()
+
     # 2. Extract opportunities
     extracted = extract_opportunities_from_text(content)
     
@@ -39,12 +63,18 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
                 status = InboxOpportunityStatus.UNVERIFIED
         
         # 4. Official Source Verification
+        official_url = None
+        ats_info = None
         if company:
-            discovery = discover_careers_url_and_ats(company)
-            official_url = discovery.get("careers_url")
-            ats_info = discovery.get("ats_info")
+            # The one canonical discovery service accepts a submitted ATS URL when
+            # available, avoiding a duplicate URL-parsing implementation in Inbox.
+            discovery = discover_careers_url_and_ats(company, submitted_url)
+            official_url = discovery.careers_url
+            ats_info = discovery.ats_info
             
-            if official_url and submitted_url and official_url.split('/')[2] in submitted_url:
+            # A submitted URL is verified only when the canonical discovery
+            # service positively identifies a supported ATS on that URL.
+            if ats_info and official_url and submitted_url and official_url.split('/')[2] in submitted_url:
                 if not verification_status:
                     verification_status = VerificationStatus.VERIFIED
                     status = InboxOpportunityStatus.VERIFIED
@@ -64,31 +94,13 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
             try:
                 jobs_found = []
                 if ats_info:
-                    ats_type = ats_info.get("ats_type")
-                    token = ats_info.get("token")
-                    if ats_type == "workday" and token:
-                        jobs_found = await asyncio.to_thread(fetch_workday_jobs, token, target_keywords=[role_title])
-                    elif ats_type == "greenhouse" and token:
-                        jobs_found = await asyncio.to_thread(fetch_greenhouse_jobs, token, target_keywords=[role_title])
-                    elif ats_type == "lever" and token:
-                        from app.services.job_fetcher import fetch_lever_jobs
-                        jobs_found = await asyncio.to_thread(fetch_lever_jobs, token, target_keywords=[role_title])
-                
-                if not jobs_found and submitted_url:
-                    if "workdayjobs.com" in submitted_url:
-                        token = submitted_url.split("://")[1].split(".")[0]
-                        jobs_found = await asyncio.to_thread(fetch_workday_jobs, token, target_keywords=[role_title])
-                    elif "boards.greenhouse.io" in submitted_url:
-                        token = submitted_url.split("boards.greenhouse.io/")[1].split("/")[0]
-                        jobs_found = await asyncio.to_thread(fetch_greenhouse_jobs, token, target_keywords=[role_title])
-                    elif "jobs.lever.co" in submitted_url:
-                        token = submitted_url.split("jobs.lever.co/")[1].split("/")[0]
-                        from app.services.job_fetcher import fetch_lever_jobs
-                        jobs_found = await asyncio.to_thread(fetch_lever_jobs, token, target_keywords=[role_title])
+                    jobs_found = await fetch_discovered_ats_jobs(ats_info, role_title)
 
                 if not jobs_found:
                     # Generic fallback
-                    jobs_found = await asyncio.to_thread(fetch_generic_fallback, official_url or submitted_url, company, target_keywords=[role_title])
+                    fallback_url = official_url or submitted_url
+                    if fallback_url:
+                        jobs_found = await asyncio.to_thread(fetch_generic_fallback, fallback_url, company, target_keywords=[role_title])
                 
                 if jobs_found:
                     # Take the first match
@@ -98,6 +110,7 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
                         raw_jd=best_job["raw_jd"],
                         source="inbox",
                         source_type=best_job.get("source_type") or source_type.value,
+                        source_confidence=best_job.get("source_confidence", 0.4),
                         url=best_job.get("url") or submitted_url,
                         official_apply_url=best_job.get("official_apply_url") or official_url,
                         external_job_id=best_job.get("external_job_id"),
