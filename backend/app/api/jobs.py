@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Depends, Request
+﻿from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -259,7 +259,7 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
 
     if is_promo:
         return {
-            "raw_jd": f"[⚠️ Creator Promotional / Affiliate Link Detected]\n"
+            "raw_jd": f"[âš ï¸ Creator Promotional / Affiliate Link Detected]\n"
                       f"This link redirected to: {resolved_url} ({promo_name}).\n"
                       f"This is an influencer promotional/bootcamp page, not an official company job posting.",
             "resolved_url": resolved_url,
@@ -316,13 +316,13 @@ def get_job(id: str, user_id: str = Depends(get_current_user)):
     return job
 
 @router.post("/parse")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 def parse_and_score_job_route(request: Request, req: ParseRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
     return process_and_store_job(req, user_id, background_tasks)
 
 
 @router.post("/parse-image")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 def parse_and_score_image(request: Request, background_tasks: BackgroundTasks, file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     """
     Accepts an uploaded image screenshot, extracts the text via Gemini Vision, and parses the job.
@@ -451,7 +451,7 @@ def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTask
     return {"message": f"Started processing jobs for {len(req.company_tokens)} companies in the background."}
 
 @router.post("/{job_id}/application-draft")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 def create_application_draft(request: Request, job_id: str, req: DraftRequest, user_id: str = Depends(get_current_user)):
     # 1. Fetch Job
     job_res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
@@ -498,7 +498,7 @@ class TailorRequest(BaseModel):
     custom_instructions: Optional[str] = None
 
 @router.post("/{job_id}/tailor/resume")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 def generate_tailored_bullets_endpoint(request: Request, job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):
     # 1. Fetch Job and Analysis
     job_res = supabase.table("jobs").select("*, job_analyses(*)").eq("id", job_id).eq("user_id", user_id).execute()
@@ -543,7 +543,7 @@ def generate_tailored_bullets_endpoint(request: Request, job_id: str, req: Tailo
     return {"bullets": bullets, "broken_links": broken_links}
 
 @router.post("/{job_id}/tailor/cover-letter")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 def generate_tailored_cover_letter_endpoint(request: Request, job_id: str, req: TailorRequest, user_id: str = Depends(get_current_user)):
     # 1. Fetch Job and Analysis
     job_res = supabase.table("jobs").select("*, job_analyses(*)").eq("id", job_id).eq("user_id", user_id).execute()
@@ -593,7 +593,7 @@ def download_tailored_docx(request: Request, job_id: str, req: TailorRequest, us
     Pipeline:
     1. Fetch job + missing keywords from DB
     2. Fetch the candidate's raw resume text (requires re-upload if raw_content is missing)
-    3. Pass 1 (LLM): Parse raw text → structured JSON schema
+    3. Pass 1 (LLM): Parse raw text â†’ structured JSON schema
     4. Pass 2 (LLM): Tailor bullet points with anti-hallucination rules
     5. Generate .docx binary from the tailored JSON
     6. Stream .docx file to frontend as an attachment
@@ -719,7 +719,7 @@ def delete_job(job_id: str, user_id: str = Depends(get_current_user)):
     return {"status": "deleted", "job_id": job_id}
 
 @router.post("/{job_id}/reanalyze")
-@limiter.limit("2/minute")
+@limiter.limit("20/minute")
 def reanalyze_job(request: Request, job_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
     from datetime import datetime, timezone
     job_res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", user_id).limit(1).execute()
@@ -769,7 +769,7 @@ def reanalyze_job(request: Request, job_id: str, background_tasks: BackgroundTas
 
             final_reasoning = fit_report.reasoning
             if fit_report.culture_assessment:
-                final_reasoning += f"\n\n🏢 Company Culture Estimate:\n{fit_report.culture_assessment}"
+                final_reasoning += f"\n\nðŸ¢ Company Culture Estimate:\n{fit_report.culture_assessment}"
 
             company_info = research_company(parsed_job.company)
 
@@ -806,4 +806,5 @@ def reanalyze_job(request: Request, job_id: str, background_tasks: BackgroundTas
         run_reanalysis()
 
     return {"job_id": job_id, "status": "reanalyzing"}
+
 

@@ -3,7 +3,7 @@ import requests
 import json
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+from app.services.search_manager import perform_resilient_search
 from app.utils.security import validate_safe_url
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import html
@@ -972,13 +972,12 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
 
     # Step A: Quick search for official careers portal URL
     try:
-        with DDGS(timeout=4) as ddgs:
-            results = list(ddgs.text(f"{company_name} official careers portal India", max_results=3))
-            for r in results:
-                href = r.get("href", "")
-                if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work", "myworkdayjobs", "successfactors"]):
-                    careers_url = href
-                    break
+        results = perform_resilient_search(f"{company_name} official careers portal India", max_results=3)
+        for r in results:
+            href = r.get("href", "")
+            if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work", "myworkdayjobs", "successfactors"]):
+                careers_url = href
+                break
     except Exception as e:
         print(f"[scrape_careers_page] Careers URL search skipped: {e}")
 
@@ -1017,17 +1016,37 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
         query = f'"{company_name}" hiring ("Software Engineer" OR "Analyst" OR "Associate" OR "Developer") ("India" OR "Bengaluru" OR "Pune" OR "Hyderabad" OR "Mumbai" OR "Noida" OR "Gurugram" OR "Chennai")'
     
     try:
-        with DDGS(timeout=4) as ddgs:
-            results = list(ddgs.text(query, max_results=8))
-            for r in results:
-                title = r.get("title", "")
-                href = r.get("href", "")
-                body = r.get("body", "")
-                cleaned_title = title.split(" - ")[0].split(" | ")[0].split(" at ")[0].strip()
-                if len(cleaned_title) > 65:
-                    cleaned_title = cleaned_title[:65]
-                if not cleaned_title:
-                    continue
+        results = perform_resilient_search(query, max_results=8)
+        for r in results:
+            title = r.get("title", "")
+            href = r.get("href", "")
+            body = r.get("body", "")
+            cleaned_title = title.split(" - ")[0].split(" | ")[0].split(" at ")[0].strip()
+            if len(cleaned_title) > 65:
+                cleaned_title = cleaned_title[:65]
+            if not cleaned_title:
+                continue
+
+            # Strict Link Verification
+            href_lower = href.lower()
+            valid_domains = ["greenhouse.io", "lever.co", "ashbyhq.com", "workdayjobs.com", "myworkdayjobs.com", "smartrecruiters.com", "icims.com", "breezy.hr", "workable.com", "linkedin.com/jobs", "wellfound.com", "instahyre.com", "naukri.com", "glassdoor", "indeed"]
+            norm_company = company_name.lower().replace(" ", "")
+            is_valid_domain = any(domain in href_lower for domain in valid_domains)
+            is_company_domain = norm_company in href_lower
+
+            if not (is_valid_domain or is_company_domain):
+                print(f"[scrape_careers_page] Rejected unverified link: {href}")
+                continue
+
+            # Playwright scrape the fallback link
+            print(f"[scrape_careers_page] Found valid external link, scraping with playwright: {href}")
+            try:
+                from app.services.playwright_scraper import scrape_dynamic_page
+                job_page_text = scrape_dynamic_page(href)
+                if job_page_text and len(job_page_text) > 100:
+                    body = job_page_text[:1000]
+            except Exception as scrape_err:
+                print(f"[scrape_careers_page] Failed to scrape fallback link {href}: {scrape_err}")
 
                 text_content = (title + " " + body).lower()
                 foreign_cities = ["usa", "uk", "london", "san francisco", "new york", "seattle", "austin", "texas", "california", "remote us", "remote uk"]

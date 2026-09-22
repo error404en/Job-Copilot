@@ -2,7 +2,7 @@ import re
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
-from duckduckgo_search import DDGS
+from app.services.search_manager import perform_resilient_search
 from app.services.company_researcher import research_company
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, scrape_careers_page
 from app.middleware.auth import get_current_user
@@ -22,13 +22,12 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
     
     if not careers_url:
         try:
-            with DDGS(timeout=5) as ddgs:
-                results = list(ddgs.text(query, max_results=3))
-                for r in results:
-                    href = r.get("href", "")
-                    if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
-                        careers_url = href
-                        break
+            results = perform_resilient_search(query, max_results=3)
+            for r in results:
+                href = r.get("href", "")
+                if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
+                    careers_url = href
+                    break
         except Exception as e:
             print(f"Careers URL discovery failed: {e}")
         
@@ -95,10 +94,7 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
     norm = req.company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
     keywords = [k.strip() for k in req.target_keywords.split(",")] if req.target_keywords else None
 
-    # 1. Company Intelligence (runs fast with benchmark fallback)
-    company_info = research_company(req.company_name)
-
-    # 2. Check if curated company — instant response
+    # 1. Check if curated company — instant response
     is_curated = any(key in norm or norm in key for key in VERIFIED_COMPANY_ROLES.keys())
     
     discovered_jobs = []
@@ -122,15 +118,14 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
         if not ats_info:
             try:
                 query = f"site:boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.ashbyhq.com OR site:jobs.smartrecruiters.com OR site:myworkdayjobs.com {req.company_name} careers"
-                with DDGS(timeout=5) as ddgs:
-                    results = list(ddgs.text(query, max_results=3))
-                    for r in results:
-                        u = r.get("href", "")
-                        if "myworkdayjobs.com" in u or "greenhouse.io" in u or "lever.co" in u or "ashbyhq.com" in u or "smartrecruiters.com" in u:
-                            # Re-run detection on this specific URL
-                            ats_info = discover_careers_url_and_ats(req.company_name, u).ats_info
-                            if ats_info:
-                                break
+                results = perform_resilient_search(query, max_results=3)
+                for r in results:
+                    u = r.get("href", "")
+                    if "myworkdayjobs.com" in u or "greenhouse.io" in u or "lever.co" in u or "ashbyhq.com" in u or "smartrecruiters.com" in u:
+                        # Re-run detection on this specific URL
+                        ats_info = discover_careers_url_and_ats(req.company_name, u).ats_info
+                        if ats_info:
+                            break
             except Exception:
                 pass
 
@@ -168,10 +163,22 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
                 discovered_jobs = fetch_generic_fallback(careers_url, req.company_name, keywords)
             else:
                 print(f"[DeepDive] Could not discover careers URL for {req.company_name}")
+                
+    # 2. Company Intelligence (runs fast with benchmark fallback, but searches might take time)
+    # By running this AFTER job fetching, we prioritize the ATS extraction which is more important.
+    company_info = research_company(req.company_name)
             
     return {
         "company_info": company_info,
         "ats_info": ats_info.model_dump() if ats_info else None,
         "careers_url": careers_url,
         "jobs": discovered_jobs
+    }
+
+@router.post("/discover-ats")
+def discover_ats_endpoint(req: ResearchRequest, user_id: str = Depends(get_current_user)):
+    discovery = discover_careers_url_and_ats(req.company_name)
+    return {
+        "careers_url": discovery.careers_url,
+        "ats_info": discovery.ats_info.model_dump() if discovery.ats_info else None
     }

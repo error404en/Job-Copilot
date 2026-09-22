@@ -15,19 +15,19 @@ class RouterDecision(BaseModel):
     tool_args: Optional[Dict[str, Any]] = Field(description="A dictionary of arguments for the tool. For 'search_web', provide {'query': '...'} . For 'scrape_url' or 'extract_job_links', provide {'url': '...'} .")
 
 def perform_search_web(query: str) -> str:
-    """Uses DuckDuckGo to search the web and returns a summary of top results."""
+    """Uses robust resilient search (DDGS + Gemini) to search the web and returns a summary of top results."""
     try:
-        from duckduckgo_search import DDGS
-        results = []
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=3):
-                results.append(f"Title: {r['title']}\nURL: {r['href']}\nSnippet: {r['body']}\n")
+        from app.services.search_manager import perform_resilient_search
+        results = perform_resilient_search(query, max_results=3)
+        formatted = []
+        for r in results:
+            formatted.append(f"Title: {r.get('title')}\nURL: {r.get('href')}\nSnippet: {r.get('body')}\n")
         
-        if not results:
+        if not formatted:
             return "No web search results found."
-        return "Web Search Results:\n" + "\n".join(results)
+        return "Web Search Results:\n" + "\n".join(formatted)
     except ImportError:
-        return "[Error: duckduckgo_search package not installed. Try: pip install duckduckgo-search]"
+        return "[Error: search modules not found.]"
     except Exception as e:
         return f"[Error performing search: {e}]"
 

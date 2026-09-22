@@ -161,3 +161,20 @@ def delete_resume(resume_id: str, user_id: str = Depends(get_current_user)):
     res = supabase.table("resume_versions").delete().eq("id", resume_id).eq("user_id", user_id).execute()
     return {"status": "success"}
 
+
+@router.post("/{resume_id}/check-links")
+def check_resume_links_endpoint(resume_id: str, user_id: str = Depends(get_current_user)):
+    """
+    Extracts all URLs from the resume's raw_content and checks them concurrently.
+    Returns broken links with error details for display in the Resumes page.
+    """
+    from app.services.link_checker import check_resume_links
+
+    res = supabase.table("resume_versions").select("raw_content, skills_summary").eq("id", resume_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    record = res.data[0]
+    text = record.get("raw_content") or record.get("skills_summary") or ""
+    broken_links = check_resume_links(text)
+    return {"broken_links": broken_links, "total_checked": len(broken_links)}

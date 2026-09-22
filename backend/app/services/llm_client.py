@@ -150,13 +150,46 @@ def _try_gemini_json(prompt: str) -> Optional[str]:
             print(f"[LLM] Gemini JSON {model} failed: {e}")
     return None
 
+AVAILABLE_GROQ_MODELS = None
+
+def _get_groq_models():
+    global AVAILABLE_GROQ_MODELS
+    if AVAILABLE_GROQ_MODELS is None:
+        try:
+            res = groq_client.models.list()
+            valid_models = []
+            for m in res.data:
+                id = m.id.lower()
+                # Exclude audio, vision, guardrails, and experimental non-chat models
+                if any(x in id for x in ["whisper", "guard", "vision", "canopy", "allam"]):
+                    continue
+                # Include only known high-quality LLM families
+                if any(x in id for x in ["llama", "qwen", "mixtral", "gemma"]):
+                    valid_models.append(m.id)
+            # Sort to put larger/better models first (e.g. 70b over 8b)
+            valid_models.sort(key=lambda x: "70b" in x or "32768" in x, reverse=True)
+            AVAILABLE_GROQ_MODELS = valid_models
+        except Exception as e:
+            print(f"[LLM] Failed to fetch dynamic Groq models: {e}")
+            AVAILABLE_GROQ_MODELS = GROQ_MODELS
+    return AVAILABLE_GROQ_MODELS
+
 def _try_groq_text(prompt: str) -> Optional[str]:
     if not groq_client:
         return None
-    for model in GROQ_MODELS:
+        
+    models_to_try = [GROQ_MODEL] + _get_groq_models()
+    seen = set()
+    models = []
+    for m in models_to_try:
+        if m not in seen:
+            seen.add(m)
+            models.append(m)
+            
+    for model in models[:4]:
         try:
             result = _groq_text(model, prompt)
-            if model != GROQ_MODELS[0]:
+            if model != GROQ_MODEL:
                 print(f"[LLM] Groq text fallback used: {model}")
             return result
         except Exception as e:
@@ -166,10 +199,19 @@ def _try_groq_text(prompt: str) -> Optional[str]:
 def _try_groq_json(prompt: str) -> Optional[str]:
     if not groq_client:
         return None
-    for model in GROQ_MODELS:
+        
+    models_to_try = [GROQ_MODEL] + _get_groq_models()
+    seen = set()
+    models = []
+    for m in models_to_try:
+        if m not in seen:
+            seen.add(m)
+            models.append(m)
+            
+    for model in models[:4]:
         try:
             result = _groq_json(model, prompt)
-            if model != GROQ_MODELS[0]:
+            if model != GROQ_MODEL:
                 print(f"[LLM] Groq JSON fallback used: {model}")
             return result
         except Exception as e:
@@ -235,19 +277,22 @@ def get_completion(prompt: str, use_groq: bool = False) -> str:
 def generate_tailoring_text(prompt: str) -> str:
     """
     Dedicated generator for high-nuance writing tasks (cover letters, bullet points).
-    Strictly attempts to use the high-tier Groq model (Llama 3.3 70B) first.
-    If it fails, it falls back to the standard text completion waterfall.
+    Used for complex reasoning tasks like cover letter generation or bullet point tailoring.
+    Prioritizes the best available Groq open-source model for efficiency and quality.
     """
     if groq_client:
+        models = _get_groq_models()
+        target_model = GROQ_TAILORING_MODEL if GROQ_TAILORING_MODEL in models else (models[0] if models else "llama-3.3-70b-versatile")
+        
         try:
-            print(f"[LLM] Attempting tailored generation with {GROQ_TAILORING_MODEL}...")
-            result = _groq_text(GROQ_TAILORING_MODEL, prompt)
+            print(f"[LLM] Attempting tailored generation with {target_model}...")
+            result = _groq_text(target_model, prompt)
             return result
         except Exception as e:
-            print(f"[LLM] Tailoring model {GROQ_TAILORING_MODEL} failed: {e}. Falling back to standard waterfall.")
-    
-    # Fallback to standard waterfall, preferring Groq
-    return get_completion(prompt, use_groq=True)
+            print(f"[LLM] Tailoring model {target_model} failed: {e}. Falling back to standard waterfall.")
+            
+    # 2. Fallback: Standard Waterfall (Gemini -> Groq fallback -> Ollama)
+    return _try_gemini_text(prompt) or _try_groq_text(prompt) or _try_ollama_text(prompt) or ""
 
 def generate_tailoring_text_stream(prompt: str):
     """
@@ -256,7 +301,7 @@ def generate_tailoring_text_stream(prompt: str):
     """
     # 1. Primary & Secondary Groq Streaming
     if groq_client:
-        groq_stream_models = [GROQ_TAILORING_MODEL, "openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound"]
+        groq_stream_models = [GROQ_TAILORING_MODEL] + _get_groq_models()[:3]
         seen_models = set()
         for m in groq_stream_models:
             if m in seen_models:
@@ -309,6 +354,8 @@ def generate_tailoring_text_stream(prompt: str):
 def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = False) -> T:
     """
     Structured JSON completion with full waterfall including Local Ollama.
+    Default order: Groq (no daily limit) -> Gemini -> Ollama.
+    use_groq=True keeps same behavior (explicit Groq-first, still falls back to Gemini).
     """
     full_prompt = (
         f"{prompt}\n\n"
@@ -319,16 +366,15 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = Fal
 
     raw_json: Optional[str] = None
 
-    if use_groq:
+    # Always try Groq first — it has no daily quota cap (only per-minute RPM limits)
+    if groq_client:
         raw_json = _try_groq_json(full_prompt)
-        if raw_json is None:
+
+    # Fall back to Gemini if Groq fails entirely
+    if raw_json is None:
+        if groq_client:
             print("[LLM] All Groq JSON models failed, falling back to Gemini chain.")
-            raw_json = _try_gemini_json(full_prompt)
-    else:
         raw_json = _try_gemini_json(full_prompt)
-        if raw_json is None:
-            print("[LLM] All Gemini JSON models failed, falling back to Groq chain.")
-            raw_json = _try_groq_json(full_prompt)
 
     if raw_json is None:
         print("[LLM] All cloud LLMs failed, falling back to Local Ollama.")
@@ -336,7 +382,7 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = Fal
 
     if raw_json is None:
         raise RuntimeError(
-            "All LLM providers exhausted (Gemini + Groq + Local Ollama). "
+            "All LLM providers exhausted (Groq + Gemini + Local Ollama). "
             "Check your API keys, rate limits, or ensure Ollama is running locally."
         )
 
@@ -355,6 +401,7 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = Fal
     except Exception as e:
         print(f"[LLM] JSON parse error.\nRaw output:\n{raw_json}")
         raise e
+
 
 
 # ---------------------------------------------------------------------------

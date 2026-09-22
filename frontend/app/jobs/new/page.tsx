@@ -178,6 +178,27 @@ export default function AddJobPage() {
     onError: (err: any) => setError(err.message)
   })
   
+  const discoverAtsMutation = useMutation({
+    mutationFn: async (companyName: string) => {
+      const res = await apiFetch('/api/research/discover-ats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_name: companyName })
+      })
+      if (!res.ok) throw new Error('Failed to discover ATS')
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.ats_info) {
+        setAtsSystem(data.ats_info.system)
+        setCompanyToken(data.ats_info.token)
+        alert(`Detected ${data.ats_info.system} ATS!`)
+      } else {
+        alert("Could not auto-detect ATS. You may need to enter it manually, or use Company Deep Dive.")
+      }
+    },
+    onError: (err: any) => setError(err.message)
+  })
   const researchMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiFetch('/api/research/company', {
@@ -1068,6 +1089,31 @@ export default function AddJobPage() {
               <div className="mt-3 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-blue-200 text-xs leading-relaxed">
                 <strong className="text-blue-400 uppercase tracking-wider block mb-1">Supported Platforms</strong>
                 Greenhouse, Lever, Ashby, and SmartRecruiters provide open APIs allowing safe bulk-fetching. For Workday, Taleo, or iCIMS, use Company Deep Dive.
+              </div>
+            </div>
+            
+            <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 mb-6">
+              <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Auto-Detect ATS (Magic ✨)</label>
+              <div className="flex gap-3">
+                <input 
+                  type="text"
+                  placeholder="Enter Company Name (e.g. Stripe)"
+                  className="flex-1 bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  id="autoDetectInput"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.getElementById('autoDetectInput') as HTMLInputElement;
+                    if (input && input.value) {
+                      discoverAtsMutation.mutate(input.value);
+                    }
+                  }}
+                  disabled={discoverAtsMutation.isPending}
+                  className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  {discoverAtsMutation.isPending ? 'Detecting...' : 'Detect'}
+                </button>
               </div>
             </div>
             

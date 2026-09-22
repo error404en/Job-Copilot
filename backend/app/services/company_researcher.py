@@ -1,8 +1,9 @@
-import json
+import time
 from pydantic import BaseModel
 from typing import Optional
-from duckduckgo_search import DDGS
+
 from app.services.llm_client import generate_structured
+
 
 class SalaryLevel(BaseModel):
     level_name: str
@@ -10,6 +11,7 @@ class SalaryLevel(BaseModel):
     bonus: Optional[str] = "N/A"
     stock: Optional[str] = "N/A"
     total_comp: str
+
 
 class CompanyIntelligence(BaseModel):
     work_culture: Optional[str] = "No data found."
@@ -19,6 +21,7 @@ class CompanyIntelligence(BaseModel):
     compensation_levels: Optional[list[dict]] = None
     bonds_or_contracts: Optional[str] = "No data found."
     overall_sentiment: Optional[str] = "Neutral"
+
 
 VERIFIED_COMPANY_BENCHMARKS = {
     "google": {
@@ -79,36 +82,81 @@ VERIFIED_COMPANY_BENCHMARKS = {
         "work_life_balance": "Demanding but rewarding; hybrid policy in Bengaluru, Mumbai, and Hyderabad.",
         "perks": "Top tier health insurance, gym, transport, education assistance.",
         "bonds_or_contracts": "No bond."
+    },
+    "mastercard": {
+        "compensation_estimates": "Software Engineer (Entry) CTC ~₹20L - ₹28L. Senior Engineer ~₹35L - ₹50L.",
+        "compensation_levels": [
+            {"level_name": "Software Engineer (Entry Level)", "base_pay": "₹18,00,000", "bonus": "₹2,00,000", "stock": "₹2,00,000", "total_comp": "₹22,00,000"},
+            {"level_name": "Senior Software Engineer", "base_pay": "₹28,00,000", "bonus": "₹4,00,000", "stock": "₹8,00,000", "total_comp": "₹40,00,000"}
+        ],
+        "work_culture": "Strong fintech culture, good work-life balance, hybrid model in Pune/Bangalore.",
+        "work_life_balance": "Stable hours, mostly 9-6, good leave policies.",
+        "perks": "Health insurance, ESOPs, annual bonus, learning stipend.",
+        "bonds_or_contracts": "No bond."
+    },
+    "visa": {
+        "compensation_estimates": "Software Engineer (Entry) CTC ~₹22L - ₹32L. Senior Engineer ~₹40L - ₹60L.",
+        "compensation_levels": [
+            {"level_name": "Software Engineer I (Entry)", "base_pay": "₹20,00,000", "bonus": "₹2,50,000", "stock": "₹3,00,000", "total_comp": "₹25,50,000"},
+            {"level_name": "Senior Software Engineer", "base_pay": "₹30,00,000", "bonus": "₹5,00,000", "stock": "₹10,00,000", "total_comp": "₹45,00,000"}
+        ],
+        "work_culture": "Global payments company, collaborative, engineering-first, good stability.",
+        "work_life_balance": "Good work-life balance, hybrid work, rarely crunch.",
+        "perks": "Premium health benefits, RSUs, relocation support, education assistance.",
+        "bonds_or_contracts": "No bond."
+    },
+    "cisco": {
+        "compensation_estimates": "Entry Software Engineer CTC ~₹16L - ₹22L. Senior ~₹30L - ₹45L.",
+        "compensation_levels": [
+            {"level_name": "Graduate Engineer (Entry)", "base_pay": "₹14,00,000", "bonus": "₹1,50,000", "stock": "₹3,00,000", "total_comp": "₹18,50,000"},
+            {"level_name": "Software Engineer (2-5 Yrs)", "base_pay": "₹22,00,000", "bonus": "₹3,00,000", "stock": "₹8,00,000", "total_comp": "₹33,00,000"}
+        ],
+        "work_culture": "Large MNC, process-oriented, good job security, networking-focused org.",
+        "work_life_balance": "Excellent, mostly 9-5 with flexible remote options in Bangalore/Hyderabad.",
+        "perks": "Comprehensive health, RSUs, gym, generous PTO.",
+        "bonds_or_contracts": "No bond."
     }
 }
+
+# ---------------------------------------------------------------------------
+# Simple in-memory TTL cache (1-hour) — avoids re-firing LLM calls for the
+# same company within a session. Key: normalized company name, Value: (ts, data)
+# ---------------------------------------------------------------------------
+_RESEARCH_CACHE: dict = {}
+_CACHE_TTL_SECONDS = 3600  # 1 hour
+
 
 def research_company(company_name: str) -> dict:
     print(f"[Research] Researching company: {company_name}")
     norm_name = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
-    
-    # Match against verified benchmarks
+
+    # 1. Check verified benchmarks (always instant, highest priority)
     for key, data in VERIFIED_COMPANY_BENCHMARKS.items():
         if key in norm_name or norm_name in key:
             print(f"[Research] Found verified benchmark for {company_name} ({key})")
             ci = CompanyIntelligence(**data)
             return ci.model_dump()
 
+    # 2. Check in-memory cache
+    cached = _RESEARCH_CACHE.get(norm_name)
+    if cached:
+        ts, result = cached
+        if time.time() - ts < _CACHE_TTL_SECONDS:
+            print(f"[Research] Cache hit for {company_name} (age: {int(time.time()-ts)}s)")
+            return result
+        else:
+            del _RESEARCH_CACHE[norm_name]
+
     try:
-        # 1. Gather raw search context from DDG
-        queries = [
-            f"{company_name} company work culture work life balance reddit",
-            f"{company_name} salary compensation software engineer reddit levels.fyi",
-            f"{company_name} employment bond training contract glassdoor"
-        ]
-        
+        # 3. Gather raw search context from DDG
+        from app.services.search_manager import perform_resilient_search
+        query = f"{company_name} company work culture salary compensation employment bond glassdoor reddit levels.fyi"
+        results = perform_resilient_search(query, max_results=6)
         raw_context = ""
-        with DDGS() as ddgs:
-            for q in queries:
-                results = ddgs.text(q, max_results=4)
-                for r in results:
-                    raw_context += f"- {r.get('title')}: {r.get('body')}\n"
-                    
-        # 2. Use LLM to summarize and structure the findings
+        for r in results:
+            raw_context += f"- {r.get('title')}: {r.get('body')}\n"
+
+        # 4. Use Groq (no daily quota cap) to summarize and structure the findings
         prompt = f"""
         You are an expert tech career advisor. I have collected web search snippets about a company named '{company_name}'.
         Review the raw search snippets below and extract the key information into the requested JSON schema.
@@ -118,11 +166,14 @@ def research_company(company_name: str) -> dict:
         Raw Search Snippets:
         {raw_context}
         """
-        
-        intelligence = generate_structured(prompt, CompanyIntelligence)
-        return intelligence.model_dump()
-        
+
+        intelligence = generate_structured(prompt, CompanyIntelligence, use_groq=True)
+        result = intelligence.model_dump()
+
+        # Store in cache
+        _RESEARCH_CACHE[norm_name] = (time.time(), result)
+        return result
+
     except Exception as e:
         print(f"Error researching company {company_name}: {e}")
-        # Return fallback
         return CompanyIntelligence().model_dump()

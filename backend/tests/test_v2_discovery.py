@@ -173,10 +173,9 @@ def test_discover_workday_urls():
     
     # We will just test the regex parsing directly since discover_careers_url_and_ats
     # expects a company name and uses DDG. Let's mock DDG to return specific URLs.
-    with patch('app.api.research.DDGS') as mock_ddgs:
+    with patch('app.api.research.perform_resilient_search') as mock_search:
         # Test 1: Standard myworkdayjobs with en-US
-        mock_instance = mock_ddgs.return_value.__enter__.return_value
-        mock_instance.text.return_value = [{"href": "https://pwc.myworkdayjobs.com/en-US/Global_Experienced_Careers"}]
+        mock_search.return_value = [{"href": "https://pwc.myworkdayjobs.com/en-US/Global_Experienced_Careers"}]
         
         res1 = discover_careers_url_and_ats("PwC")
         assert res1.ats_info is not None
@@ -184,11 +183,11 @@ def test_discover_workday_urls():
         assert res1.ats_info.token == "pwc/pwc/Global_Experienced_Careers"
         
         # Test 2: wd5 subdomain with wday/cxs
-        mock_instance.text.return_value = [{"href": "https://gehc.wd5.myworkdayjobs.com/wday/cxs/gehc/GEHC_ExternalSite/jobs"}]
+        mock_search.return_value = [{"href": "https://gehc.wd5.myworkdayjobs.com/wday/cxs/gehc/GEHC_ExternalSite/jobs"}]
         res2 = discover_careers_url_and_ats("GE HealthCare")
         assert res2.ats_info.token == "gehc.wd5/gehc/GEHC_ExternalSite"
         
         # Test 3: wd1 subdomain with standard site path
-        mock_instance.text.return_value = [{"href": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers"}]
+        mock_search.return_value = [{"href": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers"}]
         res3 = discover_careers_url_and_ats("Mastercard")
         assert res3.ats_info.token == "mastercard.wd1/mastercard/CorporateCareers"

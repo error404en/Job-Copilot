@@ -12,9 +12,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 # Vision model default
 GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
-# compound-beta is the correct Groq model ID (not "groq/compound")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "compound-beta")
+# Best available Groq open-source model — primary workhorse for all JSON/text tasks
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # Dedicated model for high-nuance writing tasks (like tailoring)
-GROQ_TAILORING_MODEL = os.getenv("GROQ_TAILORING_MODEL", "openai/gpt-oss-120b")
+# Falls back to best dynamic model if this isn't in the account
+GROQ_TAILORING_MODEL = os.getenv("GROQ_TAILORING_MODEL", "llama-3.3-70b-versatile")
 

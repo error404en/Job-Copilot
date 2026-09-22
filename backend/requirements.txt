@@ -11,7 +11,7 @@ PyMuPDF
 beautifulsoup4
 requests
 apscheduler
-duckduckgo-search
+ddgs
 python-multipart
 httpx
 PyJWT[cryptography]
