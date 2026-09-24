@@ -61,7 +61,8 @@ def _opportunity(job_id=None):
 
 
 def test_inbox_frontend_uses_proxy_api_client_not_localhost():
-    source = Path("frontend/app/inbox/page.tsx").read_text(encoding="utf-8")
+    repo_root = Path(__file__).resolve().parents[2]
+    source = (repo_root / "frontend/app/inbox/page.tsx").read_text(encoding="utf-8")
     assert "useApiClient" in source
     assert 'apiFetch("/api/inbox/opportunities")' in source
     assert "localhost:8000/api/inbox" not in source
