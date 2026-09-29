@@ -368,6 +368,13 @@ export default function AddJobPage() {
 
   // Filter deep dive jobs by location, experience, and salary
   const filteredDeepDiveJobs = (researchData?.jobs || []).filter((j: any) => {
+    // 0. Filter out bogus titles and invalid links
+    const INVALID_TITLES = new Set(['not specified', 'unspecified role', 'unknown role', 'park', 'find a park', ''])
+    const titleLower = (j.role_title || '').trim().toLowerCase()
+    if (!titleLower || INVALID_TITLES.has(titleLower)) return false
+    const urlLower = (j.url || '').toLowerCase()
+    if (urlLower.includes('wikipedia.org') || urlLower.includes('netflix.com') || urlLower.includes('sohu.com') || urlLower.includes('zhihu.com') || urlLower.includes('baidu.com') || urlLower.includes('nps.gov')) return false
+
     // 1. Location filtering
     if (deepDiveLocFilter !== 'all') {
       if (deepDiveLocFilter === 'india') {

@@ -358,3 +358,20 @@ def send_message(
         print(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.delete("/threads/{thread_id}")
+def delete_thread(thread_id: str, user_id: str = Depends(get_current_user)):
+    """
+    Deletes a conversation thread and all its associated messages.
+    """
+    try:
+        supabase.table("chat_messages").delete().eq("thread_id", thread_id).execute()
+        supabase.table("chat_threads").delete().eq("id", thread_id).eq("user_id", user_id).execute()
+    except Exception as e:
+        print(f"[Chat] Warning deleting from DB: {e}")
+    if thread_id in session_threads:
+        del session_threads[thread_id]
+    if thread_id in session_messages:
+        del session_messages[thread_id]
+    return {"status": "success", "deleted_thread_id": thread_id}
+

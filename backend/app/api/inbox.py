@@ -37,9 +37,10 @@ async def upload_inbox_text(req: UploadInboxRequest, background_tasks: Backgroun
 async def upload_inbox_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), source_type: str = Form(...), user_id: str = Depends(get_current_user)):
     source_id = str(uuid.uuid4())
     
-    # Save file temporarily
+    # Save file temporarily using cross-platform temp directory
+    import tempfile
     file_ext = os.path.splitext(file.filename)[1]
-    file_path = f"/tmp/{source_id}{file_ext}"
+    file_path = os.path.join(tempfile.gettempdir(), f"{source_id}{file_ext}")
     with open(file_path, "wb") as f:
         f.write(await file.read())
         
@@ -97,7 +98,9 @@ def update_opportunity(opportunity_id: str, req: OpportunityActionRequest, user_
         raise HTTPException(status_code=404, detail="Inbox source not found")
 
     raw_jd = source_res.data[0].get("raw_content")
-    if not raw_jd or not raw_jd.strip() or raw_jd.startswith("/tmp/"):
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    if not raw_jd or not raw_jd.strip() or raw_jd.startswith("/tmp/") or raw_jd.startswith(temp_dir) or os.path.exists(raw_jd.strip() if len(raw_jd) < 250 else ""):
         raise HTTPException(status_code=422, detail="Cannot save opportunity: Original source content is missing or unextracted.")
 
     if not opportunity.get("company") or not opportunity.get("role_title"):

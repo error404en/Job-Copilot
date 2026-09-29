@@ -19,11 +19,13 @@ class ParseRequest(BaseModel):
     use_groq: bool = False
 
 
-def _pick_best_resume(resumes: list, role_title: str) -> tuple:
+def _pick_best_resume(resumes: list, role_title: str, required_skills: list = None, raw_jd: str = "") -> tuple:
     """
-    Given a list of resume records and a job role title, returns
-    (best_resume_id, resume_summary) choosing the most role-appropriate version.
-    Falls back to most recent if no type match is found.
+    Given a list of resume records, a job role title, required skills, and raw JD,
+    intelligently computes a match affinity score for each resume and selects the
+    optimal variant. When a user has multiple resumes for the same role family
+    (e.g., multiple GenAI variants: Agentic vs Fine-Tuning vs RAG), this ranks
+    them by direct technical skill overlap, title synergy, and domain fit.
     """
     if not resumes:
         return None, "Software Engineering Candidate."
@@ -32,22 +34,48 @@ def _pick_best_resume(resumes: list, role_title: str) -> tuple:
         "backend":   ["backend", "server", "api", "microservice", "distributed", "devops", "infrastructure"],
         "frontend":  ["frontend", "front-end", "react", "angular", "vue", "ui", "ux", "web dev"],
         "fullstack": ["fullstack", "full-stack", "full stack"],
-        "genai":     ["ai", "ml", "machine learning", "llm", "genai", "nlp", "data science", "deep learning"],
+        "genai":     ["ai", "ml", "machine learning", "llm", "genai", "nlp", "data science", "deep learning", "agent", "prompt", "rag"],
         "data":      ["data engineer", "data analyst", "analytics", "etl", "pipeline", "bi "],
         "product":   ["product manager", "product owner", "pm "],
         "design":    ["designer", "ux design", "ui design"],
     }
 
     role_lower = role_title.lower()
-    best_resume = resumes[0]  # default: most recent
+    skills_lower = [s.lower().strip() for s in (required_skills or []) if s]
+    jd_lower = (raw_jd or "").lower()
 
-    for resume_type, keywords in type_keywords.items():
-        if any(kw in role_lower for kw in keywords):
-            for r in resumes:
-                if r.get("target_type") == resume_type:
-                    best_resume = r
-                    break
-            break
+    scored_resumes = []
+    for r in resumes:
+        score = 0
+        r_type = (r.get("target_type") or "").lower()
+        r_title = (r.get("title") or "").lower()
+        r_skills = (r.get("skills_summary") or "").lower()
+        r_raw = (r.get("raw_content") or "").lower()
+
+        # 1. Target type alignment (+30 pts)
+        expected_keywords = type_keywords.get(r_type, [])
+        if any(kw in role_lower for kw in expected_keywords):
+            score += 30
+
+        # 2. Title token synergy (+20 pts)
+        role_words = [w for w in role_lower.replace("/", " ").replace("-", " ").split() if len(w) > 2]
+        title_hits = sum(1 for w in role_words if w in r_title)
+        score += min(title_hits * 10, 20)
+
+        # 3. Direct skill overlap (+50 pts)
+        if skills_lower:
+            skill_hits = sum(1 for s in skills_lower if s in r_skills or s in r_raw)
+            score += min(skill_hits * 10, 50)
+        else:
+            # Check JD words in resume skills
+            overlap_count = sum(1 for word in set(r_skills.split()) if len(word) > 3 and word in jd_lower)
+            score += min(overlap_count * 2, 40)
+
+        scored_resumes.append((score, r))
+
+    # Sort descending by score; fall back to creation recency
+    scored_resumes.sort(key=lambda x: x[0], reverse=True)
+    best_resume = scored_resumes[0][1]
 
     resume_id = best_resume["id"]
     resume_text = best_resume.get("raw_content") or best_resume.get("skills_summary") or "Software Engineering Candidate."
@@ -66,13 +94,14 @@ def _run_analysis(job_id: str, user_id: str, parsed_job, raw_jd: str, use_groq: 
         # Get user profile and resume — fetch full data including id and raw_content
         user_profile = get_or_create_user_profile(user_id)
         resumes_resp = supabase.table("resume_versions") \
-            .select("id, target_type, skills_summary, raw_content") \
-            .eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
+            .select("id, title, target_type, skills_summary, raw_content") \
+            .eq("user_id", user_id).order("created_at", desc=True).limit(15).execute()
 
         resumes = resumes_resp.data or []
 
-        # Pick the best-matching resume by role type
-        best_resume_id, best_resume_text = _pick_best_resume(resumes, parsed_job.role_title)
+        # Pick the best-matching resume by technical overlap & specialization
+        req_skills = getattr(parsed_job, "required_skills", []) or []
+        best_resume_id, best_resume_text = _pick_best_resume(resumes, parsed_job.role_title, req_skills, raw_jd)
 
         # Build a combined summary of all resumes for scoring context (LLM sees all types)
         if resumes:
@@ -139,8 +168,21 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
     if req.company_name:
         parsed_job.company = req.company_name
 
-    # 2. Save to DB
-    resolved_url = target_url or parsed_job.apply_link
+    # 2. Validate job before storing
+    resolved_url = target_url or parsed_job.apply_link or ""
+    from app.services.job_validator import is_valid_job_posting
+    is_valid, reason = is_valid_job_posting(
+        role_title=parsed_job.role_title,
+        url=resolved_url,
+        company_name=parsed_job.company,
+        raw_jd=req.raw_jd or "",
+        external_job_id=req.external_job_id
+    )
+    if not is_valid:
+        print(f"[Pipeline] Rejected invalid job '{parsed_job.role_title}' at '{resolved_url}': {reason}")
+        return {"job_id": None, "is_duplicate": False, "is_rejected": True, "rejection_reason": reason}
+
+    # 3. Save to DB
     job_insert = {
         "source": req.source,
         "source_type": req.source_type,
@@ -158,7 +200,7 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
         "pay_max": parsed_job.pay_max,
         "pay_currency": parsed_job.pay_currency,
         "pay_confidence": parsed_job.pay_confidence,
-        "posting_date": parsed_job.posting_date,
+        "posting_date": parsed_job.posting_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "region_wise_salary": parsed_job.region_wise_salary,
         "deadline": parsed_job.deadline_date,
         "seniority_required": parsed_job.seniority_required,

@@ -75,3 +75,5 @@ test-results/
 # ========================
 implementation_plan.md
 *.log
+scratch/
+*.csv

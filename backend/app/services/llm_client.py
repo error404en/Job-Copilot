@@ -44,11 +44,10 @@ GEMINI_VISION_MODELS = [
 ]
 
 GROQ_MODELS = [
-    GROQ_MODEL,             # Default from settings (compound-beta)
-    "llama-3.3-70b-versatile",  # High quality, widely available
-    "llama-3.1-70b-versatile",  # Stable fallback
-    "mixtral-8x7b-32768",       # Reliable free-tier model
-    "gemma2-9b-it",             # Lightweight fallback
+    GROQ_MODEL,             # Default from settings
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
 ]
 
 
@@ -164,7 +163,7 @@ def _get_groq_models():
                 if any(x in id for x in ["whisper", "guard", "vision", "canopy", "allam"]):
                     continue
                 # Include only known high-quality LLM families
-                if any(x in id for x in ["llama", "qwen", "mixtral", "gemma"]):
+                if any(x in id for x in ["llama", "qwen", "mixtral", "gemma", "gpt-oss"]):
                     valid_models.append(m.id)
             # Sort to put larger/better models first (e.g. 70b over 8b)
             valid_models.sort(key=lambda x: "70b" in x or "32768" in x, reverse=True)
@@ -354,8 +353,8 @@ def generate_tailoring_text_stream(prompt: str):
 def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = False) -> T:
     """
     Structured JSON completion with full waterfall including Local Ollama.
-    Default order: Groq (no daily limit) -> Gemini -> Ollama.
-    use_groq=True keeps same behavior (explicit Groq-first, still falls back to Gemini).
+    Default (use_groq=False): Gemini -> Groq fallback -> Local Ollama.
+    use_groq=True: Groq -> Gemini fallback -> Local Ollama.
     """
     full_prompt = (
         f"{prompt}\n\n"
@@ -366,23 +365,27 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = Fal
 
     raw_json: Optional[str] = None
 
-    # Always try Groq first — it has no daily quota cap (only per-minute RPM limits)
-    if groq_client:
+    # If explicitly requested, try Groq first
+    if use_groq and groq_client:
         raw_json = _try_groq_json(full_prompt)
 
-    # Fall back to Gemini if Groq fails entirely
+    # Primary default: Gemini (high quota, 1M+ TPM, fast structured outputs)
     if raw_json is None:
-        if groq_client:
-            print("[LLM] All Groq JSON models failed, falling back to Gemini chain.")
         raw_json = _try_gemini_json(full_prompt)
 
+    # Secondary fallback: Groq (if Gemini fails or was skipped)
+    if raw_json is None and groq_client:
+        print("[LLM] All Gemini JSON models failed, falling back to Groq chain.")
+        raw_json = _try_groq_json(full_prompt)
+
+    # Tertiary fallback: Local Ollama
     if raw_json is None:
         print("[LLM] All cloud LLMs failed, falling back to Local Ollama.")
         raw_json = _try_ollama_json(full_prompt)
 
     if raw_json is None:
         raise RuntimeError(
-            "All LLM providers exhausted (Groq + Gemini + Local Ollama). "
+            "All LLM providers exhausted (Gemini + Groq + Local Ollama). "
             "Check your API keys, rate limits, or ensure Ollama is running locally."
         )
 
@@ -504,8 +507,7 @@ def extract_jobs_from_page(page_text: str, company_name: str, keywords: list = N
         raw = _try_groq_text(prompt)
 
     if raw is None:
-        print(f"[LLM] extract_jobs_from_page: all models failed for {company_name}")
-        return []
+        raise RuntimeError(f"All LLM models failed to extract jobs for {company_name}. Please check API keys and rate limits.")
 
     try:
         raw = raw.strip()
@@ -525,6 +527,5 @@ def extract_jobs_from_page(page_text: str, company_name: str, keywords: list = N
                     return val
         return []
     except Exception as e:
-        print(f"[LLM] extract_jobs_from_page parse failed for {company_name}: {e}")
-        return []
+        raise RuntimeError(f"extract_jobs_from_page parse failed for {company_name}: {e}")
 

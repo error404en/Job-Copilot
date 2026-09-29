@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Depends, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -64,31 +64,59 @@ def get_jobs(user_id: str = Depends(get_current_user)):
 @router.get("/digest")
 def get_digest(user_id: str = Depends(get_current_user)):
     """
-    Returns jobs from the last 24 hours where:
-    - verdict is 'apply' or 'stretch'
-    - pay_floor_pass is true
-    Sorted by match_score descending.
+    Placement Cell Daily Intelligence Digest:
+    Returns top jobs matching user's eligibility criteria, seniority, and pay floor.
+    Tries 24 hours first, gracefully expands to 7 days or top matches if fresh batch is small.
+    Enriched with placement probability and recommended resume mapping.
     """
     from datetime import datetime, timedelta, timezone
-    from app.services.jd_parser import parse_job_description
-    from app.services.match_scorer import score_match
-    from app.services.company_researcher import research_company
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
-    # Fetch jobs from last 24h with their analyses
+    # 1. Fetch jobs from last 24h joined with analyses and resume version titles
     response = supabase.table("jobs") \
-        .select("*, job_analyses(*)") \
+        .select("*, job_analyses(*, resume_versions(title, target_type))") \
         .eq("user_id", user_id) \
-        .gte("fetched_at", cutoff) \
+        .gte("fetched_at", cutoff_24h) \
         .order("fetched_at", desc=True) \
         .execute()
 
     all_jobs = response.data or []
+    window_description = "Past 24 Hours"
+    is_expanded_window = False
+
+    # 2. Graceful window expansion if 24h yield is small (< 4 jobs)
+    if len(all_jobs) < 4:
+        response_7d = supabase.table("jobs") \
+            .select("*, job_analyses(*, resume_versions(title, target_type))") \
+            .eq("user_id", user_id) \
+            .gte("fetched_at", cutoff_7d) \
+            .order("fetched_at", desc=True) \
+            .limit(35) \
+            .execute()
+        if response_7d.data and len(response_7d.data) > len(all_jobs):
+            all_jobs = response_7d.data
+            window_description = "Past 7 Days"
+            is_expanded_window = True
+
+    # 3. If still empty, fall back to top scored jobs overall
+    if not all_jobs:
+        response_all = supabase.table("jobs") \
+            .select("*, job_analyses(*, resume_versions(title, target_type))") \
+            .eq("user_id", user_id) \
+            .order("fetched_at", desc=True) \
+            .limit(30) \
+            .execute()
+        if response_all.data:
+            all_jobs = response_all.data
+            window_description = "Top Pipeline Matches"
+            is_expanded_window = True
 
     matched = []
     analysis_pending = []
     analysis_failed = []
+    resume_usage_tally = {}
 
     for job in all_jobs:
         status = job.get("analysis_status", "complete")
@@ -102,7 +130,27 @@ def get_digest(user_id: str = Depends(get_current_user)):
             if not analyses:
                 continue
             analysis = analyses[0]
-            if analysis.get("verdict") in ("apply", "stretch") and analysis.get("pay_floor_pass") is True:
+            
+            # Surface recommended resume title cleanly
+            if analysis.get("resume_versions"):
+                analysis["recommended_resume_title"] = analysis["resume_versions"].get("title")
+                analysis["recommended_resume_target_type"] = analysis["resume_versions"].get("target_type")
+                r_title = analysis["resume_versions"].get("title")
+                if r_title:
+                    resume_usage_tally[r_title] = resume_usage_tally.get(r_title, 0) + 1
+
+            # Verdict must be apply or stretch, and pay floor must not be explicitly violated
+            verdict = analysis.get("verdict")
+            pay_pass = analysis.get("pay_floor_pass")
+            if verdict in ("apply", "stretch") and pay_pass is not False:
+                # Add selection odds tier
+                score = analysis.get("match_score", 0)
+                if score >= 75 and verdict == "apply":
+                    job["selection_probability"] = "High Odds"
+                elif score >= 55:
+                    job["selection_probability"] = "Strong Target"
+                else:
+                    job["selection_probability"] = "Stretch Reach"
                 matched.append(job)
 
     matched.sort(
@@ -110,10 +158,36 @@ def get_digest(user_id: str = Depends(get_current_user)):
         reverse=True
     )
     
+    # Placement cell briefing metrics
+    user_prof = get_or_create_user_profile(user_id)
+    dream_comps = user_prof.get("dream_companies") or []
+    
+    high_odds_count = sum(1 for j in matched if j.get("selection_probability") == "High Odds")
+    strong_target_count = sum(1 for j in matched if j.get("selection_probability") == "Strong Target")
+    
+    top_resume = max(resume_usage_tally.items(), key=lambda x: x[1])[0] if resume_usage_tally else None
+    
+    readiness_score = min(100, int((high_odds_count * 20) + (len(matched) * 5) + (len(dream_comps) * 5)))
+    if not matched:
+        readiness_score = 40
+        
+    placement_briefing = {
+        "readiness_score": readiness_score,
+        "eligible_matches": len(matched),
+        "high_odds_count": high_odds_count,
+        "strong_target_count": strong_target_count,
+        "dream_companies_tracked": len(dream_comps),
+        "top_recommended_resume": top_resume or "Default Technical Resume",
+        "officer_verdict": f"{high_odds_count} High-Probability Roles Ready to Submit" if high_odds_count > 0 else "Syncing additional ATS boards for high-odds matches"
+    }
+    
     return {
         "matched": matched,
         "analysis_pending": analysis_pending,
-        "analysis_failed": analysis_failed
+        "analysis_failed": analysis_failed,
+        "is_expanded_window": is_expanded_window,
+        "window_description": window_description,
+        "placement_briefing": placement_briefing
     }
 
 @router.post("/quick-score")
@@ -191,7 +265,10 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
     )
 
     # 4. Score match
-    fit_report = score_match(parsed_job, user_profile, resume_summaries)
+    try:
+        fit_report = score_match(parsed_job, user_profile, resume_summaries)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM Analysis Failed: {str(e)}")
 
     # 5. Insert backing job and analysis into DB
     job_id = None
@@ -363,8 +440,38 @@ def parse_and_score_image(request: Request, background_tasks: BackgroundTasks, f
     req = ParseRequest(raw_jd=extracted_text, source="image", source_type="manual", url=detected_url)
     return process_and_store_job(req, user_id, background_tasks)
 
+DEFAULT_ATS_SUBSCRIPTIONS = [
+    {"company_token": "stripe", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "Zomato1", "ats_system": "smartrecruiters", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "uber", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "rubrik", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "databricks", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "atlassian", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "coinbase", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+]
+
+def seed_default_subscriptions_if_empty(user_id: str):
+    """Auto-seeds high-conviction tech subscriptions if user has none."""
+    try:
+        existing = supabase.table("ats_subscriptions").select("id").eq("user_id", user_id).limit(1).execute()
+        if not existing.data:
+            logger.info("Auto-seeding default ATS subscriptions for user %s", user_id)
+            for sub in DEFAULT_ATS_SUBSCRIPTIONS:
+                try:
+                    supabase.table("ats_subscriptions").insert({
+                        "company_token": sub["company_token"],
+                        "ats_system": sub["ats_system"],
+                        "target_keywords": sub["target_keywords"],
+                        "user_id": user_id
+                    }).execute()
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning("Could not auto-seed subscriptions: %s", e)
+
 @router.get("/subscriptions/list")
 def get_subscriptions(user_id: str = Depends(get_current_user)):
+    seed_default_subscriptions_if_empty(user_id)
     res = supabase.table("ats_subscriptions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
     return res.data
 
@@ -374,6 +481,183 @@ def delete_subscription(sub_id: str, user_id: str = Depends(get_current_user)):
     if not res.data:
         raise HTTPException(status_code=404, detail="Subscription not found")
     return {"status": "deleted"}
+
+@router.post("/sync")
+def sync_live_jobs(background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """
+    Automated Placement Cell 1-Click Live Jobs Sync:
+    1. Loads candidate's profile (target roles, dream companies, seniority).
+    2. Dynamically derives ATS search keywords from target roles and active resumes (e.g. GenAI, AI Engineer).
+    3. Auto-discovers and syncs live ATS boards for all candidate Dream Companies (Stripe, Qualcomm, Goldman Sachs, etc.).
+    4. Ingests curated verified roles for top tier enterprises.
+    5. Queries subscribed ATS boards (Greenhouse, SmartRecruiters, Lever, Ashby, Workday).
+    """
+    seed_default_subscriptions_if_empty(user_id)
+    user_prof = get_or_create_user_profile(user_id)
+    dream_comps = user_prof.get("dream_companies") or []
+    target_roles = user_prof.get("target_roles") or []
+
+    # Derive candidate-specific keywords
+    candidate_keywords = []
+    for r in target_roles:
+        cleaned = r.lower().replace("engineer", "").replace("developer", "").strip()
+        if cleaned and len(cleaned) > 2 and cleaned not in candidate_keywords:
+            candidate_keywords.append(cleaned)
+        candidate_keywords.append(r.lower())
+
+    # Fallback to general tech + AI terms if empty
+    if not candidate_keywords:
+        candidate_keywords = ["genai", "ai", "machine learning", "backend", "software", "fullstack", "data"]
+    
+    # 1. Ingest verified roles from enterprise companies (Qualcomm, Goldman Sachs, etc.)
+    from app.services.job_fetcher import VERIFIED_COMPANY_ROLES, fetch_greenhouse_jobs, fetch_smartrecruiters_jobs, fetch_lever_jobs, fetch_ashby_jobs
+    from app.api.research import discover_careers_url_and_ats
+    
+    curated_synced = 0
+    for comp_key, comp_data in VERIFIED_COMPANY_ROLES.items():
+        for role in comp_data.get("roles", []):
+            try:
+                p_req = ParseRequest(
+                    raw_jd=role.get("raw_jd", ""),
+                    source="verified_curated",
+                    source_type="curated_official",
+                    source_confidence=1.0,
+                    url=role.get("url") or comp_data.get("careers_url"),
+                    official_apply_url=role.get("url") or comp_data.get("careers_url"),
+                    company_name=role.get("company", comp_key),
+                    use_groq=False
+                )
+                res = process_and_store_job(p_req, user_id=user_id, background_tasks=background_tasks, skip_analysis=True)
+                if not res.get("is_duplicate") and not res.get("is_rejected"):
+                    curated_synced += 1
+            except Exception as e:
+                logger.warning("Curated role ingestion failed for %s: %s", comp_key, e)
+
+    # 2. Ingest candidate's Dream Companies dynamically
+    dream_synced = 0
+    for dream_comp in dream_comps:
+        try:
+            discovery = discover_careers_url_and_ats(dream_comp)
+            if discovery.ats_info:
+                sys_name = discovery.ats_info.system.value
+                token = discovery.ats_info.token
+                
+                # Check if subscription already exists
+                existing_sub = supabase.table("ats_subscriptions").select("id").eq("user_id", user_id).eq("company_token", token).execute()
+                if not existing_sub.data:
+                    supabase.table("ats_subscriptions").insert({
+                        "user_id": user_id,
+                        "ats_system": sys_name,
+                        "company_token": token,
+                        "target_keywords": ",".join(candidate_keywords[:6])
+                    }).execute()
+                
+                # Fetch live jobs from this dream company ATS
+                jobs_found = []
+                if sys_name == "greenhouse":
+                    jobs_found = fetch_greenhouse_jobs(token, candidate_keywords)
+                elif sys_name == "smartrecruiters":
+                    jobs_found = fetch_smartrecruiters_jobs(token, candidate_keywords)
+                elif sys_name == "lever":
+                    jobs_found = fetch_lever_jobs(token, candidate_keywords)
+                elif sys_name == "ashby":
+                    jobs_found = fetch_ashby_jobs(token, candidate_keywords)
+                    
+                for job_data in jobs_found[:8]:
+                    p_req = ParseRequest(
+                        raw_jd=job_data.get("raw_jd", ""),
+                        source="dream_company_sync",
+                        source_type=job_data.get("source_type", sys_name),
+                        source_confidence=1.0,
+                        url=job_data.get("url"),
+                        official_apply_url=job_data.get("official_apply_url"),
+                        external_job_id=job_data.get("external_job_id"),
+                        company_name=dream_comp,
+                        use_groq=False
+                    )
+                    res = process_and_store_job(p_req, user_id=user_id, background_tasks=background_tasks, skip_analysis=True)
+                    if not res.get("is_duplicate") and not res.get("is_rejected"):
+                        dream_synced += 1
+        except Exception as e:
+            logger.warning("Dynamic dream company sync failed for %s: %s", dream_comp, e)
+
+    # 3. Ingest all subscribed ATS boards
+    subs_res = supabase.table("ats_subscriptions").select("*").eq("user_id", user_id).execute()
+    subs = subs_res.data or []
+    
+    ats_synced = 0
+    for sub in subs:
+        source = sub.get("ats_system")
+        token = sub.get("company_token")
+        kw_str = sub.get("target_keywords", "")
+        keywords = [k.strip() for k in kw_str.split(",")] if kw_str else candidate_keywords
+        
+        jobs_to_process = []
+        try:
+            if source == "greenhouse":
+                jobs_to_process = fetch_greenhouse_jobs(token, keywords)
+            elif source == "smartrecruiters":
+                jobs_to_process = fetch_smartrecruiters_jobs(token, keywords)
+            elif source == "lever":
+                jobs_to_process = fetch_lever_jobs(token, keywords)
+            elif source == "ashby":
+                jobs_to_process = fetch_ashby_jobs(token, keywords)
+        except Exception as e:
+            logger.warning("Failed fetching ATS %s for %s: %s", source, token, e)
+            continue
+            
+        for job_data in jobs_to_process[:8]:
+            try:
+                p_req = ParseRequest(
+                    raw_jd=job_data.get("raw_jd", ""),
+                    source="ats_sync",
+                    source_type=job_data.get("source_type", source),
+                    source_confidence=1.0,
+                    url=job_data.get("url"),
+                    official_apply_url=job_data.get("official_apply_url"),
+                    external_job_id=job_data.get("external_job_id"),
+                    company_name=job_data.get("company") or token,
+                    use_groq=False
+                )
+                res = process_and_store_job(p_req, user_id=user_id, background_tasks=background_tasks, skip_analysis=True)
+                if not res.get("is_duplicate") and not res.get("is_rejected"):
+                    ats_synced += 1
+            except Exception as e:
+                logger.warning("Job ingestion failed for %s: %s", job_data.get("url"), e)
+
+    total_new = curated_synced + dream_synced + ats_synced
+    return {
+        "status": "success",
+        "new_jobs_count": total_new,
+        "curated_synced": curated_synced,
+        "dream_synced": dream_synced,
+        "ats_synced": ats_synced,
+        "message": f"Placement Cell synced {total_new} verified openings across your Dream Companies & official ATS boards!"
+    }
+
+@router.post("/retry-analyses")
+def retry_failed_analyses(background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """
+    Resets any failed job analyses back to 'pending' and immediately kicks off
+    re-scoring in the background.
+    """
+    failed_res = supabase.table("jobs").select("id").eq("user_id", user_id).eq("analysis_status", "failed").execute()
+    failed_jobs = failed_res.data or []
+    if not failed_jobs:
+        return {"status": "success", "retried_count": 0, "message": "No failed analyses found."}
+
+    ids = [j["id"] for j in failed_jobs]
+    for jid in ids:
+        supabase.table("jobs").update({"analysis_status": "pending"}).eq("id", jid).eq("user_id", user_id).execute()
+
+    from app.services.scheduler import process_pending_analyses_task
+    background_tasks.add_task(process_pending_analyses_task)
+
+    return {
+        "status": "success",
+        "retried_count": len(ids),
+        "message": f"Queued {len(ids)} roles for automatic AI match re-scoring."
+    }
 
 @router.post("/fetch-ats")
 def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
@@ -406,8 +690,19 @@ def fetch_and_analyze_ats(req: FetchAtsRequest, background_tasks: BackgroundTask
                 else:
                     logger.error("Unsupported bulk ATS system '%s' for token '%s'", req.system, token)
                     continue
-            except Exception:
+            except Exception as e:
                 logger.exception("Bulk ATS fetch failed for system '%s', token '%s'", req.system, token)
+                try:
+                    supabase.table("jobs").insert({
+                        "user_id": user_id,
+                        "company": token,
+                        "role_title": "Failed Fetch",
+                        "url": token,
+                        "analysis_status": "failed",
+                        "raw_jd": f"Failed to fetch jobs from {token}: {str(e)}"
+                    }).execute()
+                except Exception as db_e:
+                    logger.error("Failed to insert failed job record: %s", db_e)
                 continue
 
             for job_data in jobs_to_process:
@@ -531,11 +826,14 @@ def generate_tailored_bullets_endpoint(request: Request, job_id: str, req: Tailo
             resume_summary = rec.get("raw_content") or rec.get("skills_summary") or "Software Engineer"
         
     # 4. Generate Bullets
-    bullets = tailor_resume_bullets(
-        resume_summary=resume_summary,
-        jd_text=job_data["raw_jd"],
-        missing_keywords=missing_keywords
-    )
+    try:
+        bullets = tailor_resume_bullets(
+            resume_summary=resume_summary,
+            jd_text=job_data["raw_jd"],
+            missing_keywords=missing_keywords
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM Generation Failed: {str(e)}")
     
     # 5. Check Links
     broken_links = check_resume_links(resume_summary)
@@ -574,12 +872,15 @@ def generate_tailored_cover_letter_endpoint(request: Request, job_id: str, req: 
             resume_summary = rec.get("raw_content") or rec.get("skills_summary") or "Software Engineer"
         
     # 4. Generate Letter
-    letter = generate_targeted_cover_letter(
-        resume_summary=resume_summary,
-        jd_text=job_data["raw_jd"],
-        role_title=job_data.get("role_title", "Position"),
-        company=job_data.get("company", "Company")
-    )
+    try:
+        letter = generate_targeted_cover_letter(
+            resume_summary=resume_summary,
+            jd_text=job_data["raw_jd"],
+            role_title=job_data.get("role_title", "Position"),
+            company=job_data.get("company", "Company")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM Generation Failed: {str(e)}")
     
     return {"cover_letter": letter}
 

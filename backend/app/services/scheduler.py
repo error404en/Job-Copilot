@@ -17,8 +17,17 @@ def fetch_latest_jobs_task():
         # Get active subscriptions
         res = supabase.table("ats_subscriptions").select("*").execute()
         if not res.data:
-            print("No ATS subscriptions found.")
-            return
+            print("[Scheduler] No ATS subscriptions found. Auto-seeding default subscriptions for active users...")
+            from app.api.jobs import seed_default_subscriptions_if_empty
+            prof_res = supabase.table("user_profile").select("user_id").execute()
+            for prof in (prof_res.data or []):
+                uid = prof.get("user_id")
+                if uid:
+                    seed_default_subscriptions_if_empty(uid)
+            res = supabase.table("ats_subscriptions").select("*").execute()
+            if not res.data:
+                print("No ATS subscriptions found after auto-seeding.")
+                return
 
         print(f"Found {len(res.data)} subscriptions to auto-scrape.")
         
@@ -127,10 +136,10 @@ def fetch_dream_company_jobs_task():
                                 use_groq=False
                             )
                             res = process_and_store_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
-                            if not res.get("is_duplicate"):
+                            if not res.get("is_duplicate") and not res.get("is_rejected"):
                                 new_count += 1
                         except Exception as e:
-                            print(f"Failed to auto-process dream job {job_data['url']}: {e}")
+                            print(f"Failed to auto-process dream job {job_data.get('url')}: {e}")
                             
                     print(f"Finished {company} for {user_id}: added {new_count} new roles.")
                 except Exception as e:
@@ -187,11 +196,11 @@ def process_pending_analyses_task():
                 else:
                     resume_summaries = "Software Engineering Candidate Profile. (No specific resume uploaded yet)."
 
-                parsed_job = parse_job_description(job["raw_jd"], use_groq=True)
+                parsed_job = parse_job_description(job["raw_jd"], use_groq=False)
                 if not parsed_job.company:
                     parsed_job.company = job["company"]
 
-                fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=True)
+                fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=False)
                 
                 best_resume_id = resumes_resp.data[0]["id"] if resumes_resp.data else None
                 role_lower = parsed_job.role_title.lower()
@@ -240,9 +249,9 @@ def process_pending_analyses_task():
         print(f"[Scheduler] Error processing pending analyses: {e}")
 
 def start_scheduler():
-    # Run every 12 hours
-    scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=12)
-    scheduler.add_job(fetch_dream_company_jobs_task, 'interval', hours=12)
+    # Run every 4 hours for continuous automated job discovery
+    scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=4)
+    scheduler.add_job(fetch_dream_company_jobs_task, 'interval', hours=4)
     # Run every 5 minutes
     scheduler.add_job(process_pending_analyses_task, 'interval', minutes=5)
     scheduler.add_job(keep_alive_task, 'interval', minutes=5)

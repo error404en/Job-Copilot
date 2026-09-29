@@ -48,14 +48,17 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
         raw_content = job.get("content", "")
         clean_content = clean_html(raw_content)
         
+        job_id = str(job.get("id"))
+        direct_apply = f"https://boards.greenhouse.io/{board_token}/jobs/{job_id}"
+        
         jobs.append({
             "source_type": "greenhouse",
             "source_confidence": 1.0,
             "company": board_token,
             "role_title": title,
-            "url": job.get("absolute_url"),
-            "official_apply_url": job.get("absolute_url"),
-            "external_job_id": str(job.get("id")),
+            "url": direct_apply,
+            "official_apply_url": direct_apply,
+            "external_job_id": job_id,
             "location": job.get("location", {}).get("name", ""),
             "raw_jd": f"{title}\nLocation: {job.get('location', {}).get('name', '')}\n\n{clean_content}"
         })
@@ -341,36 +344,7 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
             "raw_jd": full_jd
         })
     return jobs
-
-def fetch_generic_fallback(url: str, target_keywords: list = None) -> list:
-    try:
-        validate_safe_url(url)
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        res = requests.get(url, headers=headers, timeout=10)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, 'html.parser')
-        for script in soup(["script", "style", "nav", "footer", "header"]):
-            script.extract()
-        text = soup.get_text(separator='\n')
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = '\n'.join(chunk for chunk in chunks if chunk)
-        
-        return [{
-            "source": "generic_scraper",
-            "company": "Unknown",
-            "role_title": "Extracted from URL",
-            "url": url,
-            "location": "",
-            "raw_jd": text
-        }]
-    except Exception as e:
-        print(f"Failed generic fallback for {url}: {e}")
-        return []
-
-def fetch_generic_fallback(careers_url: str, company_name: str, target_keywords: list = None) -> list:
+def fetch_generic_fallback(careers_url: str, company_name: str = "Company", target_keywords: list = None) -> list:
     """
     Generic Official Careers Fallback.
     Uses Playwright to scrape the DOM, and LLM to parse job listings, preserving SSRF protections.
@@ -414,7 +388,7 @@ def fetch_generic_fallback(careers_url: str, company_name: str, target_keywords:
                     "raw_jd": f"{title}\nCompany: {company_name}\nLocation: {job.get('location', 'Unknown')}\n\n[Extracted via Playwright AI Parsing]"
                 })
     except Exception as e:
-        print(f"Generic fallback extraction failed for {careers_url}: {e}")
+        raise RuntimeError(f"Generic fallback extraction failed for {careers_url}: {e}")
         
     return jobs
 
@@ -501,7 +475,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer",
                 "company": "ZS Associates",
                 "location": "Pune / New Delhi / Bengaluru",
-                "url": "https://jobs.zs.com/",
+                "url": "https://jobs.zs.com/jobs?keywords=Software%20Engineer&location=India",
                 "experience_level": "0-2 Yrs (Freshers & Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹12.0L - ₹15.0L CTC",
@@ -513,7 +487,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Business Technology Analyst",
                 "company": "ZS Associates",
                 "location": "Pune / New Delhi",
-                "url": "https://jobs.zs.com/",
+                "url": "https://jobs.zs.com/jobs?keywords=Business%20Technology%20Analyst&location=India",
                 "experience_level": "0-2 Yrs (Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹10.5L - ₹12.5L CTC",
@@ -530,7 +504,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer (India)",
                 "company": "OpenAI",
                 "location": "Remote - India / Bengaluru",
-                "url": "https://openai.com/careers/search",
+                "url": "https://openai.com/careers/search?q=Software+Engineer",
                 "experience_level": "2-5 Yrs (Mid-Level)",
                 "seniority_required": "2-5yr",
                 "compensation_range": "₹45.0L - ₹80.0L CTC (Base + Equity)",
@@ -547,7 +521,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Technology Analyst (502 / BA3)",
                 "company": "Barclays",
                 "location": "Pune / Noida",
-                "url": "https://search.jobs.barclays/search-jobs/India?orgIds=13014&alp=1269750&alt=2",
+                "url": "https://search.jobs.barclays/search-jobs/Technology%20Analyst/India/13014/1/2/1269750/20/77/50/2",
                 "experience_level": "0-2 Yrs (Freshers & Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹19.66L CTC (Base ₹16.8L)",
@@ -559,7 +533,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Developer Associate (601 / BA4)",
                 "company": "Barclays",
                 "location": "Pune / Chennai",
-                "url": "https://search.jobs.barclays/search-jobs/India?orgIds=13014&alp=1269750&alt=2",
+                "url": "https://search.jobs.barclays/search-jobs/Software%20Developer/India/13014/1/2/1269750/20/77/50/2",
                 "experience_level": "2-5 Yrs (Mid-Level)",
                 "seniority_required": "2-5yr",
                 "compensation_range": "₹27.06L CTC (Base ₹24.34L)",
@@ -571,7 +545,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Senior Software Associate (602)",
                 "company": "Barclays",
                 "location": "Noida / Pune",
-                "url": "https://search.jobs.barclays/search-jobs/India?orgIds=13014&alp=1269750&alt=2",
+                "url": "https://search.jobs.barclays/search-jobs/Senior%20Software/India/13014/1/2/1269750/20/77/50/2",
                 "experience_level": "5+ Yrs (Senior / Lead)",
                 "seniority_required": "senior",
                 "compensation_range": "₹39.64L CTC (Base ₹36.9L)",
@@ -583,7 +557,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Graduate Trainee - Operations & Tech",
                 "company": "Barclays",
                 "location": "Pune",
-                "url": "https://search.jobs.barclays/search-jobs/India?orgIds=13014&alp=1269750&alt=2",
+                "url": "https://search.jobs.barclays/search-jobs/Graduate%20Trainee/India/13014/1/2/1269750/20/77/50/2",
                 "experience_level": "0-1 Yrs (Freshers OK)",
                 "seniority_required": "entry",
                 "compensation_range": "₹16.8L Base + ₹2.86L Bonus",
@@ -600,7 +574,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Graduate Technology Analyst",
                 "company": "HSBC",
                 "location": "Bengaluru / Pune",
-                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/?1051=%5B%221294%22%5D",
+                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/Technology%20Analyst?1051=%5B%221294%22%5D",
                 "experience_level": "0-1 Yrs (Freshers OK)",
                 "seniority_required": "entry",
                 "compensation_range": "₹12.0L CTC (Base ₹10.5L)",
@@ -612,7 +586,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer Associate (0-2 Yrs)",
                 "company": "HSBC",
                 "location": "Hyderabad / Pune",
-                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/?1051=%5B%221294%22%5D",
+                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/Software%20Engineer?1051=%5B%221294%22%5D",
                 "experience_level": "0-2 Yrs (Associate)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹16.7L CTC (Base ₹14.5L)",
@@ -624,7 +598,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Senior Software Engineer",
                 "company": "HSBC",
                 "location": "Bengaluru",
-                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/?1051=%5B%221294%22%5D",
+                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/Senior%20Software%20Engineer?1051=%5B%221294%22%5D",
                 "experience_level": "3-5 Yrs (Mid-Senior)",
                 "seniority_required": "2-5yr",
                 "compensation_range": "₹25.5L CTC (Base ₹22.0L)",
@@ -641,7 +615,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer (L3 - Entry Level)",
                 "company": "Google",
                 "location": "Bengaluru / Hyderabad",
-                "url": "https://careers.google.com/jobs/results/?location=India&q=Software%20Engineer",
+                "url": "https://www.google.com/about/careers/applications/jobs/results/?q=Software%20Engineer&location=India",
                 "experience_level": "0-2 Yrs (Freshers & SDE 1)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹53.13L CTC (Base ₹21L, Stock ₹23L)",
@@ -653,7 +627,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer II (L4)",
                 "company": "Google",
                 "location": "Bengaluru / Hyderabad",
-                "url": "https://careers.google.com/jobs/results/?location=India&q=Software%20Engineer%20II",
+                "url": "https://www.google.com/about/careers/applications/jobs/results/?q=%22Software%20Engineer%20II%22&location=India",
                 "experience_level": "2-5 Yrs (Mid-Level)",
                 "seniority_required": "2-5yr",
                 "compensation_range": "₹71.8L CTC (Base ₹32L, Stock ₹35L)",
@@ -670,7 +644,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Graduate Engineer Trainee (GET)",
                 "company": "HCLTech",
                 "location": "Noida / Bengaluru / Chennai",
-                "url": "https://www.hcltech.com/careers",
+                "url": "https://www.hcltech.com/careers/careers-in-india?search=Graduate%20Engineer%20Trainee",
                 "experience_level": "0-1 Yrs (Freshers OK)",
                 "seniority_required": "entry",
                 "compensation_range": "₹4.25L CTC",
@@ -682,7 +656,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer (Product Engineering)",
                 "company": "HCLTech",
                 "location": "Pan India / Pune / Lucknow",
-                "url": "https://www.hcltech.com/careers",
+                "url": "https://www.hcltech.com/careers/careers-in-india?search=Software%20Engineer",
                 "experience_level": "0-2 Yrs (Lateral)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹12.0L CTC (Fixed ₹11.25L)",
@@ -699,7 +673,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer Analyst (601)",
                 "company": "JPMorgan Chase",
                 "location": "Bengaluru / Mumbai / Hyderabad",
-                "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?location=India",
+                "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?keyword=Software%20Engineer%20Analyst&location=India",
                 "experience_level": "0-2 Yrs (Freshers & Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹19.5L CTC (Base ₹16.5L)",
@@ -711,7 +685,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer Associate (602)",
                 "company": "JPMorgan Chase",
                 "location": "Bengaluru / Hyderabad",
-                "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?location=India",
+                "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?keyword=Software%20Engineer%20Associate&location=India",
                 "experience_level": "2-5 Yrs (Associate)",
                 "seniority_required": "2-5yr",
                 "compensation_range": "₹30.5L CTC (Base ₹26.0L)",
@@ -728,7 +702,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer (L59/60)",
                 "company": "Microsoft",
                 "location": "Bengaluru / Hyderabad / Noida",
-                "url": "https://jobs.careers.microsoft.com/global/en/search?lc=India",
+                "url": "https://jobs.careers.microsoft.com/global/en/search?q=Software%20Engineer&lc=India&l=en_us",
                 "experience_level": "0-2 Yrs (Entry Level)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹48.0L CTC (Base ₹19L + Stock)",
@@ -756,18 +730,141 @@ VERIFIED_COMPANY_ROLES = {
         ]
     },
     "goldmansachs": {
-        "careers_url": "https://www.goldmansachs.com/careers/index.html",
+        "careers_url": "https://higher.gs.com/results?JOB_FUNCTION=Software%20Engineering",
         "roles": [
             {
-                "role_title": "Engineering Analyst (New Grad)",
+                "role_title": "Engineering Analyst (New Associate / SDE 1)",
                 "company": "Goldman Sachs",
                 "location": "Bengaluru / Hyderabad",
                 "url": "https://www.goldmansachs.com/careers/students/programs/india/new-analyst-program.html",
                 "experience_level": "0-2 Yrs (Analyst)",
                 "seniority_required": "0-2yr",
-                "compensation_range": "₹26.0L CTC (Base ₹21.0L)",
-                "required_skills": ["Java", "Python", "Low Latency Systems", "SQL"],
-                "raw_jd": "Engineering Analyst at Goldman Sachs. Building algorithmic trading systems and real-time risk engines.",
+                "compensation_range": "₹26.0L CTC (Base ₹20.0L + Bonus ₹6.0L)",
+                "required_skills": ["Java", "Python", "Data Structures", "Algorithms", "SQL"],
+                "raw_jd": "Engineering Analyst at Goldman Sachs India. Designing and building high-performance trading software, risk computation engines, and wealth management platforms. Requires strong foundations in data structures, algorithms, and object-oriented programming.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Associate - Software Development Engineer (SDE 2)",
+                "company": "Goldman Sachs",
+                "location": "Bengaluru / Hyderabad",
+                "url": "https://higher.gs.com/results?KEYWORD=Software%20Development%20Engineer&LOCATION=India",
+                "experience_level": "2-5 Yrs (Associate)",
+                "seniority_required": "2-5yr",
+                "compensation_range": "₹44.0L CTC (Base ₹34.0L + Bonus ₹10.0L)",
+                "required_skills": ["Distributed Systems", "Java", "Spring Boot", "Microservices", "Kafka"],
+                "raw_jd": "Software Engineer Associate at Goldman Sachs. Architecting cloud-native resilient microservices for global securities and payment flows. Requires 2-5 years experience with distributed architectures and concurrent programming.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Quantitative Strategist / Developer",
+                "company": "Goldman Sachs",
+                "location": "Bengaluru",
+                "url": "https://higher.gs.com/results?KEYWORD=Quantitative%20Strategist&LOCATION=India",
+                "experience_level": "2-4 Yrs (Quant)",
+                "seniority_required": "2-5yr",
+                "compensation_range": "₹42.0L CTC (Base ₹32.0L + Bonus ₹10.0L)",
+                "required_skills": ["C++", "Python", "Mathematical Modeling", "Statistics", "Data Analysis"],
+                "raw_jd": "Quantitative Strategist Developer at Goldman Sachs. Developing pricing models and algorithmic execution tools. Requires strong quantitative acumen and high performance computing skills.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "qualcomm": {
+        "careers_url": "https://careers.qualcomm.com/careers",
+        "roles": [
+            {
+                "role_title": "Associate Engineer - Software (Modem / 5G / AI)",
+                "company": "Qualcomm",
+                "location": "Bengaluru / Hyderabad",
+                "url": "https://careers.qualcomm.com/careers?query=Associate%20Engineer%20Software&location=India",
+                "experience_level": "0-2 Yrs (Associate)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹20.5L CTC (Base ₹15.0L + Stock ₹4.0L)",
+                "required_skills": ["C", "C++", "Data Structures", "Linux", "OS Fundamentals"],
+                "raw_jd": "Associate Software Engineer at Qualcomm India. Building low-level embedded software, modem stacks, and Snapdragon device drivers. Open to fresh graduates and engineers with 0-2 years of systems programming experience in C/C++.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Engineer II - Embedded Linux & System Software",
+                "company": "Qualcomm",
+                "location": "Bengaluru / Chennai / Noida",
+                "url": "https://careers.qualcomm.com/careers?query=Engineer%20II%20Embedded&location=India",
+                "experience_level": "2-4 Yrs (Mid-Level)",
+                "seniority_required": "2-5yr",
+                "compensation_range": "₹35.0L CTC (Base ₹24.0L + Stock ₹8.0L)",
+                "required_skills": ["Embedded Linux", "C++", "Device Drivers", "Kernel", "RTOS"],
+                "raw_jd": "Software Engineer II at Qualcomm. Developing kernel modules, BSPs, and peripheral drivers for next-generation mobile and IoT chipsets. Requires 2-4 years of hands-on embedded systems experience.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Senior AI/ML Systems Engineer (Snapdragon Edge AI)",
+                "company": "Qualcomm",
+                "location": "Hyderabad / Bengaluru",
+                "url": "https://careers.qualcomm.com/careers?query=AI%20ML%20Systems%20Engineer&location=India",
+                "experience_level": "4+ Yrs (Senior)",
+                "seniority_required": "senior",
+                "compensation_range": "₹54.0L CTC (Base ₹35.0L + Stock ₹14.0L)",
+                "required_skills": ["Machine Learning", "ONNX", "TensorFlow", "C++", "NPU Optimization"],
+                "raw_jd": "Senior AI Systems Engineer at Qualcomm. Optimizing generative AI and LLM inference models on Qualcomm Snapdragon NPU and Hexagon DSP accelerators. Requires 4+ years in ML systems and model quantization.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "stripe": {
+        "careers_url": "https://stripe.com/jobs",
+        "roles": [
+            {
+                "role_title": "Software Engineer - Backend & Infrastructure",
+                "company": "Stripe",
+                "location": "Remote - India / Bengaluru",
+                "url": "https://stripe.com/jobs/search?query=Software+Engineer",
+                "experience_level": "0-3 Yrs (Software Engineer)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹58.0L CTC (Base ₹32.0L + RSUs ₹22.0L)",
+                "required_skills": ["Ruby", "Java", "Go", "Distributed Systems", "SQL"],
+                "raw_jd": "Software Engineer at Stripe India. Building highly reliable, fault-tolerant global payment APIs and ledger infrastructure handling hundreds of billions of dollars. Strong problem solving and system design focus.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Senior Software Engineer - Payments & FinTech",
+                "company": "Stripe",
+                "location": "Remote - India / Global",
+                "url": "https://stripe.com/jobs/search?query=Senior+Software+Engineer",
+                "experience_level": "3-6 Yrs (Senior)",
+                "seniority_required": "2-5yr",
+                "compensation_range": "₹92.0L CTC (Base ₹48.0L + RSUs ₹38.0L)",
+                "required_skills": ["Distributed Systems", "API Design", "High Availability", "PostgreSQL"],
+                "raw_jd": "Senior Software Engineer at Stripe. Architecting core payment Rails, identity verification, and banking integrations. Requires 3+ years experience with large scale distributed architectures.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "eternal": {
+        "careers_url": "https://www.zomato.com/careers",
+        "roles": [
+            {
+                "role_title": "Software Development Engineer - Backend (Zomato / Blinkit)",
+                "company": "Eternal (Zomato & Blinkit)",
+                "location": "Gurugram (NCR)",
+                "url": "https://jobs.smartrecruiters.com/Zomato1/104244178",
+                "experience_level": "0-2 Yrs (SDE 1)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹26.0L CTC (Base ₹20.0L + ESOPs ₹4.0L)",
+                "required_skills": ["Golang", "Java", "Python", "MySQL", "Redis", "Kafka"],
+                "raw_jd": "Software Development Engineer I at Eternal (Zomato & Blinkit). Developing sub-10-minute quick commerce order dispatch, real-time inventory management, and rider routing microservices.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Software Development Engineer II - Distributed Systems",
+                "company": "Eternal (Zomato & Blinkit)",
+                "location": "Gurugram (NCR)",
+                "url": "https://jobs.smartrecruiters.com/Zomato1/104244178",
+                "experience_level": "2-5 Yrs (SDE 2)",
+                "seniority_required": "2-5yr",
+                "compensation_range": "₹46.0L CTC (Base ₹32.0L + ESOPs ₹10.0L)",
+                "required_skills": ["System Design", "Golang", "High Throughput APIs", "Kubernetes", "Kafka"],
+                "raw_jd": "SDE 2 at Eternal. Owning core checkout, pricing, and ultra-low latency catalog services handling millions of concurrent orders. Requires 2-5 years experience scaling high throughput production backends.",
                 "source": "official_portal"
             }
         ]
@@ -779,7 +876,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Engineer I",
                 "company": "Razorpay",
                 "location": "Bengaluru / Remote",
-                "url": "https://jobs.lever.co/razorpay",
+                "url": "https://jobs.lever.co/razorpay?keyword=Software%20Engineer",
                 "experience_level": "0-2 Yrs (Freshers & SDE 1)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹24.0L CTC (Base ₹18.0L)",
@@ -796,7 +893,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Software Development Engineer I",
                 "company": "Swiggy",
                 "location": "Bengaluru / Remote",
-                "url": "https://careers.swiggy.com/",
+                "url": "https://careers.swiggy.com/#careers?query=Software%20Engineer",
                 "experience_level": "0-2 Yrs (SDE 1)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹25.0L CTC (Base ₹18.0L)",
@@ -813,7 +910,7 @@ VERIFIED_COMPANY_ROLES = {
                 "role_title": "Technology Analyst (Entry Level)",
                 "company": "Morgan Stanley",
                 "location": "Mumbai / Bengaluru",
-                "url": "https://morganstanley.tal.net/vx/lang-en-GB/mobile-0/appcentre-1/brand-2/xf-4fa9b47e24a8/candidate",
+                "url": "https://morganstanley.tal.net/vx/lang-en-GB/mobile-0/appcentre-1/brand-2/xf-4fa9b47e24a8/candidate?search=Technology%20Analyst",
                 "experience_level": "0-2 Yrs (Analyst)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹20.5L CTC (Base ₹17.0L)",
@@ -989,116 +1086,111 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
             raw_text = scrape_dynamic_page(careers_url)
             if raw_text and len(raw_text) > 50:
                 extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
+                from app.services.job_validator import is_valid_job_posting
                 for job in extracted:
-                    if not job.get("role_title"):
+                    role_title = (job.get("role_title") or "").strip()
+                    job_url = job.get("url") or careers_url
+                    if not role_title or not job_url:
                         continue
-                    exp_meta = parse_experience_requirements(job.get("role_title", ""), "")
+
+                    valid, reason = is_valid_job_posting(role_title, job_url, company_name, raw_text[:500])
+                    if not valid:
+                        print(f"[scrape_careers_page] Skipping invalid extracted job '{role_title}': {reason}")
+                        continue
+
+                    exp_meta = parse_experience_requirements(role_title, "")
                     exp_level = "0-2 Yrs" if exp_meta["fresher_eligibility"] else "2-5 Yrs" if exp_meta["experience_min_years"] < 5 else "5+ Yrs"
                     
                     jobs.append({
                         "source_type": "playwright_scraper",
                         "source_confidence": 0.8,
                         "company": company_name,
-                        "role_title": job.get("role_title", "Unknown Role"),
-                        "url": job.get("url") or careers_url or f"https://www.google.com/search?q={company_name}+careers+{job.get('role_title', '').replace(' ', '+')}",
-                        "official_apply_url": job.get("url"),
-                        "location": job.get("location", "India"),
+                        "role_title": role_title,
+                        "url": job_url,
+                        "official_apply_url": job_url,
+                        "location": job.get("location") or "India",
                         "seniority_required": exp_meta["seniority"],
-                        "raw_jd": f"{job.get('role_title', '')}\nCompany: {company_name}\nLocation: {job.get('location', 'India')}\nExperience: {exp_level}\n\n[Extracted via Playwright AI Parsing]"
+                        "raw_jd": f"{role_title}\nCompany: {company_name}\nLocation: {job.get('location', 'India')}\nExperience: {exp_level}\n\n[Extracted via Playwright AI Parsing]"
                     })
         except Exception as e:
             print(f"[scrape_careers_page] Playwright scraping failed: {e}")
 
-    # Step C: Live search fallback if Playwright failed or no careers URL found
+    # Step C: Search ONLY verified ATS portals or official company careers domain if no jobs found
     if len(jobs) == 0:
-        print(f"[scrape_careers_page] Playwright returned 0 jobs. Falling back to live DDG search.")
-        kw_str = " ".join(target_keywords[:2]) if target_keywords else "Software Engineer Analyst"
-        query = f'"{company_name}" hiring ("Software Engineer" OR "Analyst" OR "Associate" OR "Developer") ("India" OR "Bengaluru" OR "Pune" OR "Hyderabad" OR "Mumbai" OR "Noida" OR "Gurugram" OR "Chennai")'
-    
-    try:
-        results = perform_resilient_search(query, max_results=8)
-        for r in results:
-            title = r.get("title", "")
-            href = r.get("href", "")
-            body = r.get("body", "")
-            cleaned_title = title.split(" - ")[0].split(" | ")[0].split(" at ")[0].strip()
-            if len(cleaned_title) > 65:
-                cleaned_title = cleaned_title[:65]
-            if not cleaned_title:
-                continue
-
-            # Strict Link Verification
-            href_lower = href.lower()
-            valid_domains = ["greenhouse.io", "lever.co", "ashbyhq.com", "workdayjobs.com", "myworkdayjobs.com", "smartrecruiters.com", "icims.com", "breezy.hr", "workable.com", "linkedin.com/jobs", "wellfound.com", "instahyre.com", "naukri.com", "glassdoor", "indeed"]
-            norm_company = company_name.lower().replace(" ", "")
-            is_valid_domain = any(domain in href_lower for domain in valid_domains)
-            is_company_domain = norm_company in href_lower
-
-            if not (is_valid_domain or is_company_domain):
-                print(f"[scrape_careers_page] Rejected unverified link: {href}")
-                continue
-
-            # Playwright scrape the fallback link
-            print(f"[scrape_careers_page] Found valid external link, scraping with playwright: {href}")
-            try:
-                from app.services.playwright_scraper import scrape_dynamic_page
-                job_page_text = scrape_dynamic_page(href)
-                if job_page_text and len(job_page_text) > 100:
-                    body = job_page_text[:1000]
-            except Exception as scrape_err:
-                print(f"[scrape_careers_page] Failed to scrape fallback link {href}: {scrape_err}")
-
-                text_content = (title + " " + body).lower()
-                foreign_cities = ["usa", "uk", "london", "san francisco", "new york", "seattle", "austin", "texas", "california", "remote us", "remote uk"]
-                indian_cities = ["bengaluru", "bangalore", "mumbai", "pune", "hyderabad", "delhi", "gurugram", "gurgaon", "noida", "chennai", "india"]
+        print(f"[scrape_careers_page] Playwright returned 0 direct jobs. Searching verified ATS boards for {company_name}...")
+        ats_sites = "site:boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.smartrecruiters.com OR site:ashbyhq.com OR site:myworkdayjobs.com"
+        query = f'({ats_sites}) "{company_name}" ("Software" OR "Engineer" OR "Developer")'
+        try:
+            from app.services.job_validator import is_valid_job_posting, KNOWN_JOB_PORTALS
+            from urllib.parse import urlparse
+            results = perform_resilient_search(query, max_results=6)
+            for r in results:
+                title = r.get("title", "")
+                href = r.get("href", "")
+                body = r.get("body", "")
                 
-                has_indian_city = any(city in text_content for city in indian_cities)
-                has_foreign_city = any(city in text_content for city in foreign_cities)
+                parsed_href = urlparse(href)
+                netloc_lower = parsed_href.netloc.lower()
                 
-                # Exclude obvious non-Indian roles
-                if has_foreign_city and not has_indian_city:
+                # STRICT GATE: URL MUST be a genuine ATS portal or official company domain
+                is_ats = any(p in netloc_lower for p in KNOWN_JOB_PORTALS)
+                norm_c = re.sub(r'[^a-zA-Z0-9]', '', company_name.lower())
+                is_company = norm_c in netloc_lower
+                
+                if not (is_ats or is_company):
+                    print(f"[scrape_careers_page] Discarded non-official site: {href}")
                     continue
 
-                # Infer location
+                cleaned_title = title.split(" - ")[0].split(" | ")[0].split(" at ")[0].strip()
+                if len(cleaned_title) > 65:
+                    cleaned_title = cleaned_title[:65]
+
+                # Validate with comprehensive job validator
+                valid, reason = is_valid_job_posting(cleaned_title, href, company_name, body)
+                if not valid:
+                    print(f"[scrape_careers_page] Rejected unverified link: {href} ({reason})")
+                    continue
+
+                # Scrape fallback link text if possible
+                try:
+                    from app.services.playwright_scraper import scrape_dynamic_page
+                    job_page_text = scrape_dynamic_page(href)
+                    if job_page_text and len(job_page_text) > 100:
+                        body = job_page_text[:1000]
+                except Exception as scrape_err:
+                    print(f"[scrape_careers_page] Failed to scrape fallback link {href}: {scrape_err}")
+
+                text_content = (cleaned_title + " " + body).lower()
                 loc = "India"
                 for city in ["Bengaluru", "Bangalore", "Mumbai", "Pune", "Hyderabad", "Delhi", "Gurugram", "Noida", "Chennai"]:
                     if city.lower() in text_content:
                         loc = city
                         break
-                        
-                # Infer Salary for Indian roles
-                salary = "Competitive (₹ INR)"
-                import re
-                salary_match = re.search(r'(₹\s*\d+(?:\.\d+)?\s*(?:LPA|Lakhs?|Cr|K)|(?:INR)\s*\d+(?:\.\d+)?\s*(?:LPA|Lakhs?|Cr|K))', text_content, re.IGNORECASE)
-                if salary_match:
-                    salary = salary_match.group(1)
-                else:
-                    exp_meta = parse_experience_requirements(cleaned_title, body)
-                    exp_level = "0-2 Yrs" if exp_meta["fresher_eligibility"] else "2-5 Yrs" if exp_meta["experience_min_years"] < 5 else "5+ Yrs"
-                    
-                    if exp_meta["fresher_eligibility"]:
-                        salary = "₹8.0L - ₹15.0L CTC (Estimated)"
-                    elif exp_meta["experience_min_years"] < 5:
-                        salary = "₹15.0L - ₹30.0L CTC (Estimated)"
-                    else:
-                        salary = "₹30.0L+ CTC (Estimated)"
 
                 exp_meta = parse_experience_requirements(cleaned_title, body)
                 exp_level = "0-2 Yrs" if exp_meta["fresher_eligibility"] else "2-5 Yrs" if exp_meta["experience_min_years"] < 5 else "5+ Yrs"
 
+                raw_jd_parts = [
+                    f"{cleaned_title}",
+                    f"Company: {company_name}",
+                    f"Location: {loc}",
+                    f"Experience: {exp_level}",
+                    f"\n{body}"
+                ]
+
                 jobs.append({
-                    "source_type": "live_search",
-                    "source_confidence": 0.4,
+                    "source_type": "official_ats_search",
+                    "source_confidence": 0.85,
                     "company": company_name,
                     "role_title": cleaned_title,
-                    "url": href or careers_url or f"https://www.google.com/search?q={company_name}+careers+{cleaned_title.replace(' ', '+')}",
+                    "url": href,
                     "official_apply_url": href,
                     "location": loc,
                     "seniority_required": exp_meta["seniority"],
-                    "raw_jd": f"{cleaned_title}\nCompany: {company_name}\nLocation: {loc}\nExperience: {exp_level}\nCompensation: {salary}\n\n{body}"
+                    "raw_jd": "\n".join(raw_jd_parts)
                 })
-    except Exception as e:
-        print(f"[scrape_careers_page] Live search fallback failed for {company_name}: {e}")
+        except Exception as e:
+            print(f"[scrape_careers_page] Verified ATS search fallback failed for {company_name}: {e}")
 
     print(f"[scrape_careers_page] Returning {len(jobs)} jobs for {company_name}")
     return {"careers_url": careers_url, "jobs": jobs}

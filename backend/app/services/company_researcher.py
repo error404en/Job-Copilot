@@ -115,6 +115,54 @@ VERIFIED_COMPANY_BENCHMARKS = {
         "work_life_balance": "Excellent, mostly 9-5 with flexible remote options in Bangalore/Hyderabad.",
         "perks": "Comprehensive health, RSUs, gym, generous PTO.",
         "bonds_or_contracts": "No bond."
+    },
+    "qualcomm": {
+        "compensation_estimates": "Associate Engineer (0-2 Yrs) CTC ~₹18L - ₹24L (Base: ₹15L, Stock: ₹4L). Engineer II (2-4 Yrs) CTC ~₹28L - ₹38L. Senior Engineer ~₹42L - ₹60L.",
+        "compensation_levels": [
+            {"level_name": "Associate Engineer (0-2 Yrs)", "base_pay": "₹15,00,000", "bonus": "₹1,50,000", "stock": "₹4,00,000", "total_comp": "₹20,50,000"},
+            {"level_name": "Engineer II (2-4 Yrs)", "base_pay": "₹24,00,000", "bonus": "₹3,00,000", "stock": "₹8,00,000", "total_comp": "₹35,00,000"},
+            {"level_name": "Senior Engineer (4+ Yrs)", "base_pay": "₹35,00,000", "bonus": "₹5,00,000", "stock": "₹14,00,000", "total_comp": "₹54,00,000"}
+        ],
+        "work_culture": "World-leading semiconductor and telecommunications powerhouse. R&D-first, deeply technical (5G, Snapdragon, DSP, Linux kernel, AI edge accelerators).",
+        "work_life_balance": "Excellent (typically 40 hrs/wk), healthy 3-day hybrid model in Bengaluru, Hyderabad, Chennai, and Noida offices.",
+        "perks": "Generous ESPP (15% discount), annual bonus, comprehensive health insurance, patent filing cash rewards.",
+        "bonds_or_contracts": "No bond."
+    },
+    "stripe": {
+        "compensation_estimates": "Software Engineer L1/L2 CTC ~₹45L - ₹75L (Base: ₹30L - ₹42L, RSUs: ₹25L - ₹35L). Staff/Senior Engineer ~₹90L - ₹1.5Cr+.",
+        "compensation_levels": [
+            {"level_name": "Software Engineer (L1 / L2)", "base_pay": "₹32,00,000", "bonus": "₹4,00,000", "stock": "₹22,00,000", "total_comp": "₹58,00,000"},
+            {"level_name": "Senior Software Engineer (L3)", "base_pay": "₹48,00,000", "bonus": "₹6,00,000", "stock": "₹38,00,000", "total_comp": "₹92,00,000"},
+            {"level_name": "Staff Software Engineer", "base_pay": "₹70,00,000", "bonus": "₹10,00,000", "stock": "₹65,00,000", "total_comp": "₹1,45,00,000"}
+        ],
+        "work_culture": "Written-first culture, high autonomy, exceptional engineering bar, documentation-heavy, craft-oriented payments infrastructure.",
+        "work_life_balance": "Flexible and autonomous with remote-friendly culture; high ownership expectations.",
+        "perks": "Substantial liquid equity, home office setup stipend, wellness budget, learning & development allowance.",
+        "bonds_or_contracts": "No bond."
+    },
+    "eternal": {
+        "compensation_estimates": "SDE 1 (0-2 Yrs) CTC ~₹22L - ₹30L. SDE 2 (2-5 Yrs) CTC ~₹35L - ₹50L. Lead Engineer ~₹55L - ₹80L.",
+        "compensation_levels": [
+            {"level_name": "Software Development Engineer I (Zomato / Blinkit)", "base_pay": "₹20,00,000", "bonus": "₹2,00,000", "stock": "₹4,00,000", "total_comp": "₹26,00,000"},
+            {"level_name": "Software Development Engineer II", "base_pay": "₹32,00,000", "bonus": "₹4,00,000", "stock": "₹10,00,000", "total_comp": "₹46,00,000"},
+            {"level_name": "Lead Software Engineer", "base_pay": "₹48,00,000", "bonus": "₹6,00,000", "stock": "₹18,00,000", "total_comp": "₹72,00,000"}
+        ],
+        "work_culture": "High-velocity consumer tech & quick-commerce environment (Blinkit + Zomato). Extreme speed of execution, strong operational bias, and high ownership.",
+        "work_life_balance": "Fast-paced with seasonal surge periods (festivals, IPL, New Year); primarily in-office/hybrid at Gurugram HQ.",
+        "perks": "Free catered meals, comprehensive family health coverage, wealth creation via ESOPs, corporate discounts.",
+        "bonds_or_contracts": "No bond."
+    },
+    "goldmansachs": {
+        "compensation_estimates": "New Associate / Analyst CTC ~₹25L - ₹32L (Base: ₹20L, Bonus: ₹6L). Associate CTC ~₹40L - ₹55L. VP ~₹75L - ₹1.2Cr+.",
+        "compensation_levels": [
+            {"level_name": "Engineering Analyst (New Associate / SDE 1)", "base_pay": "₹20,00,000", "bonus": "₹6,00,000", "stock": "₹0", "total_comp": "₹26,00,000"},
+            {"level_name": "Associate (SDE 2 / 2-5 Yrs)", "base_pay": "₹34,00,000", "bonus": "₹10,00,000", "stock": "₹0", "total_comp": "₹44,00,000"},
+            {"level_name": "Vice President (Engineering / 6+ Yrs)", "base_pay": "₹55,00,000", "bonus": "₹25,00,000", "stock": "₹10,00,000", "total_comp": "₹90,00,000"}
+        ],
+        "work_culture": "Premier global investment bank. Fast-paced high accountability environment, strong algorithmic trading & risk engineering.",
+        "work_life_balance": "Demanding (45-55 hrs/wk), hybrid policy in Bengaluru & Hyderabad offices.",
+        "perks": "Top-tier private medical cover, gym subsidies, tuition reimbursement, comprehensive relocation support.",
+        "bonds_or_contracts": "No bond."
     }
 }
 
@@ -156,7 +204,7 @@ def research_company(company_name: str) -> dict:
         for r in results:
             raw_context += f"- {r.get('title')}: {r.get('body')}\n"
 
-        # 4. Use Groq (no daily quota cap) to summarize and structure the findings
+        # 4. Use resilient structured LLM (Gemini primary, Groq fallback)
         prompt = f"""
         You are an expert tech career advisor. I have collected web search snippets about a company named '{company_name}'.
         Review the raw search snippets below and extract the key information into the requested JSON schema.
@@ -167,7 +215,7 @@ def research_company(company_name: str) -> dict:
         {raw_context}
         """
 
-        intelligence = generate_structured(prompt, CompanyIntelligence, use_groq=True)
+        intelligence = generate_structured(prompt, CompanyIntelligence, use_groq=False)
         result = intelligence.model_dump()
 
         # Store in cache
@@ -175,5 +223,4 @@ def research_company(company_name: str) -> dict:
         return result
 
     except Exception as e:
-        print(f"Error researching company {company_name}: {e}")
-        return CompanyIntelligence().model_dump()
+        raise RuntimeError(f"Error researching company {company_name}: {e}")

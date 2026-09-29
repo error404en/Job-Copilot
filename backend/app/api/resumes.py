@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 import io
 import hashlib
 import PyPDF2
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -14,6 +14,9 @@ from app.middleware.rate_limit import limiter
 
 router = APIRouter()
 
+import logging
+logger = logging.getLogger(__name__)
+
 class ResumeVersionResponse(BaseModel):
     id: str
     file_path: str
@@ -21,11 +24,103 @@ class ResumeVersionResponse(BaseModel):
     title: str
     skills_summary: str
     created_at: str
+    specialization: Optional[str] = "General Technical Track"
+    key_skills: Optional[List[str]] = []
+    jobs_matched_count: Optional[int] = 0
+    unique_differentiators: Optional[List[str]] = []
+
+def extract_resume_intelligence(resume: dict, all_resumes: list, match_counts: dict) -> dict:
+    t_type = (resume.get("target_type") or "other").lower()
+    title = (resume.get("title") or "").lower()
+    summary = (resume.get("skills_summary") or "").lower()
+    raw = (resume.get("raw_content") or "").lower()
+    combined = f"{title} {summary} {raw}"
+
+    # 1. Deduce deep specialization
+    specialization = "General Technical Track"
+    if t_type == "genai":
+        if any(k in combined for k in ["agent", "mcp", "crewai", "autogen", "langgraph", "tool"]):
+            specialization = "Agentic Systems & MCP Orchestration"
+        elif any(k in combined for k in ["lora", "qlora", "fine-tun", "vllm", "triton", "cuda", "deepspeed", "quantiz"]):
+            specialization = "LLM Infra & Model Fine-Tuning"
+        elif any(k in combined for k in ["rag", "vector", "qdrant", "pinecone", "chroma", "hybrid search", "knowledge graph"]):
+            specialization = "RAG & Semantic Knowledge Retrieval"
+        elif any(k in combined for k in ["react", "next", "fastapi", "fullstack", "ui"]):
+            specialization = "Full-Stack GenAI Applications"
+        else:
+            specialization = "Foundation Models & Applied AI"
+    elif t_type == "backend":
+        if any(k in combined for k in ["distributed", "kafka", "redis", "microservice", "scale"]):
+            specialization = "Distributed Systems & Cloud Scale"
+        elif any(k in combined for k in ["python", "fastapi", "django"]):
+            specialization = "Python Backend & API Architecture"
+        elif any(k in combined for k in ["go", "golang", "grpc"]):
+            specialization = "High-Concurrency Go Microservices"
+        else:
+            specialization = "Core Backend & Database Architecture"
+    elif t_type == "frontend":
+        specialization = "Modern Reactive UI & Design Systems"
+    elif t_type == "fullstack":
+        specialization = "End-to-End Product Architecture"
+    elif t_type == "data":
+        specialization = "Data Pipelines & ETL Architecture"
+
+    # 2. Extract key technical skills chips
+    common_tech = [
+        "python", "pytorch", "langchain", "llamaindex", "fastapi", "react", "next.js", "docker", 
+        "kubernetes", "aws", "postgresql", "redis", "kafka", "typescript", "tailwind", "go",
+        "autogen", "crewai", "vllm", "triton", "qdrant", "pinecone", "graphql", "sql", "git",
+        "huggingface", "lora", "cuda", "spark", "snowflake", "databricks"
+    ]
+    detected_skills = []
+    for tech in common_tech:
+        if tech in combined and tech not in [s.lower() for s in detected_skills]:
+            detected_skills.append(tech.title() if tech not in ["aws", "sql", "cuda", "mcp", "etl", "rag", "vllm"] else tech.upper())
+            if len(detected_skills) >= 6:
+                break
+    if not detected_skills and resume.get("skills_summary"):
+        detected_skills = [s.strip() for s in resume["skills_summary"].replace(";", ",").split(",")[:5] if len(s.strip()) > 2]
+
+    # 3. Compute unique differentiators relative to other resumes in the same track
+    same_track_resumes = [r for r in all_resumes if r.get("id") != resume.get("id") and r.get("target_type") == resume.get("target_type")]
+    differentiators = []
+    if same_track_resumes:
+        other_combined = " ".join([f"{r.get('title','')} {r.get('skills_summary','')}".lower() for r in same_track_resumes])
+        for s in detected_skills:
+            if s.lower() not in other_combined:
+                differentiators.append(f"Exclusive focus on {s}")
+    if not differentiators:
+        differentiators.append(f"Targeted for {specialization}")
+
+    return {
+        "specialization": specialization,
+        "key_skills": detected_skills[:6],
+        "jobs_matched_count": match_counts.get(resume.get("id"), 0),
+        "unique_differentiators": differentiators[:3]
+    }
 
 @router.get("", response_model=List[ResumeVersionResponse])
 def list_resumes(user_id: str = Depends(get_current_user)):
     res = supabase.table("resume_versions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-    return res.data
+    data = res.data or []
+    
+    # Count how many jobs have recommended this resume
+    match_counts = {}
+    try:
+        analyses_res = supabase.table("job_analyses").select("recommended_resume_version_id").eq("user_id", user_id).execute()
+        if analyses_res.data:
+            for row in analyses_res.data:
+                rec_id = row.get("recommended_resume_version_id")
+                if rec_id:
+                    match_counts[rec_id] = match_counts.get(rec_id, 0) + 1
+    except Exception as e:
+        logger.warning("Could not count job analysis matches for resumes: %s", e)
+
+    enriched = []
+    for r in data:
+        intel = extract_resume_intelligence(r, data, match_counts)
+        enriched.append({**r, **intel})
+    return enriched
 
 @router.post("/upload")
 @limiter.limit("10/minute")
@@ -101,7 +196,7 @@ def upload_resume(request: Request, file: UploadFile = File(...), user_id: str =
     try:
         extraction = parse_resume_with_llm(raw_text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to analyze resume with AI")
+        raise HTTPException(status_code=502, detail=f"Failed to analyze resume with AI: {str(e)}")
         
     # 3. Check extracted title match (catches legacy resumes uploaded before file_hash was added)
     cleaned_title = extraction.title.strip()

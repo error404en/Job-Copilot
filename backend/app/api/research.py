@@ -14,10 +14,101 @@ class ResearchRequest(BaseModel):
     company_name: str
     target_keywords: Optional[str] = None
 
+KNOWN_COMPANY_ATS = {
+    "stripe": CareersDiscoveryResult(
+        careers_url="https://stripe.com/jobs",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="stripe")
+    ),
+    "eternal": CareersDiscoveryResult(
+        careers_url="https://www.zomato.com/careers",
+        ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token="Zomato1")
+    ),
+    "zomato": CareersDiscoveryResult(
+        careers_url="https://www.zomato.com/careers",
+        ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token="Zomato1")
+    ),
+    "blinkit": CareersDiscoveryResult(
+        careers_url="https://blinkit.com/careers",
+        ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token="Zomato1")
+    ),
+    "uber": CareersDiscoveryResult(
+        careers_url="https://www.uber.com/us/en/careers/",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="uber")
+    ),
+    "rubrik": CareersDiscoveryResult(
+        careers_url="https://www.rubrik.com/company/careers",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="rubrik")
+    ),
+    "databricks": CareersDiscoveryResult(
+        careers_url="https://www.databricks.com/company/careers",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="databricks")
+    ),
+    "atlassian": CareersDiscoveryResult(
+        careers_url="https://www.atlassian.com/company/careers",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="atlassian")
+    ),
+    "coinbase": CareersDiscoveryResult(
+        careers_url="https://www.coinbase.com/careers",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="coinbase")
+    ),
+    "figma": CareersDiscoveryResult(
+        careers_url="https://www.figma.com/careers",
+        ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token="figma")
+    ),
+    "qualcomm": CareersDiscoveryResult(
+        careers_url="https://careers.qualcomm.com/careers",
+        ats_info=None
+    ),
+    "goldmansachs": CareersDiscoveryResult(
+        careers_url="https://higher.gs.com/results?JOB_FUNCTION=Software%20Engineering",
+        ats_info=None
+    ),
+    "google": CareersDiscoveryResult(
+        careers_url="https://careers.google.com/jobs/results/?location=India",
+        ats_info=None
+    ),
+    "microsoft": CareersDiscoveryResult(
+        careers_url="https://jobs.careers.microsoft.com/global/en/search?lc=India",
+        ats_info=None
+    ),
+    "amazon": CareersDiscoveryResult(
+        careers_url="https://www.amazon.jobs/en/search?base_query=Software+Development+Engineer+I&loc_query=India",
+        ats_info=None
+    ),
+    "barclays": CareersDiscoveryResult(
+        careers_url="https://search.jobs.barclays/search-jobs/India?orgIds=13014&alp=1269750&alt=2",
+        ats_info=None
+    ),
+    "hsbc": CareersDiscoveryResult(
+        careers_url="https://mycareer.hsbc.com/en_GB/external/SearchJobs/?1051=%5B%221294%22%5D",
+        ats_info=None
+    ),
+    "jpmorgan": CareersDiscoveryResult(
+        careers_url="https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions?location=India",
+        ats_info=None
+    ),
+    "hcltech": CareersDiscoveryResult(
+        careers_url="https://www.hcltech.com/careers",
+        ats_info=None
+    ),
+    "zsassociates": CareersDiscoveryResult(
+        careers_url="https://jobs.zs.com/",
+        ats_info=None
+    )
+}
+
 def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] = None) -> CareersDiscoveryResult:
     """
     Company -> official domain -> official careers URL -> detect known ATS
     """
+    norm = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
+    
+    # 0. Check curated high-priority registry first (instant 0ms resolution)
+    if not careers_url:
+        for k, res in KNOWN_COMPANY_ATS.items():
+            if k in norm or norm in k:
+                return res
+
     query = f"{company_name} official careers portal"
     
     if not careers_url:
@@ -107,27 +198,39 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
         result = scrape_careers_page(req.company_name, keywords)
         discovered_jobs = result.get("jobs", [])
         careers_url = result.get("careers_url")
+        # Attach known ATS info if available (e.g. Stripe -> Greenhouse, Eternal -> SmartRecruiters)
+        known = discover_careers_url_and_ats(req.company_name)
+        if known and known.ats_info:
+            ats_info = known.ats_info
     else:
         # 1. Discover Official Careers URL and ATS
         discovery = discover_careers_url_and_ats(req.company_name)
         careers_url = discovery.careers_url
         ats_info = discovery.ats_info
+        print(f"[DeepDive] Detected ATS: {ats_info.system.value if ats_info else None}, token: {ats_info.token if ats_info else None}")
         
         # If the careers_url itself isn't an ATS link, we might want to do a deeper check, but the user explicitly requested this exact flow.
         # Fallback: if discovery didn't find the direct ATS link because it's a vanity url, we can check a direct DDG search for the ATS just in case
         if not ats_info:
             try:
-                query = f"site:boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.ashbyhq.com OR site:jobs.smartrecruiters.com OR site:myworkdayjobs.com {req.company_name} careers"
-                results = perform_resilient_search(query, max_results=3)
+                norm_c = re.sub(r'[^a-zA-Z0-9]', '', req.company_name.lower())
+                query = f"{req.company_name} greenhouse lever ashby smartrecruiters workday jobs"
+                results = perform_resilient_search(query, max_results=5)
                 for r in results:
                     u = r.get("href", "")
-                    if "myworkdayjobs.com" in u or "greenhouse.io" in u or "lever.co" in u or "ashbyhq.com" in u or "smartrecruiters.com" in u:
-                        # Re-run detection on this specific URL
-                        ats_info = discover_careers_url_and_ats(req.company_name, u).ats_info
-                        if ats_info:
+                    cand_disc = discover_careers_url_and_ats(req.company_name, u)
+                    if cand_disc.ats_info:
+                        cand_tok = re.sub(r'[^a-zA-Z0-9]', '', cand_disc.ats_info.token.lower())
+                        # Token MUST match company name (prevents random hijack like upshop/altisource)
+                        if norm_c in cand_tok or cand_tok in norm_c:
+                            ats_info = cand_disc.ats_info
+                            careers_url = u
+                            print(f"[DeepDive] Validated ATS match: {ats_info.system.value} ({ats_info.token}) for {req.company_name}")
                             break
-            except Exception:
-                pass
+                        else:
+                            print(f"[DeepDive] Rejected false ATS token '{cand_disc.ats_info.token}' for company '{req.company_name}'")
+            except Exception as e:
+                print(f"[DeepDive] Fallback ATS search failed: {e}")
 
         if ats_info:
             system = ats_info.system.value
@@ -149,21 +252,37 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
                 for j in discovered_jobs:
                     if "experience_level" not in j:
                         meta = parse_experience_requirements(j.get("role_title", ""), j.get("raw_jd", ""))
-                        # Map hybrid fields to old fields to avoid breaking downstream
                         exp_min = meta.get("experience_min_years", 0)
                         j["experience_level"] = "0-2 Yrs" if exp_min <= 2 else "2-5 Yrs" if exp_min < 5 else "5+ Yrs"
                         j["seniority_required"] = meta.get("seniority", "Unknown")
             except Exception as e:
                 print(f"Failed to fetch jobs from discovered ATS {system} for {token}: {e}")
-        else:
-            # Tier 3: Unknown / Custom ATS -> Generic Official Careers Fallback via Playwright
-            if careers_url:
-                print(f"[DeepDive] No known ATS found for {req.company_name}. Using generic Playwright fallback on {careers_url}")
-                from app.services.job_fetcher import fetch_generic_fallback
+
+        # Tier 3: If no ATS found OR ATS returned 0 jobs -> Generic Playwright Fallback on careers URL
+        if not discovered_jobs and careers_url:
+            print(f"[DeepDive] No ATS or 0 ATS jobs found for {req.company_name}. Using Playwright fallback on {careers_url}")
+            from app.services.job_fetcher import fetch_generic_fallback
+            try:
                 discovered_jobs = fetch_generic_fallback(careers_url, req.company_name, keywords)
-            else:
-                print(f"[DeepDive] Could not discover careers URL for {req.company_name}")
+            except Exception as pf_e:
+                print(f"[DeepDive] Generic Playwright fallback failed: {pf_e}")
+        elif not discovered_jobs and not careers_url:
+            print(f"[DeepDive] Could not discover careers URL for {req.company_name}")
                 
+    # Filter out any invalid jobs or false links
+    from app.services.job_validator import is_valid_job_posting
+    valid_discovered = []
+    for j in discovered_jobs:
+        valid, _ = is_valid_job_posting(
+            role_title=j.get("role_title", ""),
+            url=j.get("url") or careers_url or "",
+            company_name=req.company_name,
+            raw_jd=j.get("raw_jd", "")
+        )
+        if valid:
+            valid_discovered.append(j)
+    discovered_jobs = valid_discovered
+
     # 2. Company Intelligence (runs fast with benchmark fallback, but searches might take time)
     # By running this AFTER job fetching, we prioritize the ATS extraction which is more important.
     company_info = research_company(req.company_name)

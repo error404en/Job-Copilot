@@ -32,6 +32,13 @@ def extract_opportunities_from_text(content: str) -> List[Dict[str, Any]]:
     
     try:
         res = _try_groq_json(prompt)
+        if not res:
+            from app.services.llm_client import _try_gemini_json
+            res = _try_gemini_json(prompt)
+        if not res:
+            from app.services.llm_client import _try_ollama_json
+            res = _try_ollama_json(prompt)
+            
         if isinstance(res, str):
             # Clean up markdown code blocks if any
             clean_res = res.strip()
