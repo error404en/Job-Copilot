@@ -7,6 +7,7 @@ from app.middleware.auth import get_current_user
 from app.services.llm_client import get_completion, generate_tailoring_text, generate_tailoring_text_stream, extract_text_from_image
 import json
 import io
+import time
 from app.utils.security import safe_read_file, validate_image_content, validate_pdf_content, sanitize_filename
 from app.middleware.rate_limit import limiter
 
@@ -58,12 +59,15 @@ session_messages = {}  # thread_id -> list of message dicts
 @router.get("/threads", response_model=List[ChatThread])
 def list_threads(user_id: str = Depends(get_current_user)):
     threads = []
-    try:
-        response = supabase.table("chat_threads").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-        if response.data:
-            threads.extend(response.data)
-    except Exception as e:
-        print(f"[Chat] Warning: Failed to query DB threads ({e}). Using session threads.")
+    for attempt in range(2):
+        try:
+            response = supabase.table("chat_threads").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+            if response.data:
+                threads.extend(response.data)
+            break
+        except Exception as e:
+            print(f"[Chat] Warning: Failed to query DB threads (attempt {attempt+1}): {e}")
+            time.sleep(0.2)
     
     # Also include in-memory active threads for this user
     for tid, t in session_threads.items():
@@ -81,13 +85,16 @@ def create_thread(req: CreateThreadRequest, user_id: str = Depends(get_current_u
         "job_id": req.job_id
     }
     
-    # Try persisting to Supabase first
-    try:
-        response = supabase.table("chat_threads").insert(new_thread_data).execute()
-        if response.data:
-            return response.data[0]
-    except Exception as e:
-        print(f"[Chat] Note: Supabase chat_threads insert pending DDL ({e}). Using resilient session thread.")
+    # Try persisting to Supabase first with retry
+    for attempt in range(2):
+        try:
+            response = supabase.table("chat_threads").insert(new_thread_data).execute()
+            if response.data:
+                return response.data[0]
+            break
+        except Exception as e:
+            print(f"[Chat] Note: Supabase chat_threads insert attempt {attempt+1} ({e}).")
+            time.sleep(0.2)
 
     # Graceful fallback: generate a valid UUID thread in session memory
     tid = str(uuid.uuid4())
@@ -107,13 +114,16 @@ def create_thread(req: CreateThreadRequest, user_id: str = Depends(get_current_u
 @router.get("/threads/{thread_id}/messages", response_model=List[ChatMessage])
 def get_thread_messages(thread_id: str, user_id: str = Depends(get_current_user)):
     messages = []
-    # 1. Fetch from database first
-    try:
-        response = supabase.table("chat_messages").select("*").eq("thread_id", thread_id).order("created_at", desc=False).execute()
-        if response.data:
-            messages.extend(response.data)
-    except Exception as e:
-        print(f"[Chat] Warning fetching messages from DB: {e}")
+    # 1. Fetch from database first with automatic retry
+    for attempt in range(2):
+        try:
+            response = supabase.table("chat_messages").select("*").eq("thread_id", thread_id).order("created_at", desc=False).execute()
+            if response.data:
+                messages.extend(response.data)
+            break
+        except Exception as e:
+            print(f"[Chat] Warning fetching messages from DB (attempt {attempt+1}): {e}")
+            time.sleep(0.2)
 
     # 2. Resilient session fallback if DB was empty or unmigrated
     if not messages and thread_id in session_messages:
@@ -135,15 +145,31 @@ def send_message(
     Sends a message, processes optional files, builds context, calls LLM, and streams response.
     """
     try:
-        # 1. Verify thread context (check DB, fallback to session)
+        # 1. Verify thread context (check DB with retry, fallback to auto-creation or session)
         thread = None
-        try:
-            thread_res = supabase.table("chat_threads").select("*").eq("id", thread_id).eq("user_id", user_id).execute()
-            if thread_res.data:
-                thread = thread_res.data[0]
-        except Exception:
-            pass
-            
+        for attempt in range(2):
+            try:
+                thread_res = supabase.table("chat_threads").select("*").eq("id", thread_id).eq("user_id", user_id).execute()
+                if thread_res.data:
+                    thread = thread_res.data[0]
+                break
+            except Exception as e:
+                time.sleep(0.2)
+                
+        if not thread:
+            # Ensure thread is recorded in DB to satisfy foreign keys
+            try:
+                ins = supabase.table("chat_threads").insert({
+                    "id": thread_id,
+                    "user_id": user_id,
+                    "title": content[:36] + ("..." if len(content) > 36 else ""),
+                    "job_id": None
+                }).execute()
+                if ins.data:
+                    thread = ins.data[0]
+            except Exception as e:
+                print(f"[Chat] Note on thread DB auto-creation: {e}")
+
         if not thread:
             thread = session_threads.get(thread_id, {
                 "id": thread_id,
@@ -212,16 +238,20 @@ def send_message(
 
         # 3. Save User Message (Supabase with session fallback)
         saved_to_db = False
-        try:
-            supabase.table("chat_messages").insert({
-                "thread_id": thread_id,
-                "user_id": user_id,  # Phase 3 Security Fix
-                "role": "user",
-                "content": final_user_content
-            }).execute()
-            saved_to_db = True
-        except Exception as e:
-            print(f"[Chat] Note: Saving message to session store ({e})")
+        for attempt in range(2):
+            try:
+                supabase.table("chat_messages").insert({
+                    "id": user_msg_id,
+                    "thread_id": thread_id,
+                    "user_id": user_id,  # Phase 3 Security Fix
+                    "role": "user",
+                    "content": final_user_content
+                }).execute()
+                saved_to_db = True
+                break
+            except Exception as e:
+                print(f"[Chat] Note: Saving message to DB (attempt {attempt+1}): {e}")
+                time.sleep(0.2)
             
         if not saved_to_db:
             if thread_id not in session_messages:
@@ -330,16 +360,19 @@ def send_message(
             finally:
                 if full_response_text.strip():
                     saved_asst = False
-                    try:
-                        supabase.table("chat_messages").insert({
-                            "thread_id": thread_id,
-                            "user_id": user_id,  # Phase 3 Security Fix
-                            "role": "assistant",
-                            "content": full_response_text
-                        }).execute()
-                        saved_asst = True
-                    except Exception as e:
-                        print(f"[Chat] Warning saving assistant message to DB: {e}")
+                    for attempt in range(2):
+                        try:
+                            supabase.table("chat_messages").insert({
+                                "thread_id": thread_id,
+                                "user_id": user_id,  # Phase 3 Security Fix
+                                "role": "assistant",
+                                "content": full_response_text
+                            }).execute()
+                            saved_asst = True
+                            break
+                        except Exception as e:
+                            print(f"[Chat] Warning saving assistant message to DB (attempt {attempt+1}): {e}")
+                            time.sleep(0.2)
                         
                     if not saved_asst:
                         if thread_id not in session_messages:

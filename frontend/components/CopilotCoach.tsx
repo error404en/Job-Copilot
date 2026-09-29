@@ -100,7 +100,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
     }
   })
 
-  // Synchronize and auto-select thread
+  // Synchronize and auto-select thread on initial load
   useEffect(() => {
     if (!threads || threads.length === 0) return
 
@@ -112,23 +112,44 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       return
     }
 
-    if (!currentThreadId || currentThreadId === 'new') {
+    // Only auto-select if currentThreadId is completely uninitialized (null)
+    if (currentThreadId === null) {
       const savedId = typeof window !== 'undefined' ? localStorage.getItem('jobcopilot_active_thread_id') : null
       const matched = savedId ? threads.find(t => t.id === savedId) : null
       if (matched) {
         setCurrentThreadId(matched.id)
-      } else if (currentThreadId !== 'new') {
+      } else {
         setCurrentThreadId(threads[0].id)
       }
     }
-  }, [threads, jobId, currentThreadId])
+  }, [threads, jobId])
 
-  // Persist currentThreadId to localStorage
+  // Persist currentThreadId to localStorage when changed
   useEffect(() => {
-    if (typeof window !== 'undefined' && currentThreadId && currentThreadId !== 'new' && !jobId) {
-      localStorage.setItem('jobcopilot_active_thread_id', currentThreadId)
+    if (typeof window !== 'undefined' && !jobId) {
+      if (currentThreadId && currentThreadId !== 'new') {
+        localStorage.setItem('jobcopilot_active_thread_id', currentThreadId)
+      } else if (currentThreadId === 'new') {
+        localStorage.removeItem('jobcopilot_active_thread_id')
+      }
     }
   }, [currentThreadId, jobId])
+
+  const handleStartNewChat = useCallback(() => {
+    if (isStreaming && abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setIsStreaming(false)
+    }
+    setCurrentThreadId('new')
+    setErrorMessage(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('jobcopilot_active_thread_id')
+    }
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [isStreaming])
 
   // 2. Fetch Messages for Current Thread
   const { data: messages, isLoading: isLoadingMessages } = useQuery<ChatMessage[]>({
@@ -493,12 +514,16 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
 
   // Display messages list: seamlessly blends cached messages with active streaming token output
   const displayMessages = useMemo(() => {
-    const list = messages ? [...messages] : []
+    let list: ChatMessage[] = []
+    if (currentThreadId && currentThreadId !== 'new') {
+      const cached = queryClient.getQueryData<ChatMessage[]>(['chat_messages', currentThreadId])
+      list = messages || cached || []
+    }
     if (isStreaming && streamingMessageId) {
       return list.map(m => m.id === streamingMessageId ? { ...m, content: streamingContent } : m)
     }
     return list
-  }, [messages, isStreaming, streamingMessageId, streamingContent])
+  }, [messages, currentThreadId, isStreaming, streamingMessageId, streamingContent, queryClient])
 
   return (
     <div className={`flex w-full ${inline ? 'h-[640px] rounded-2xl' : 'h-[calc(100vh-100px)] rounded-3xl'} bg-zinc-950 border border-zinc-800/80 shadow-2xl overflow-hidden font-sans`}>
@@ -516,11 +541,7 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
               {/* Sidebar Header */}
               <div className="p-3.5 border-b border-zinc-800/60 flex items-center justify-between gap-2">
                 <button
-                  onClick={() => {
-                    setCurrentThreadId('new')
-                    setErrorMessage(null)
-                    if (textareaRef.current) textareaRef.current.focus()
-                  }}
+                  onClick={handleStartNewChat}
                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -576,6 +597,9 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                           if (isEditing) return
                           setCurrentThreadId(t.id)
                           setErrorMessage(null)
+                          if (typeof window !== 'undefined' && !jobId) {
+                            localStorage.setItem('jobcopilot_active_thread_id', t.id)
+                          }
                         }}
                         className={`group relative flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer text-xs transition-all ${
                           isActive
@@ -701,14 +725,10 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setCurrentThreadId('new')
-                setErrorMessage(null)
-                if (textareaRef.current) textareaRef.current.focus()
-              }}
+              onClick={handleStartNewChat}
               className="text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg transition-all font-semibold flex items-center gap-1.5 hover:bg-zinc-800 active:scale-95"
             >
-              <Plus className="w-3 h-3 text-indigo-400" />
+              <Plus className="w-3.5 h-3.5 text-indigo-400" />
               <span>New Chat</span>
             </button>
           </div>
