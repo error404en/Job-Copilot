@@ -38,6 +38,9 @@ class CreateThreadRequest(BaseModel):
     title: Optional[str] = "New Conversation"
     job_id: Optional[str] = None
 
+class RenameThreadRequest(BaseModel):
+    title: str
+
 class SendMessageRequest(BaseModel):
     content: str
 
@@ -103,23 +106,20 @@ def create_thread(req: CreateThreadRequest, user_id: str = Depends(get_current_u
 
 @router.get("/threads/{thread_id}/messages", response_model=List[ChatMessage])
 def get_thread_messages(thread_id: str, user_id: str = Depends(get_current_user)):
-    # Check session memory first if present
-    if thread_id in session_messages and len(session_messages[thread_id]) > 0:
-        return session_messages[thread_id]
-        
-    # 1. Verify thread belongs to user
-    thread_check = supabase.table("chat_threads").select("id").eq("id", thread_id).eq("user_id", user_id).execute()
-    if not thread_check.data:
-        raise HTTPException(status_code=404, detail="Chat thread not found")
-
+    messages = []
+    # 1. Fetch from database first
     try:
         response = supabase.table("chat_messages").select("*").eq("thread_id", thread_id).order("created_at", desc=False).execute()
         if response.data:
-            return response.data
+            messages.extend(response.data)
     except Exception as e:
         print(f"[Chat] Warning fetching messages from DB: {e}")
 
-    return session_messages.get(thread_id, [])
+    # 2. Resilient session fallback if DB was empty or unmigrated
+    if not messages and thread_id in session_messages:
+        messages = session_messages[thread_id]
+
+    return messages
 
 
 @router.post("/threads/{thread_id}/messages")
@@ -321,9 +321,14 @@ def send_message(
                     if chunk:
                         full_response_text += chunk
                         yield f"data: {json.dumps({'content': chunk})}\n\n"
-                
-                if full_response_text:
-                    # Save assistant response
+            except GeneratorExit:
+                # Client disconnected or stopped generating
+                pass
+            except Exception as e:
+                print(f"[Streaming Error] {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                if full_response_text.strip():
                     saved_asst = False
                     try:
                         supabase.table("chat_messages").insert({
@@ -333,8 +338,8 @@ def send_message(
                             "content": full_response_text
                         }).execute()
                         saved_asst = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[Chat] Warning saving assistant message to DB: {e}")
                         
                     if not saved_asst:
                         if thread_id not in session_messages:
@@ -346,17 +351,53 @@ def send_message(
                             "content": full_response_text,
                             "created_at": datetime.utcnow().isoformat()
                         })
-            except Exception as e:
-                print(f"[Streaming Error] {e}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            finally:
                 yield "data: [DONE]\n\n"
                 
-        return StreamingResponse(response_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            response_generator(), 
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
 
     except Exception as e:
         print(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/threads/{thread_id}", response_model=ChatThread)
+def rename_thread(thread_id: str, req: RenameThreadRequest, user_id: str = Depends(get_current_user)):
+    """
+    Renames an existing chat thread.
+    """
+    clean_title = (req.title or "").strip()
+    if not clean_title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+        
+    updated = None
+    try:
+        res = supabase.table("chat_threads").update({"title": clean_title}).eq("id", thread_id).eq("user_id", user_id).execute()
+        if res.data:
+            updated = res.data[0]
+    except Exception as e:
+        print(f"[Chat] Warning renaming thread in DB: {e}")
+        
+    if not updated and thread_id in session_threads:
+        session_threads[thread_id]["title"] = clean_title
+        updated = session_threads[thread_id]
+        
+    if not updated:
+        return {
+            "id": thread_id,
+            "title": clean_title,
+            "job_id": None,
+            "created_at": datetime.utcnow().isoformat(),
+            "messages": []
+        }
+    return updated
 
 
 @router.delete("/threads/{thread_id}")
