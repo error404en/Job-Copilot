@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 from playwright.async_api import async_playwright
 import sqlite3
@@ -22,24 +23,49 @@ async def run_hermes_apply(url: str, job_id: str):
     common ATS forms (like Greenhouse/Lever) with user profile data.
     """
     logger.info(f"Hermes Agent starting auto-apply for job {job_id} at {url}")
-    
+    browser = None
+    context = None
+    page = None
+
     try:
         validate_safe_url(url)
         async with async_playwright() as p:
-            # Use chromium, headless for background processing
-            browser = await p.chromium.launch(headless=True)
+            # Constrained Chromium flags to prevent Linux container OOM
+            chromium_args = [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--single-process",
+                "--no-zygote",
+                "--disable-extensions",
+                "--js-flags=--max-old-space-size=128"
+            ]
+            browser = await p.chromium.launch(headless=True, args=chromium_args)
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 800},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             page = await context.new_page()
+
+            # Abort heavy assets (images, fonts, media)
+            async def _filter_assets(route):
+                if route.request.resource_type in ["image", "media", "font"]:
+                    await route.abort()
+                else:
+                    await route.continue_()
+
+            try:
+                await page.route("**/*", _filter_assets)
+            except Exception:
+                pass
             
             logger.info("Navigating to URL...")
             validate_safe_url(url)
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             
             # Wait a bit for dynamic content / ATS forms to render
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(2000)
             
             logger.info("Attempting to find and fill form fields...")
             
@@ -73,20 +99,27 @@ async def run_hermes_apply(url: str, job_id: str):
                 await linkedin_input.first.fill(USER_PROFILE["linkedin"])
                 logger.info("Filled LinkedIn")
             
-            # (In a full implementation, we'd upload a resume here)
-            # resume_input = page.locator('input[type="file"]')
-            # if await resume_input.count() > 0:
-            #     await resume_input.first.set_input_files("resume.pdf")
-
             logger.info("Form filled successfully by Hermes.")
-            
-            # We will NOT click submit automatically during testing to avoid spamming real companies.
-            # await page.click('button[type="submit"], input[type="submit"]')
-            
-            await browser.close()
             
             return {"status": "success", "message": "Hermes successfully navigated and filled the application."}
             
     except Exception as e:
         logger.error(f"Hermes Agent encountered an error: {str(e)}")
         return {"status": "error", "message": str(e)}
+    finally:
+        if page:
+            try:
+                await page.close()
+            except Exception:
+                pass
+        if context:
+            try:
+                await context.close()
+            except Exception:
+                pass
+        if browser:
+            try:
+                await browser.close()
+            except Exception:
+                pass
+        gc.collect()

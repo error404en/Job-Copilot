@@ -46,7 +46,18 @@ app.include_router(inbox.router, prefix="/api/inbox", tags=["Inbox"])
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
+    import gc
+    mem_info = {}
+    try:
+        import resource
+        max_rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        max_rss_mb = round(max_rss_kb / 1024, 2)
+        mem_info["max_rss_mb"] = max_rss_mb
+        if max_rss_mb > 350:
+            gc.collect()
+    except Exception:
+        pass
+    return {"status": "healthy", "memory": mem_info}
 
 if __name__ == "__main__":
     import uvicorn

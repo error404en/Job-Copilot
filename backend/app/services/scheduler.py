@@ -1,5 +1,7 @@
 import asyncio
+import gc
 import os
+import time
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.db.supabase_client import supabase
@@ -85,9 +87,12 @@ def fetch_latest_jobs_task():
                     print(f"Failed to auto-process job {job_data['url']}: {e}")
             
             print(f"Finished {company}: added {new_count} new roles.")
+            gc.collect()
             
     except Exception as e:
         print(f"[Scheduler] Error in scheduled job fetcher: {e}")
+    finally:
+        gc.collect()
 
 def fetch_dream_company_jobs_task():
     """
@@ -116,7 +121,8 @@ def fetch_dream_company_jobs_task():
                 
             print(f"Fetching dream companies for user {user_id}: {dream_companies}")
             
-            for company in dream_companies:
+            # Cap to at most 3 dream companies per user per run to avoid memory spikes
+            for company in dream_companies[:3]:
                 try:
                     result = scrape_careers_page(company, target_roles)
                     jobs_to_process = result.get("jobs", [])
@@ -144,9 +150,14 @@ def fetch_dream_company_jobs_task():
                     print(f"Finished {company} for {user_id}: added {new_count} new roles.")
                 except Exception as e:
                     print(f"Error fetching dream company {company}: {e}")
+                finally:
+                    gc.collect()
+                    time.sleep(0.5)
 
     except Exception as e:
         print(f"[Scheduler] Error in dream company fetcher: {e}")
+    finally:
+        gc.collect()
 
 def keep_alive_task():
     """
@@ -240,20 +251,38 @@ def process_pending_analyses_task():
                 }
                 
                 supabase.table("job_analyses").insert(analysis_insert).execute()
-                supabase.table("jobs").update({"analysis_status": "complete"}).eq("id", job_id).execute()
+                supabase.table("jobs").update({
+                    "analysis_status": "complete",
+                    "seniority_required": parsed_job.seniority_required,
+                    "required_skills": parsed_job.required_skills
+                }).eq("id", job_id).execute()
             except Exception as e:
                 print(f"[Scheduler] Analysis failed for job {job_id}: {e}")
                 supabase.table("jobs").update({"analysis_status": "failed"}).eq("id", job_id).execute()
 
     except Exception as e:
         print(f"[Scheduler] Error processing pending analyses: {e}")
+    finally:
+        gc.collect()
 
 def start_scheduler():
-    # Run every 4 hours for continuous automated job discovery
-    scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=4)
-    scheduler.add_job(fetch_dream_company_jobs_task, 'interval', hours=4)
+    enable_scheduler = os.getenv("ENABLE_BACKGROUND_SCHEDULER", "true").lower() in ("true", "1", "yes")
+    if not enable_scheduler:
+        print("[Scheduler] Background scheduler disabled via ENABLE_BACKGROUND_SCHEDULER=false")
+        return
+
+    enable_scraping = os.getenv("ENABLE_BACKGROUND_SCRAPING", "true").lower() in ("true", "1", "yes")
+
+    # Run every 4 hours for continuous automated job discovery if scraping enabled
+    if enable_scraping:
+        scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=4)
+        scheduler.add_job(fetch_dream_company_jobs_task, 'interval', hours=4)
+    else:
+        print("[Scheduler] Automated 4-hour background web scraping disabled (ENABLE_BACKGROUND_SCRAPING=false) to conserve container RAM.")
+
     # Run every 5 minutes
     scheduler.add_job(process_pending_analyses_task, 'interval', minutes=5)
     scheduler.add_job(keep_alive_task, 'interval', minutes=5)
     scheduler.start()
     print("[Scheduler] Background scheduler started!")
+

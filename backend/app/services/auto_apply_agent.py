@@ -60,12 +60,22 @@ class AutoApplyAgent:
         print(f"[AutoApplyAgent] Starting auto-apply for {url}")
         
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            chromium_args = [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--single-process",
+                "--no-zygote",
+                "--disable-extensions",
+                "--js-flags=--max-old-space-size=128"
+            ]
+            browser = p.chromium.launch(headless=True, args=chromium_args)
             page = browser.new_page()
             
             try:
                 validate_safe_url(url)
-                page.goto(url, wait_until="networkidle", timeout=30000)
+                page.goto(url, wait_until="domcontentloaded", timeout=25000)
                 
                 steps_taken = 0
                 max_steps = 15
@@ -137,4 +147,9 @@ class AutoApplyAgent:
                 print(f"[AutoApplyAgent] Fatal error: {e}")
                 return {"status": "error", "message": str(e)}
             finally:
-                browser.close()
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+                import gc
+                gc.collect()

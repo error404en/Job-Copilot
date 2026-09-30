@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { 
   Inbox, 
   Upload, 
@@ -19,6 +20,7 @@ import {
   BookmarkCheck
 } from "lucide-react"
 import { useApiClient } from "@/lib/useApiClient"
+import { PageHeader } from "@/components/ui/PageHeader"
 
 export default function InboxPage() {
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
@@ -135,34 +137,21 @@ export default function InboxPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-16 font-sans">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-zinc-800/80 pb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(244,63,94,0.3)] border border-pink-400/20">
-              <Inbox className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-                  Opportunity Inbox
-                </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                  Lead Ingestion
-                </span>
-              </div>
-            </div>
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Ingestion & Extraction Studio"
+        title="Opportunity Ingestion"
+        subtitle="Directly ingest unformatted leads from WhatsApp groups, Telegram channels, and LinkedIn posts. AI cleans tracking links, detects scam funnels, and extracts structured job records directly into your Live Feed."
+        icon={Inbox}
+        badge="Lead Intake"
+        badgeColor="rose"
+        actions={
+          <div className="bg-zinc-900/60 px-4 py-2 rounded-2xl border border-zinc-800/80 text-right shrink-0">
+            <span className="text-2xl font-black text-white">{opportunities.length}</span>
+            <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Pending Leads</p>
           </div>
-          <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl leading-relaxed">
-            Directly ingest unformatted leads from WhatsApp groups, Telegram channels, and LinkedIn posts. Our parser cleans tracking links, detects scam funnels, and extracts structured job records.
-          </p>
-        </div>
-
-        <div className="bg-zinc-900/60 px-4 py-2 rounded-2xl border border-zinc-800/80 text-right shrink-0">
-          <span className="text-2xl font-black text-white">{opportunities.length}</span>
-          <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Pending Leads</p>
-        </div>
-      </div>
+        }
+      />
 
       {error && (
         <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-300 flex items-center justify-between shadow-lg">
@@ -425,28 +414,48 @@ export default function InboxPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleOpportunityAction(opp.id, "reject")}
-                          disabled={isActioning}
-                          className="px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 border border-zinc-800 transition-all disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                        
-                        <button
-                          type="button"
-                          onClick={() => handleOpportunityAction(opp.id, "save")}
-                          disabled={isActioning || opp.status === "ineligible"}
-                          className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all disabled:opacity-50 flex items-center gap-1.5 active:scale-95"
-                        >
-                          {isActioning ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <BookmarkCheck className="w-3.5 h-3.5" />
-                          )}
-                          <span>Promote to Jobs</span>
-                        </button>
+                        {opp.job_id ? (
+                          <div className="flex items-center gap-1.5">
+                            <Link
+                              href={`/jobs/${opp.job_id}`}
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-all flex items-center gap-1 shadow-sm"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Match Studio</span>
+                            </Link>
+                            <Link
+                              href={`/jobs/${opp.job_id}?tab=coach`}
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all flex items-center gap-1 shadow-sm"
+                            >
+                              <span>Coach Prep</span>
+                            </Link>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleOpportunityAction(opp.id, "reject")}
+                              disabled={isActioning}
+                              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 border border-zinc-800 transition-all disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                            
+                            <button
+                              type="button"
+                              onClick={() => handleOpportunityAction(opp.id, "save")}
+                              disabled={isActioning || opp.status === "ineligible"}
+                              className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all disabled:opacity-50 flex items-center gap-1.5 active:scale-95"
+                            >
+                              {isActioning ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <BookmarkCheck className="w-3.5 h-3.5" />
+                              )}
+                              <span>Promote to Jobs</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 

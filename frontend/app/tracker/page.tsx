@@ -1,12 +1,12 @@
 'use client'
-import { ClipboardList, Building2, Plus, Search, MapPin, XCircle, MoreVertical, LayoutGrid, List, CheckCircle2, Star, CalendarClock, Briefcase, Send, Target, Phone, X, Check, ArrowUpRight } from 'lucide-react'
+import { ClipboardList, Building2, Plus, Search, MapPin, XCircle, MoreVertical, LayoutGrid, List, CheckCircle2, Star, CalendarClock, Briefcase, Send, Target, Phone, X, Check, ArrowUpRight, Sparkles, BrainCircuit } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-
 
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useApiClient } from '@/lib/useApiClient'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 const STATUS_COLUMNS = [
   { id: 'saved', label: 'Wishlist / Saved', icon: '📌', color: 'border-blue-500/30 bg-blue-500/5' },
@@ -151,35 +151,33 @@ export default function TrackerPage() {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(99,102,241,0.3)] border border-indigo-400/20">
-              <ClipboardList className="w-5 h-5" />
-            </div>
-            Application Tracker
-          </h1>
-          <p className="text-zinc-400 text-sm max-w-xl">
-            Manage your applications across stages, track interviews, and filter by place.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/companies"
-            className="bg-zinc-900 border border-zinc-800/80 text-zinc-300 px-5 py-2.5 rounded-xl text-[13px] font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-2 shadow-sm shrink-0"
-          >
-            <Building2 className="w-4 h-4 text-indigo-400" />
-            Browse Companies
-          </Link>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold hover:bg-indigo-500 transition-all shadow-[0_4px_14px_rgba(79,70,229,0.3)] hover:shadow-[0_6px_20px_rgba(79,70,229,0.4)] flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Track New Application
-          </button>
-        </div>
-      </div>
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Application Pipeline"
+        title="Application Tracker"
+        subtitle="End-to-end recruitment lifecycle tracker. Seamlessly move applications through stages, manage deadlines, and launch AI interview prep."
+        icon={ClipboardList}
+        badge="Pipeline"
+        badgeColor="purple"
+        actions={
+          <>
+            <Link
+              href="/companies"
+              className="bg-zinc-900/80 border border-zinc-800 text-zinc-300 px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+            >
+              <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Browse Companies</span>
+            </Link>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(99,102,241,0.3)] flex items-center gap-1.5 active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Track Application</span>
+            </button>
+          </>
+        }
+      />
 
       {/* Quick Stats Bar */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -284,11 +282,32 @@ export default function TrackerPage() {
                               </div>
                             </div>
                             {app.job_id && (
-                              <Link href={`/jobs/${app.job_id}`} className="text-zinc-500 hover:text-indigo-400 transition-colors">
+                              <Link href={`/jobs/${app.job_id}`} className="text-zinc-500 hover:text-indigo-400 transition-colors" title="View Job Details">
                                 <ArrowUpRight className="w-4 h-4" />
                               </Link>
                             )}
                           </div>
+
+                          {app.job_id && (
+                            <div className="flex items-center gap-1.5 pt-0.5">
+                              <Link 
+                                href={`/jobs/${app.job_id}`}
+                                className="text-[10px] font-bold text-indigo-300 hover:text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all"
+                                title="Open Job Fit Breakdown & Match Studio"
+                              >
+                                <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                                <span>Match Studio</span>
+                              </Link>
+                              <Link 
+                                href={`/jobs/${app.job_id}?tab=coach`}
+                                className="text-[10px] font-bold text-purple-300 hover:text-purple-200 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all"
+                                title="Practice interview questions with AI Coach"
+                              >
+                                <BrainCircuit className="w-2.5 h-2.5 text-purple-400" />
+                                <span>Prep Coach</span>
+                              </Link>
+                            </div>
+                          )}
 
                           <div className="text-[11px] text-zinc-400 flex items-center gap-2 flex-wrap">
                             <span className="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded-md border border-zinc-800/80"><MapPin className="w-3 h-3 text-zinc-500"/> {app.jobs?.location || 'Unclear'}</span>
@@ -369,15 +388,31 @@ export default function TrackerPage() {
                       </td>
                       <td className="p-4 text-right pr-6 space-x-2">
                         {app.job_id && (
-                          <Link href={`/jobs/${app.job_id}`} className="inline-flex p-1.5 bg-zinc-900 text-zinc-400 hover:text-indigo-400 rounded-md transition-colors border border-zinc-800">
-                            <ArrowUpRight className="w-4 h-4" />
-                          </Link>
+                          <div className="inline-flex items-center gap-1.5 mr-2">
+                            <Link 
+                              href={`/jobs/${app.job_id}`}
+                              className="px-2.5 py-1 text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 rounded-lg transition-colors border border-indigo-500/20 inline-flex items-center gap-1"
+                              title="Match Studio"
+                            >
+                              <Sparkles className="w-3 h-3 text-indigo-400" />
+                              <span>Studio</span>
+                            </Link>
+                            <Link 
+                              href={`/jobs/${app.job_id}?tab=coach`}
+                              className="px-2.5 py-1 text-xs font-semibold bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 rounded-lg transition-colors border border-purple-500/20 inline-flex items-center gap-1"
+                              title="AI Interview Coach"
+                            >
+                              <BrainCircuit className="w-3 h-3 text-purple-400" />
+                              <span>Coach</span>
+                            </Link>
+                          </div>
                         )}
                         <button
                           onClick={() => {
                             if (confirm('Remove application?')) deleteAppMutation.mutate(app.id)
                           }}
                           className="inline-flex p-1.5 bg-zinc-900 text-zinc-500 hover:text-red-400 rounded-md transition-colors border border-zinc-800"
+                          title="Remove from tracker"
                         >
                           <X className="w-4 h-4" />
                         </button>

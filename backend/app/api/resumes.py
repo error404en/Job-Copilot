@@ -181,13 +181,16 @@ def upload_resume(request: Request, file: UploadFile = File(...), user_id: str =
         # Fallback: PyMuPDF handles scanned/complex PDFs better
         try:
             import fitz  # PyMuPDF
-            doc = fitz.open(stream=content, filetype="pdf")
-            for i, page in enumerate(doc):
-                if i >= MAX_PAGES:
-                    break
-                raw_text += page.get_text() + "\n"
+            with fitz.open(stream=content, filetype="pdf") as doc:
+                for i, page in enumerate(doc):
+                    if i >= MAX_PAGES:
+                        break
+                    raw_text += page.get_text() + "\n"
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+
+    import gc
+    gc.collect()
         
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="PDF appears to be empty or image-based (no extractable text found).")

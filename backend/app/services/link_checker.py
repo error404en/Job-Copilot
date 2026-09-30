@@ -95,10 +95,10 @@ def check_single_url(url: str) -> dict:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'text/html,application/xhtml+xml,*/*',
         }
-        res = requests.get(url, headers=headers, timeout=8, stream=True, allow_redirects=True)
-        if res.status_code >= 400:
-            return {"url": url, "is_broken": True, "error": f"HTTP {res.status_code}"}
-        return {"url": url, "is_broken": False, "error": None}
+        with requests.get(url, headers=headers, timeout=8, stream=True, allow_redirects=True) as res:
+            if res.status_code >= 400:
+                return {"url": url, "is_broken": True, "error": f"HTTP {res.status_code}"}
+            return {"url": url, "is_broken": False, "error": None}
     except HTTPException as e:
         return {"url": url, "is_broken": True, "error": f"Blocked: {e.detail}"}
     except requests.exceptions.Timeout:
@@ -121,12 +121,15 @@ def check_resume_links(raw_text: str) -> list[dict]:
         return []
 
     broken_links = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Reduced max_workers to 3 to keep thread stack memory minimal on 512MB RAM
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         results = executor.map(check_single_url, urls)
         for result in results:
             if result["is_broken"]:
                 broken_links.append(result)
 
+    import gc
+    gc.collect()
     return broken_links
 
 

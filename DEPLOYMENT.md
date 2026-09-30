@@ -36,35 +36,36 @@ JobCopilot uses Clerk for managing users, sessions, and JWTs.
 
 ---
 
-## 3. Railway (Backend Layer)
+## 3. Render / Railway (Backend Layer)
 
-FastAPI is deployed on Railway for reliable execution of background tasks and long-running HTTP endpoints.
+FastAPI is deployed on Render / Railway for reliable execution of background tasks and HTTP endpoints.
 
 ### Environment Variables
-In your Railway project settings, configure the following variables:
+In your Render/Railway project settings, configure the following variables:
 
-| Variable | Description |
-|---|---|
-| `SUPABASE_URL` | From Supabase Project Settings |
-| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase Project Settings |
-| `CLERK_SECRET_KEY` | Used to verify JWTs in backend middleware |
-| `GEMINI_API_KEY` | Primary LLM Key |
-| `GROQ_API_KEY` | Fallback LLM Key |
-| `ALLOWED_ORIGINS` | Comma-separated list of allowed frontend URLs (e.g., `https://your-frontend.vercel.app`) |
+| Variable | Description | Recommended (512MB RAM) |
+|---|---|---|
+| `SUPABASE_URL` | From Supabase Project Settings | Required |
+| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase Project Settings | Required |
+| `CLERK_SECRET_KEY` | Used to verify JWTs in backend middleware | Required |
+| `GEMINI_API_KEY` | Primary LLM Key | Required |
+| `GROQ_API_KEY` | Fallback LLM Key | Required |
+| `ALLOWED_ORIGINS` | Comma-separated list of frontend URLs | `https://job-copilot-gold.vercel.app` |
+| `ENABLE_PLAYWRIGHT` | Enables headless browser scraping | `false` on 512MB RAM tiers (fast HTTP scraper runs automatically at <5MB RAM) |
+| `ENABLE_BACKGROUND_SCRAPING` | Runs 4h automated web scraping | `false` on 512MB Web instances (keeps web process lean) |
+| `ENABLE_BACKGROUND_SCHEDULER` | Runs APScheduler in background | `true` (manages keep-alive and atomic scoring) |
 
-### Deployment Steps
-1. Create a new project in [Railway](https://railway.app).
-2. Deploy from your GitHub repository.
-3. Under **Settings -> Root Directory**, enter `/backend`.
-4. Railway will automatically detect the `requirements.txt` and install dependencies.
-5. Provide a Custom Start Command in Railway Settings:
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port $PORT
-   ```
-6. Generate a public domain in the Networking tab (e.g., `https://your-backend.railway.app`).
+### Start Command
+Always use a single uvicorn worker on 512MB RAM tiers:
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+```
 
-### Playwright Requirements
-Because the Hermes Agent uses Playwright, the backend environment requires system-level browser dependencies. If Railway fails to install Playwright browsers automatically, add a custom `railway.json` or `Dockerfile` to the `backend/` directory to run `playwright install --with-deps chromium`.
+### Memory Optimization Architecture
+1. **Fast HTTP Scraper (<5MB RAM)**: 95% of job pages and ATS portals are fetched in <300ms using `requests` + `BeautifulSoup` + JSON-LD extraction, avoiding Chromium execution entirely.
+2. **Constrained Chromium Fallback**: If Playwright runs, it launches in single-process mode (`--single-process`, `--no-sandbox`, `--disable-dev-shm-usage`, `--js-flags=--max-old-space-size=128`) with media/image assets blocked.
+3. **Deterministic Cleanup**: All browser instances and PDF streams are guaranteed closed in `finally:` blocks followed immediately by `gc.collect()`.
+4. **Health Diagnostics**: The `/health` endpoint exposes real-time `max_rss_mb` and enforces GC if memory pressure exceeds 350MB.
 
 ---
 

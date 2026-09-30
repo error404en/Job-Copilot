@@ -15,8 +15,10 @@ import {
   Banknote,
   Sparkles,
   Zap,
-  AlertCircle
+  AlertCircle,
+  BrainCircuit
 } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 export default function DigestPage() {
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
@@ -80,73 +82,61 @@ export default function DigestPage() {
   return (
     <div className="space-y-8 pb-16 max-w-5xl mx-auto font-sans">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-zinc-800/80 pb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(245,158,11,0.3)] border border-amber-400/20">
-              <Flame className="w-5 h-5 fill-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-                  Placement Cell Intelligence
-                </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  Live Dispatch
-                </span>
-              </div>
-            </div>
-          </div>
-          <p className="text-xs sm:text-sm text-zinc-400 max-w-xl leading-relaxed">
-            Autonomous placement engine filtering high-selection-probability openings from <strong className="text-zinc-200">{windowDesc}</strong> tailored to your target track, dream companies, and salary floor.
-          </p>
-          {(pendingJobs.length > 0 || failedJobs.length > 0) && (
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              {pendingJobs.length > 0 && (
-                <span className="px-2.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-[11px] font-semibold flex items-center gap-1">
-                  <RefreshCcw className="w-3 h-3 animate-spin" /> {pendingJobs.length} analyzing...
-                </span>
-              )}
-              {failedJobs.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="px-2.5 py-0.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-full text-[11px] font-semibold flex items-center gap-1" title="Roles where AI match analysis was interrupted during background sync. Ready to re-score.">
-                    <AlertCircle className="w-3 h-3 text-amber-400" />
-                    {failedJobs.length} Unscored Leads
-                  </span>
-                  <button
-                    onClick={() => retryMutation.mutate()}
-                    disabled={retryMutation.isPending}
-                    className="px-2.5 py-0.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95 disabled:opacity-50"
-                    title="Run AI match scoring on these roles now"
-                  >
-                    {retryMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />}
-                    <span>{retryMutation.isPending ? 'Scoring...' : 'Score Now'}</span>
-                  </button>
-                </div>
-              )}
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Curated Placement Intelligence"
+        title="Daily Intelligence Digest"
+        subtitle={`Autonomous placement engine filtering high-selection-probability openings from ${windowDesc} tailored to your target track, dream companies, and salary floor.`}
+        icon={Flame}
+        badge="Daily Dispatch"
+        badgeColor="amber"
+        actions={
+          <button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.25)] disabled:opacity-50 active:scale-95 shrink-0"
+          >
+            {syncMutation.isPending ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                <span>Scanning ATS Boards...</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-3.5 h-3.5 fill-white" />
+                <span>Sync Live Requisitions</span>
+              </>
+            )}
+          </button>
+        }
+      />
+
+      {(pendingJobs.length > 0 || failedJobs.length > 0) && (
+        <div className="flex items-center gap-2 -mt-4 mb-2 flex-wrap">
+          {pendingJobs.length > 0 && (
+            <span className="px-2.5 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-semibold flex items-center gap-1.5">
+              <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> {pendingJobs.length} analyzing...
+            </span>
+          )}
+          {failedJobs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-full text-xs font-semibold flex items-center gap-1.5" title="Roles where AI match analysis was interrupted during background sync. Ready to re-score.">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                {failedJobs.length} Unscored Leads
+              </span>
+              <button
+                onClick={() => retryMutation.mutate()}
+                disabled={retryMutation.isPending}
+                className="px-3 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-full text-xs font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95 disabled:opacity-50"
+                title="Run AI match scoring on these roles now"
+              >
+                {retryMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+                <span>{retryMutation.isPending ? 'Scoring...' : 'Score Now'}</span>
+              </button>
             </div>
           )}
         </div>
-
-        <button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.25)] disabled:opacity-50 active:scale-95 shrink-0"
-        >
-          {syncMutation.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin text-white" />
-              <span>Scanning Dream Companies & ATS...</span>
-            </>
-          ) : (
-            <>
-              <Zap className="w-4 h-4 fill-white" />
-              <span>Sync Live Requisitions</span>
-            </>
-          )}
-        </button>
-      </div>
+      )}
 
       {/* Placement Cell Command Officer Briefing Banner */}
       {briefing && (
@@ -278,6 +268,16 @@ export default function DigestPage() {
                         <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">Match Score</div>
                       </div>
                     )}
+
+                    <Link
+                      href={`/jobs/${job.id}?tab=coach`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="bg-purple-600/10 hover:bg-purple-600/20 text-purple-300 px-3 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 border border-purple-500/20"
+                      title="Prepare for this interview with AI Coach"
+                    >
+                      <BrainCircuit className="w-3.5 h-3.5 text-purple-400" />
+                      <span className="hidden sm:inline">Prep Coach</span>
+                    </Link>
 
                     {applyUrl && applyUrl !== 'Screenshot Upload' && (
                       <a

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useApiClient } from '@/lib/useApiClient'
+import { PlusCircle } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 export default function AddJobPage() {
   const router = useRouter()
@@ -418,8 +420,26 @@ export default function AddJobPage() {
   })
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 font-sans">
       
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Requisition Studio"
+        title="Add Job Requisition"
+        subtitle="Ingest opportunities via direct URL scraping, Greenhouse/Lever/Ashby ATS sync, JD screenshot OCR, or deep company research."
+        icon={PlusCircle}
+        badge="Multi-Source"
+        badgeColor="indigo"
+        actions={
+          <Link
+            href="/inbox"
+            className="bg-zinc-900/80 border border-zinc-800 text-zinc-300 px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+          >
+            <span>Have raw chats/files? Ingest Leads</span>
+          </Link>
+        }
+      />
+
       {error && (
         <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
           <span>{error}</span>

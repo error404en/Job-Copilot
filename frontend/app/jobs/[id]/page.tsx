@@ -1,9 +1,9 @@
 'use client'
 
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApiClient } from '@/lib/useApiClient'
 import TailoringStudio from './TailoringStudio'
 import CopilotCoach from '@/components/CopilotCoach'
@@ -37,6 +37,7 @@ import {
   Scale,
   Award,
   ArrowLeft,
+  GraduationCap,
   X
 } from 'lucide-react'
 
@@ -73,17 +74,43 @@ function formatDeadlineDate(dateStr?: string | null): string {
 export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
   
   const jobId = params.id as string
-  const [activeTab, setActiveTab] = useState<'analysis' | 'studio' | 'coach' | 'description' | 'resume-target'>('analysis')
+  const initialTab = (searchParams.get('tab') as any) || 'analysis'
+  const [activeTab, setActiveTab] = useState<'analysis' | 'studio' | 'coach' | 'description' | 'resume-target'>(
+    ['analysis', 'studio', 'coach', 'description', 'resume-target'].includes(initialTab) ? initialTab : 'analysis'
+  )
   const [tailorPrompt, setTailorPrompt] = useState('')
   const [isEditingDeadline, setIsEditingDeadline] = useState(false)
   const [deadlineInput, setDeadlineInput] = useState('')
   const [trackingDropdownOpen, setTrackingDropdownOpen] = useState(false)
   const [copiedResumeTitle, setCopiedResumeTitle] = useState(false)
   const [jdSearchQuery, setJdSearchQuery] = useState('')
+
+  // Sync tab with URL search parameter on browser popstate / back button
+  useEffect(() => {
+    const handlePopState = () => {
+      const sp = new URLSearchParams(window.location.search)
+      const tab = (sp.get('tab') as any) || 'analysis'
+      if (['analysis', 'studio', 'coach', 'description', 'resume-target'].includes(tab)) {
+        setActiveTab(tab)
+      } else {
+        setActiveTab('analysis')
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  const handleTabChange = (newTab: 'analysis' | 'studio' | 'coach' | 'description' | 'resume-target') => {
+    setActiveTab(newTab)
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', newTab)
+    window.history.replaceState(null, '', url.pathname + url.search)
+  }
 
   // 1. Fetch Job
   const { data: job, isLoading } = useQuery({
@@ -358,10 +385,10 @@ export default function JobDetailPage() {
       <div className="flex items-center justify-between text-xs text-zinc-400">
         <Link 
           href="/" 
-          className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors group"
+          className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors group cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-          <span>Back to Requisition Pipeline</span>
+          <span>Back to Live Feed</span>
         </Link>
         <div className="flex items-center gap-2">
           <button
@@ -522,6 +549,35 @@ export default function JobDetailPage() {
                 <Briefcase className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                 <span>{formatSeniority(job.seniority_required)}</span>
               </div>
+
+              {/* Internship Status */}
+              {((job.is_internship === true) || /\b(intern|internship|trainee|apprentice|co-op|summer analyst)\b/i.test((job.role_title || '') + ' ' + (job.raw_jd || ''))) && (
+                <div className="px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex items-center gap-1.5 shadow-sm font-semibold">
+                  <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>Internship / Trainee</span>
+                </div>
+              )}
+
+              {/* Academic CGPA Cutoff */}
+              {(() => {
+                const text = (job.raw_jd || '') + ' ' + (job.role_title || '')
+                const m = text.match(/\b(?:cgpa|gpa|pointer)\s*(?:of|>=|:|is|cutoff|minimum)?\s*([6-9](?:\.\d{1,2})?)\b/i) || text.match(/\b([6-9](?:\.\d{1,2})?)\s*(?:\+|and above)?\s*(?:cgpa|gpa|pointer)\b/i)
+                const cutoff = job.min_cgpa || (m ? parseFloat(m[1]) : null)
+                if (cutoff) {
+                  return (
+                    <div className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 flex items-center gap-1.5 shadow-sm font-semibold">
+                      <GraduationCap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Min {cutoff} CGPA Cutoff</span>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 text-zinc-400 flex items-center gap-1.5 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                    <span>No CGPA Cutoff (Open to all)</span>
+                  </div>
+                )
+              })()}
 
               {/* Posting Date */}
               {job.posting_date && (
@@ -728,8 +784,8 @@ export default function JobDetailPage() {
         {/* Highlighted Tab: Which Resume to Apply From */}
         {analysis.recommended_resume_title && (
           <button
-            onClick={() => setActiveTab('resume-target')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 border ${
+            onClick={() => handleTabChange('resume-target')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 border cursor-pointer ${
               activeTab === 'resume-target'
                 ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-[0_0_20px_rgba(99,102,241,0.5)] border-indigo-400/50'
                 : 'bg-indigo-500/15 text-indigo-200 hover:text-white hover:bg-indigo-500/25 border-indigo-500/40 shadow-sm'
@@ -743,8 +799,8 @@ export default function JobDetailPage() {
         )}
 
         <button
-          onClick={() => setActiveTab('analysis')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+          onClick={() => handleTabChange('analysis')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'analysis'
               ? 'bg-zinc-800 text-white shadow-sm'
               : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
@@ -755,8 +811,8 @@ export default function JobDetailPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab('studio')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+          onClick={() => handleTabChange('studio')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'studio'
               ? 'bg-zinc-800 text-white shadow-sm'
               : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
@@ -772,8 +828,8 @@ export default function JobDetailPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab('coach')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+          onClick={() => handleTabChange('coach')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'coach'
               ? 'bg-zinc-800 text-white shadow-sm'
               : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
@@ -784,8 +840,8 @@ export default function JobDetailPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab('description')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+          onClick={() => handleTabChange('description')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'description'
               ? 'bg-zinc-800 text-white shadow-sm'
               : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'

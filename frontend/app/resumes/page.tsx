@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   RefreshCw
 } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 const TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   genai:      { label: 'GenAI / Machine Learning', color: 'text-purple-300 border-purple-500/30', bg: 'bg-purple-500/10' },
@@ -163,39 +164,32 @@ export default function ResumesPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-16 font-sans">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-zinc-800/80 pb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] border border-indigo-400/20">
-              <FileText className="w-5 h-5" />
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Candidate Profile & ATS Health"
+        title="Resume Intelligence Lab"
+        subtitle="Central resume repository powering JobCopilot's AI match engine, daily digest recommendations, and AI interview coach. Upload variants to benchmark fit across tracks."
+        icon={FileText}
+        badge="Engine Core"
+        badgeColor="emerald"
+        actions={
+          <div className="flex items-center gap-3">
+            {selectedForCompare.length > 0 && (
+              <button
+                onClick={() => setShowCompareModal(true)}
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)] flex items-center gap-1.5 active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+                <span>Compare ({selectedForCompare.length})</span>
+              </button>
+            )}
+            <div className="bg-zinc-900/60 px-4 py-2 rounded-2xl border border-zinc-800/80 text-right">
+              <span className="text-xl font-black text-white">{resumes?.length ?? 0}</span>
+              <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Active Resumes</p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              Resume Intelligence Hub
-            </h1>
           </div>
-          <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl leading-relaxed">
-            Multi-resume intelligence engine. Evaluates micro-specializations (e.g., Agentic AI vs RAG vs Model Fine-Tuning) and dynamically selects the highest-scoring version for each job.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 shrink-0">
-          {selectedForCompare.length > 0 && (
-            <button
-              onClick={() => setShowCompareModal(true)}
-              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-4 py-2 rounded-2xl text-xs font-bold transition-all shadow-[0_0_15px_rgba(147,51,234,0.3)] flex items-center gap-2 active:scale-95"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-purple-200" />
-              <span>Compare ({selectedForCompare.length}) Variants</span>
-            </button>
-          )}
-
-          <div className="bg-zinc-900/60 px-4 py-2 rounded-2xl border border-zinc-800/80 text-right">
-            <span className="text-2xl font-black text-white">{resumes?.length ?? 0}</span>
-            <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Active Versions</p>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Upload Dropzone */}
       <div className="bg-zinc-900/50 p-6 sm:p-8 rounded-3xl shadow-xl border border-zinc-800/80 backdrop-blur-xl">

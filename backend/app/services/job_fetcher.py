@@ -245,7 +245,7 @@ def fetch_workday_jobs(board_token: str, target_keywords: list = None) -> list:
     final_jobs = []
     failed_jds = 0
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(_fetch_single_workday_jd, job, headers): job for job in pending_jobs}
         for future in concurrent.futures.as_completed(futures):
             try:
@@ -255,6 +255,8 @@ def fetch_workday_jobs(board_token: str, target_keywords: list = None) -> list:
             except Exception as e:
                 failed_jds += 1
                 
+    import gc
+    gc.collect()
     duration = time.time() - start_time
     avg_latency = duration / len(pending_jobs) if pending_jobs else 0
     
@@ -568,42 +570,18 @@ VERIFIED_COMPANY_ROLES = {
         ]
     },
     "hsbc": {
-        "careers_url": "https://mycareer.hsbc.com/",
+        "careers_url": "https://www.hsbc.com/careers/students-and-graduates",
         "roles": [
             {
-                "role_title": "Graduate Technology Analyst",
+                "role_title": "Graduate Technology Programme",
                 "company": "HSBC",
-                "location": "Bengaluru / Pune",
-                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/Technology%20Analyst?1051=%5B%221294%22%5D",
-                "experience_level": "0-1 Yrs (Freshers OK)",
-                "seniority_required": "entry",
-                "compensation_range": "₹12.0L CTC (Base ₹10.5L)",
+                "location": "Bengaluru / Pune / Hyderabad",
+                "url": "https://www.hsbc.com/careers/students-and-graduates/graduate-programmes/technology",
+                "experience_level": "0-1 Yrs (Freshers & Final Year)",
+                "seniority_required": "fresher",
+                "compensation_range": "₹12.0L - ₹15.0L CTC",
                 "required_skills": ["Python", "Java", "SQL", "Data Structures", "Analytical Thinking"],
-                "raw_jd": "Graduate Technology Analyst at HSBC Global Technology Centers. Building next-generation digital banking features. Open to final year engineering students and fresh graduates.",
-                "source": "official_portal"
-            },
-            {
-                "role_title": "Software Engineer Associate (0-2 Yrs)",
-                "company": "HSBC",
-                "location": "Hyderabad / Pune",
-                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/Software%20Engineer?1051=%5B%221294%22%5D",
-                "experience_level": "0-2 Yrs (Associate)",
-                "seniority_required": "0-2yr",
-                "compensation_range": "₹16.7L CTC (Base ₹14.5L)",
-                "required_skills": ["React", "Node.js", "Spring Boot", "REST APIs", "PostgreSQL"],
-                "raw_jd": "Software Engineer Associate at HSBC. Developing wealth and commercial banking customer-facing web applications. Requires 0-2 years of software engineering experience.",
-                "source": "official_portal"
-            },
-            {
-                "role_title": "Senior Software Engineer",
-                "company": "HSBC",
-                "location": "Bengaluru",
-                "url": "https://mycareer.hsbc.com/en_GB/external/SearchJobs/Senior%20Software%20Engineer?1051=%5B%221294%22%5D",
-                "experience_level": "3-5 Yrs (Mid-Senior)",
-                "seniority_required": "2-5yr",
-                "compensation_range": "₹25.5L CTC (Base ₹22.0L)",
-                "required_skills": ["Cloud Architecture", "GCP/AWS", "Microservices", "Event Streaming"],
-                "raw_jd": "Senior Software Engineer at HSBC. Leading core digital payment orchestration services. Requires 3-5 years experience.",
+                "raw_jd": "Graduate Technology Programme at HSBC Global Technology Centers. Building next-generation digital banking features and enterprise platforms. Open to final year engineering students and fresh graduates.",
                 "source": "official_portal"
             }
         ]
@@ -1123,7 +1101,7 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
         try:
             from app.services.job_validator import is_valid_job_posting, KNOWN_JOB_PORTALS
             from urllib.parse import urlparse
-            results = perform_resilient_search(query, max_results=6)
+            results = perform_resilient_search(query, max_results=3)
             for r in results:
                 title = r.get("title", "")
                 href = r.get("href", "")

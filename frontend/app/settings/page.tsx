@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Sparkles
 } from 'lucide-react'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 export default function SettingsPage() {
   const queryClient = useQueryClient()
@@ -108,29 +109,23 @@ export default function SettingsPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-8 pb-16 font-sans">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-zinc-800/80 pb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] border border-indigo-400/20">
-              <Settings className="w-5 h-5" />
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Preferences & Automation"
+        title="Candidate Profile & Settings"
+        subtitle="Configure your geographic constraints, compensation baselines, and auto-apply identity tokens for live ATS scoring."
+        icon={Settings}
+        badge="Configuration"
+        badgeColor="zinc"
+        actions={
+          saveSuccess ? (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 animate-in fade-in duration-300">
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span>Settings Saved!</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              Candidate Profile & Preferences
-            </h1>
-          </div>
-          <p className="text-xs sm:text-sm text-zinc-400 max-w-xl leading-relaxed">
-            Configure your geographic constraints, compensation baselines, and auto-apply identity tokens for live ATS scoring.
-          </p>
-        </div>
-
-        {saveSuccess && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 animate-in fade-in duration-300">
-            <Check className="w-4 h-4 text-emerald-400" />
-            <span>Settings Saved!</span>
-          </div>
-        )}
-      </div>
+          ) : undefined
+        }
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         

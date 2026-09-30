@@ -5,6 +5,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import logging
 import io
+import re
 import requests
 from bs4 import BeautifulSoup
 from app.utils.security import validate_safe_url, safe_read_file, validate_image_content
@@ -142,12 +143,29 @@ def get_digest(user_id: str = Depends(get_current_user)):
             # Verdict must be apply or stretch, and pay floor must not be explicitly violated
             verdict = analysis.get("verdict")
             pay_pass = analysis.get("pay_floor_pass")
-            if verdict in ("apply", "stretch") and pay_pass is not False:
+            score = analysis.get("match_score", 0)
+            
+            # Hard exclusion: exclude senior/staff/lead roles and disqualified domains from digest
+            job_sen = (job.get("seniority_required") or "").lower()
+            role_title_lower = (job.get("role_title") or "").lower()
+            is_senior = (
+                job_sen == "senior" or
+                any(re.search(r'\b' + re.escape(w) + r'\b', role_title_lower) for w in [
+                    "senior", "sr", "sr.", "staff", "principal", "lead", "architect", "manager", "director", "head of"
+                ])
+            )
+
+            # Exclude tax/accounting domain from software digest
+            raw_jd_lower = (job.get("raw_jd") or "").lower()
+            is_tax_finance = any(re.search(r'\b' + re.escape(w) + r'\b', role_title_lower + " " + raw_jd_lower) for w in [
+                "tax automation", "tax provision", "intercompany accounting", "corporate tax"
+            ])
+
+            if verdict in ("apply", "stretch") and pay_pass is not False and not is_senior and not is_tax_finance and score >= 50:
                 # Add selection odds tier
-                score = analysis.get("match_score", 0)
-                if score >= 75 and verdict == "apply":
+                if score >= 80 and verdict == "apply":
                     job["selection_probability"] = "High Odds"
-                elif score >= 55:
+                elif score >= 65:
                     job["selection_probability"] = "Strong Target"
                 else:
                     job["selection_probability"] = "Stretch Reach"
@@ -236,33 +254,21 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
     else:
         resume_summaries = "Software Engineering Candidate. Experience with Python, JavaScript/React, SQL, REST APIs, Git, and Web Development."
 
-    # 3. Parse seniority & skills
-    raw_seniority = (req.seniority_required or "0-2yr").lower()
-    if "senior" in raw_seniority or "lead" in raw_seniority:
-        clean_seniority = "senior"
-    elif "2-5" in raw_seniority or "mid" in raw_seniority:
-        clean_seniority = "2-5yr"
-    elif "fresher" in raw_seniority or "entry" in raw_seniority or "0-1" in raw_seniority:
-        clean_seniority = "fresher"
-    else:
-        clean_seniority = "0-2yr"
-
-    skills = req.required_skills or ["Python", "Java", "Web Development", "SQL", "APIs", "Data Structures"]
-
-    parsed_job = ParsedJob(
-        company=req.company,
-        role_title=req.role_title,
-        location=req.location or "India",
-        remote_type="unclear",
-        pay_min=None,
-        pay_max=None,
-        pay_currency="INR",
-        pay_confidence="estimated",
-        seniority_required=clean_seniority,
-        required_skills=skills,
-        nice_to_have_skills=["Cloud", "Docker", "Git", "Testing"],
-        apply_link=req.url
-    )
+    # 3. Parse job with full fidelity from raw_jd or title metadata
+    raw_text = req.raw_jd or f"{req.role_title} at {req.company}\nLocation: {req.location}\nExperience: {req.experience_level or req.seniority_required or '0-2yr'}"
+    parsed_job = parse_job_description(raw_text)
+    
+    # Ensure explicit request parameters override defaults
+    if req.company:
+        parsed_job.company = req.company
+    if req.role_title:
+        parsed_job.role_title = req.role_title
+    if req.location and not parsed_job.location:
+        parsed_job.location = req.location
+    if req.url:
+        parsed_job.apply_link = req.url
+    if req.required_skills:
+        parsed_job.required_skills = req.required_skills
 
     # 4. Score match
     try:
@@ -326,9 +332,15 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
 @router.post("/scrape-url")
 def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
     """
-    Scraper with automatic link unshortener and promotional funnel detection.
-    Unshortens lnkd.in, tinyurl, bit.ly, etc., and flags bootcamp/creator promotional funnels.
+    Scraper with automatic link unshortener, promotional funnel detection,
+    and high-precision LinkedIn guest API extraction.
     """
+    if "google.com/search" in url:
+        raise HTTPException(
+            status_code=400,
+            detail="The URL provided is a Google search result link, not a direct job posting. Please enter the direct company job posting or careers URL."
+        )
+
     url_info = resolve_redirects_and_detect_promo(url)
     resolved_url = url_info.get("resolved_url") or url
     is_promo = url_info.get("is_promo", False)
@@ -336,7 +348,7 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
 
     if is_promo:
         return {
-            "raw_jd": f"[âš ï¸ Creator Promotional / Affiliate Link Detected]\n"
+            "raw_jd": f"[⚠️ Creator Promotional / Affiliate Link Detected]\n"
                       f"This link redirected to: {resolved_url} ({promo_name}).\n"
                       f"This is an influencer promotional/bootcamp page, not an official company job posting.",
             "resolved_url": resolved_url,
@@ -347,8 +359,49 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
     try:
         validate_safe_url(resolved_url)
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9'
         }
+
+        # Specialized LinkedIn handler (unrolls search result URLs and queries guest job API)
+        if "linkedin.com" in resolved_url:
+            import re
+            jid_match = re.search(r'(?:currentJobId=|jobs/view/|jobId=)(\d+)', resolved_url)
+            if jid_match:
+                jid = jid_match.group(1)
+                api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{jid}"
+                try:
+                    res = requests.get(api_url, headers=headers, timeout=12)
+                    if res.status_code == 200:
+                        soup = BeautifulSoup(res.text, 'html.parser')
+                        title_el = soup.find('h2') or soup.find('h1')
+                        title_text = title_el.get_text(strip=True) if title_el else "Job Opening"
+                        comp_el = soup.find('a', class_='topcard__org-name-link') or soup.find('span', class_='topcard__flavor')
+                        comp_text = comp_el.get_text(strip=True) if comp_el else "Company"
+                        loc_el = soup.find('span', class_='topcard__flavor topcard__flavor--bullet')
+                        loc_text = loc_el.get_text(strip=True) if loc_el else "Location Unspecified"
+
+                        desc_el = soup.find('div', class_='description__text') or soup
+                        for s in desc_el(["script", "style", "nav", "footer"]):
+                            s.extract()
+                        desc_text = desc_el.get_text(separator='\n', strip=True)
+                        full_jd = f"{title_text} at {comp_text}\nLocation: {loc_text}\n\n{desc_text}"
+
+                        return {
+                            "raw_jd": full_jd,
+                            "resolved_url": f"https://www.linkedin.com/jobs/view/{jid}",
+                            "is_promo": False
+                        }
+                    elif res.status_code == 404:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"This LinkedIn job posting (Job ID {jid}) has expired or was removed by the employer."
+                        )
+                except HTTPException:
+                    raise
+                except Exception as li_err:
+                    logger.warning("LinkedIn guest API fetch error: %s", li_err)
+
         res = requests.get(resolved_url, headers=headers, timeout=10)
         res.raise_for_status()
         
@@ -368,8 +421,10 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
             "resolved_url": resolved_url,
             "is_promo": False
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to scrape URL {resolved_url}. It may be blocking bots. Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to scrape URL {resolved_url}. Error: {str(e)}")
 
 @router.get("/{id}")
 def get_job(id: str, user_id: str = Depends(get_current_user)):
@@ -441,22 +496,38 @@ def parse_and_score_image(request: Request, background_tasks: BackgroundTasks, f
     return process_and_store_job(req, user_id, background_tasks)
 
 DEFAULT_ATS_SUBSCRIPTIONS = [
-    {"company_token": "stripe", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
-    {"company_token": "Zomato1", "ats_system": "smartrecruiters", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
-    {"company_token": "uber", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
-    {"company_token": "rubrik", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
-    {"company_token": "databricks", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
-    {"company_token": "atlassian", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
-    {"company_token": "coinbase", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data"},
+    {"company_token": "stripe", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "uber", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "rubrik", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "databricks", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "atlassian", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "coinbase", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "cloudflare", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "figma", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "notion", "ats_system": "lever", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "postman", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "razorpay", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "cred", "ats_system": "lever", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "swiggy", "ats_system": "lever", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "Zomato1", "ats_system": "smartrecruiters", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "meesho", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "phonepe", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "zepto", "ats_system": "lever", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "inmobi", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "sprinklr", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "browserstack", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "affirm", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
+    {"company_token": "datadog", "ats_system": "greenhouse", "target_keywords": "software,engineer,developer,backend,fullstack,data,intern"},
 ]
 
 def seed_default_subscriptions_if_empty(user_id: str):
-    """Auto-seeds high-conviction tech subscriptions if user has none."""
+    """Auto-seeds high-conviction tech subscriptions across top companies if missing for user."""
     try:
-        existing = supabase.table("ats_subscriptions").select("id").eq("user_id", user_id).limit(1).execute()
-        if not existing.data:
-            logger.info("Auto-seeding default ATS subscriptions for user %s", user_id)
-            for sub in DEFAULT_ATS_SUBSCRIPTIONS:
+        existing_res = supabase.table("ats_subscriptions").select("company_token").eq("user_id", user_id).execute()
+        existing_tokens = {row["company_token"].lower() for row in (existing_res.data or []) if row.get("company_token")}
+        
+        for sub in DEFAULT_ATS_SUBSCRIPTIONS:
+            if sub["company_token"].lower() not in existing_tokens:
                 try:
                     supabase.table("ats_subscriptions").insert({
                         "company_token": sub["company_token"],
@@ -464,6 +535,7 @@ def seed_default_subscriptions_if_empty(user_id: str):
                         "target_keywords": sub["target_keywords"],
                         "user_id": user_id
                     }).execute()
+                    existing_tokens.add(sub["company_token"].lower())
                 except Exception:
                     pass
     except Exception as e:

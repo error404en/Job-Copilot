@@ -13,7 +13,8 @@ import {
   Settings, 
   Bot,
   Inbox,
-  Sparkles
+  Sparkles,
+  Zap
 } from "lucide-react";
 import { SignInButton, SignUpButton, UserButton, Show } from "@clerk/nextjs";
 
@@ -21,35 +22,35 @@ export function Navigation() {
   const pathname = usePathname();
 
   const navLinks = [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/coach', label: 'Coach', icon: BrainCircuit, badge: 'AI' },
+    { href: '/', label: 'Live Feed', icon: LayoutDashboard },
+    { href: '/digest', label: 'Daily Digest', icon: Flame, badge: 'Curated' },
     { href: '/tracker', label: 'Tracker', icon: Kanban },
     { href: '/companies', label: 'Companies', icon: Building2 },
-    { href: '/digest', label: 'Digest', icon: Flame },
-    { href: '/inbox', label: 'Inbox', icon: Inbox },
+    { href: '/inbox', label: 'Ingest Leads', icon: Inbox },
     { href: '/resumes', label: 'Resumes', icon: FileText },
+    { href: '/coach', label: 'AI Coach', icon: BrainCircuit, badge: 'AI' },
   ];
 
   return (
-    <nav className="bg-zinc-950/80 backdrop-blur-2xl border-b border-zinc-800/80 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-50 shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-all w-full font-sans">
+    <nav className="bg-zinc-950/85 backdrop-blur-2xl border-b border-zinc-800/80 px-4 sm:px-6 py-2.5 flex items-center justify-between sticky top-0 z-50 shadow-[0_4px_25px_rgba(0,0,0,0.4)] transition-all w-full font-sans">
       
       {/* Brand Identity */}
-      <Link href="/" className="font-extrabold text-base sm:text-lg tracking-tight text-white flex items-center gap-2.5 group">
+      <Link href="/" className="font-extrabold text-base sm:text-lg tracking-tight text-white flex items-center gap-2.5 group shrink-0">
         <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(99,102,241,0.35)] border border-indigo-400/30 shrink-0 group-hover:scale-105 transition-transform">
           <Bot className="w-4 h-4" />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-100 to-zinc-400 hidden sm:block">
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-100 to-zinc-400 font-black tracking-tight">
             JobCopilot
           </span>
           <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hidden md:block">
-            PRO
+            OS
           </span>
         </div>
       </Link>
       
-      {/* Center Nav Links */}
-      <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-2 bg-zinc-900/40 p-1 rounded-2xl border border-zinc-800/60">
+      {/* Center Nav Links - Unified Product Suite */}
+      <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1.5 bg-zinc-900/50 p-1 rounded-2xl border border-zinc-800/70 shadow-inner">
         {navLinks.map((link) => {
           const Icon = link.icon;
           const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
@@ -66,7 +67,7 @@ export function Navigation() {
             >
               <Icon className={`w-3.5 h-3.5 transition-colors ${
                 isActive 
-                  ? (link.label === 'Coach' ? 'text-indigo-400' : link.label === 'Digest' ? 'text-amber-400' : 'text-white') 
+                  ? (link.label === 'AI Coach' ? 'text-indigo-400' : link.label === 'Daily Digest' ? 'text-amber-400' : 'text-white') 
                   : 'text-zinc-500 group-hover:text-zinc-300'
               }`} /> 
               <span>{link.label}</span>
@@ -74,15 +75,15 @@ export function Navigation() {
               {link.badge && (
                 <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
                   isActive 
-                    ? 'bg-indigo-500 text-white' 
-                    : 'bg-indigo-500/20 text-indigo-300'
+                    ? (link.badge === 'AI' ? 'bg-indigo-500 text-white' : 'bg-amber-500 text-zinc-950')
+                    : (link.badge === 'AI' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-amber-500/20 text-amber-300')
                 }`}>
                   {link.badge}
                 </span>
               )}
 
               {isActive && (
-                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 bg-indigo-500 rounded-full"></span>
+                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)]"></span>
               )}
             </Link>
           )
@@ -94,8 +95,9 @@ export function Navigation() {
         <Link 
           href="/jobs/new" 
           className="hidden sm:flex items-center gap-1.5 text-xs font-bold bg-white hover:bg-zinc-200 text-zinc-950 px-3.5 py-1.5 rounded-xl transition-all active:scale-95 shadow-sm"
+          title="Add a new job requisition, fetch from ATS, or OCR screenshot"
         >
-          <PlusCircle className="w-3.5 h-3.5" /> 
+          <PlusCircle className="w-3.5 h-3.5 text-indigo-600" /> 
           <span>Add Job</span>
         </Link>
 
@@ -106,7 +108,7 @@ export function Navigation() {
               ? 'bg-zinc-800 text-white border-zinc-700' 
               : 'text-zinc-400 hover:text-white hover:bg-zinc-900 border-transparent'
           }`}
-          title="Profile & Settings"
+          title="Career Profile & Preferences"
         >
           <Settings className="w-4 h-4" />
         </Link>

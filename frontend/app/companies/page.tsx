@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useApiClient } from '@/lib/useApiClient'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 const LOCATION_OPTIONS = [
   { id: 'all', label: '📍 All Locations' },
@@ -126,27 +127,24 @@ export default function CompaniesPage() {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(99,102,241,0.3)] border border-indigo-400/20">
-              <Building2 className="w-5 h-5" />
-            </div>
-            Target Companies
-          </h1>
-          <p className="text-zinc-400 text-sm max-w-2xl">
-            Curated list of high-paying tech, banking, and product companies to apply to with place filters and verified CTC breakdowns.
-          </p>
-        </div>
-        <Link
-          href="/tracker"
-          className="bg-zinc-900 border border-zinc-800/80 text-zinc-300 px-5 py-2.5 rounded-xl text-[13px] font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-2 shadow-sm shrink-0"
-        >
-          <ListTodo className="w-4 h-4 text-indigo-400" />
-          Open Application Tracker
-        </Link>
-      </div>
+      {/* Unified Page Header */}
+      <PageHeader
+        suite="Target Fleet & Intelligence"
+        title="Target Companies"
+        subtitle="Curated directory of premier tech, banking, and high-growth employers. Inspect verified CTC compensation, trigger on-demand fit analysis, and view active feed listings."
+        icon={Building2}
+        badge="22+ Fleet"
+        badgeColor="sky"
+        actions={
+          <Link
+            href="/tracker"
+            className="bg-zinc-900/80 border border-zinc-800 text-zinc-300 px-4 py-2 rounded-xl text-xs font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+          >
+            <ListTodo className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Open Tracker</span>
+          </Link>
+        }
+      />
 
       {/* Filter Toolbar */}
       <div className="bg-zinc-900/50 p-5 rounded-2xl border border-zinc-800/80 backdrop-blur-xl space-y-5 shadow-sm">
@@ -434,6 +432,15 @@ export default function CompaniesPage() {
                         <ListTodo className="w-4 h-4" />
                         {isTracked ? 'In Tracker' : 'Track'}
                       </button>
+
+                      <Link
+                        href={`/?q=${encodeURIComponent(c.name)}`}
+                        className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 font-bold px-3 py-2 rounded-xl transition-all flex items-center gap-1.5"
+                        title={`View ${c.name} requisitions in Feed`}
+                      >
+                        <Search className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>Feed</span>
+                      </Link>
 
                       <button
                         onClick={() => router.push(`/jobs/new?tab=deep-dive&company=${encodeURIComponent(c.name)}`)}

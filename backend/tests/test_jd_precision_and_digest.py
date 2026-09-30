@@ -1,0 +1,100 @@
+import pytest
+from app.services.jd_parser import parse_job_description_deterministic
+from app.services.match_scorer import score_match_deterministic
+
+PROFILE = {
+    "base_location": "Noida, Delhi NCR",
+    "remote_ok": True,
+    "pay_floor_ncr_remote": 600000,
+    "target_roles": ["Backend Engineer", "Generative AI Engineer", "AI Engineer", "Software Development Engineer", "Full Stack Engineer"]
+}
+
+RESUME = """
+Shreyansh Bhadani - Software Development Engineer (SDE) - Backend & Applied AI.
+Hands-on experience with Python, FastAPI, React, Next.js, SQL, REST APIs, Git, Docker, System Design, Applied AI, LangChain, RAG.
+"""
+
+def test_senior_data_scientist_disqualified():
+    jd = """
+    Senior Data Scientist at Coinbase
+    BA/BS in a quantitative field (Math, Stats, Physics, CS, or similar) with 5+ years of relevant experience, or a PhD with 3+ years of relevant experience
+    Proven track record of delivering impactful data science work in ambiguous problem spaces
+    Practical expertise applying advanced modeling frameworks to real business problems
+    Professional proficiency in SQL and Python
+    """
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required == "senior"
+    assert pj.min_years_experience >= 3
+    
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict == "skip"
+    assert fit.match_score <= 35
+    assert fit.seniority_fit == "underqualified"
+    assert "Seniority Mismatch" in fit.reasoning
+
+def test_tax_manager_domain_disqualified():
+    jd = """
+    Tax Data & Technology Manager at Databricks
+    6+ years of experience in tax automation, transformation, or data engineering, with at least 2 years in a tax or tax adjacent field
+    Experience in SQL and Python for data pipeline development; Databricks is a strong plus
+    Hands-on experience building and maintaining ELT/ETL pipelines connecting tax source systems (Netsuite, Salesforce, Stripe, SAP)
+    Understanding of core tax and accounting concepts including close processes, tax provision, intercompany accounting
+    """
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required == "senior"
+    assert pj.domain_category == "tax_finance_accounting"
+    
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict == "skip"
+    assert fit.match_score <= 30
+    assert fit.seniority_fit == "underqualified"
+
+def test_staff_enterprise_security_disqualified():
+    jd = """
+    Staff Enterprise Security Engineer at Databricks
+    Remote - California
+    Requirements:
+    8+ years of experience in security engineering, enterprise security, application security, cloud security.
+    Strong understanding of authentication, authorization, SSO, federation, SCIM, API security, token handling, secrets management.
+    """
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required == "senior"
+    assert pj.min_years_experience >= 8
+    assert pj.domain_category == "security_governance"
+    
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict == "skip"
+    assert fit.match_score <= 30
+
+def test_mle_intern_phd_disqualified():
+    jd = """
+    Machine Learning Engineer Intern at Coinbase
+    This is a 12-week internship during summer 2027.
+    Required Skills and Experience:
+    Currently pursuing a Ph.D. with published or in-progress research in machine learning, deep learning, or a closely related field
+    Demonstrated proficiency building and training models using ML frameworks such as PyTorch or TensorFlow
+    """
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required == "fresher"
+    assert pj.degree_required == "phd"
+    
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict == "skip"
+    assert fit.match_score <= 35
+    assert "Ph.D." in fit.reasoning
+
+def test_genuine_fresher_associate_matches_high_odds():
+    jd = """
+    Software Engineer Associate at HSBC
+    Location: Bengaluru / Pune / Remote
+    Requires 0-2 years experience with Python, FastAPI, React, Next.js, and SQL.
+    Developing wealth and commercial banking customer-facing web applications.
+    """
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required in ("fresher", "0-2yr")
+    assert pj.domain_category == "software_engineering"
+    
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict == "apply"
+    assert fit.match_score >= 75
+    assert fit.seniority_fit == "good_fit"
