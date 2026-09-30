@@ -71,6 +71,33 @@ function formatDeadlineDate(dateStr?: string | null): string {
   }
 }
 
+function cleanTitle(title?: string): string {
+  if (!title) return 'Job Opportunity'
+  return title
+    .replace(/[\uFFFD]/g, '—')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isJobInternship(job: any): boolean {
+  if (!job) return false
+  if (job.is_internship === true) return true
+  const title = (job.role_title || '').toLowerCase()
+  if (/\b(intern|internship|trainee|apprentice|co-op|summer analyst|summer associate|winter intern)\b/i.test(title)) {
+    return true
+  }
+  if (/\b(new grad|graduate engineer|full-time|full time|permanent|developer|engineer|analyst|associate|manager|lead)\b/i.test(title) && !/\b(intern|internship|trainee)\b/i.test(title)) {
+    return false
+  }
+  const seniority = (job.seniority_required || '').toLowerCase()
+  if (seniority === 'intern') return true
+  const rawJd = (job.raw_jd || '').toLowerCase()
+  if (/\b(this internship|internship position|internship role|duration of the internship|summer internship program|winter internship program|internship stipend)\b/i.test(rawJd)) {
+    return true
+  }
+  return false
+}
+
 export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -436,7 +463,7 @@ export default function JobDetailPage() {
                   />
                 </button>
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                  {job.role_title}
+                  {cleanTitle(job.role_title)}
                 </h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${vStyle.bg} ${vStyle.text} ${vStyle.border}`}>
                   {analysis.verdict}
@@ -551,7 +578,7 @@ export default function JobDetailPage() {
               </div>
 
               {/* Internship Status */}
-              {((job.is_internship === true) || /\b(intern|internship|trainee|apprentice|co-op|summer analyst)\b/i.test((job.role_title || '') + ' ' + (job.raw_jd || ''))) && (
+              {isJobInternship(job) && (
                 <div className="px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex items-center gap-1.5 shadow-sm font-semibold">
                   <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                   <span>Internship / Trainee</span>

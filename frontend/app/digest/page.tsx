@@ -20,6 +20,14 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 
+function cleanTitle(title?: string): string {
+  if (!title) return 'Job Opportunity'
+  return title
+    .replace(/[\uFFFD]/g, '—')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export default function DigestPage() {
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
   const { data: jobs, isLoading, refetch: refetchDigest } = useQuery({
@@ -214,7 +222,7 @@ export default function DigestPage() {
                   <div className="flex-1 min-w-0 space-y-2.5">
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <h3 className="font-bold text-base text-zinc-100 group-hover:text-white transition-colors truncate">
-                        {job.role_title}
+                        {cleanTitle(job.role_title)}
                       </h3>
                       
                       {/* Selection Probability Badge */}

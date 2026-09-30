@@ -55,16 +55,31 @@ function formatJobDate(dateStr?: string) {
   return { label, isNew }
 }
 
+function cleanTitle(title?: string): string {
+  if (!title) return 'Job Opportunity'
+  return title
+    .replace(/[\uFFFD]/g, '—')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function isJobInternship(job: any): boolean {
   if (job.is_internship === true) return true
   const title = (job.role_title || '').toLowerCase()
+  // Title takes absolute precedence:
   if (/\b(intern|internship|trainee|apprentice|co-op|summer analyst|summer associate|winter intern)\b/i.test(title)) {
     return true
   }
+  // If title explicitly specifies full-time entry/grad/fresher/engineer/developer, it is NOT an internship:
+  if (/\b(new grad|graduate engineer|full-time|full time|permanent|developer|engineer|analyst|associate|manager|lead)\b/i.test(title) && !/\b(intern|internship|trainee)\b/i.test(title)) {
+    return false
+  }
   const seniority = (job.seniority_required || '').toLowerCase()
   if (seniority === 'intern') return true
+  
+  // Only check raw_jd if title did not exclude it AND contains unambiguous internship program markers:
   const rawJd = (job.raw_jd || '').toLowerCase()
-  if (/\b(internship|graduate intern|summer internship|winter internship)\b/i.test(rawJd)) {
+  if (/\b(this internship|internship position|internship role|duration of the internship|summer internship program|winter internship program|internship stipend)\b/i.test(rawJd)) {
     return true
   }
   return false
@@ -586,49 +601,49 @@ function DashboardContent() {
             ].map((sample) => (
               <div 
                 key={sample.id}
-                className="bg-zinc-900/60 p-5 rounded-2xl border border-zinc-800/80 hover:border-indigo-500/40 hover:bg-zinc-900 transition-all flex flex-col md:flex-row md:items-center justify-between gap-5"
+                className="bg-zinc-900/60 p-4 sm:p-5 rounded-2xl border border-zinc-800/80 hover:border-indigo-500/40 hover:bg-zinc-900 transition-all flex flex-col xl:flex-row xl:items-center justify-between gap-4"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <span className="font-bold text-lg text-zinc-100">{sample.title}</span>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-green-500/10 text-green-400 border border-green-500/30">
+                <div className="flex-1 min-w-0 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="font-bold text-base sm:text-lg text-zinc-100">{sample.title}</span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-green-500/10 text-green-400 border border-green-500/30 shrink-0">
                       {sample.verdict}
                     </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-zinc-200 font-semibold shrink-0">
+                      <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>{sample.company}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-zinc-300 shrink-0">
+                      <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>{sample.location}</span>
+                    </span>
                     {sample.isIntern && (
-                      <span className="flex items-center gap-1 bg-purple-500/15 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded text-[11px] font-bold">
-                        <GraduationCap className="w-3.5 h-3.5" />
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold shrink-0">
+                        <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                         <span>Internship</span>
                       </span>
                     )}
                     {sample.cgpa ? (
-                      <span className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold shrink-0">
                         <span>Min {sample.cgpa} CGPA</span>
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 bg-zinc-800/80 border border-zinc-700/50 text-zinc-400 px-2 py-0.5 rounded text-[11px] font-medium">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/40 border border-zinc-700/40 text-zinc-400 shrink-0">
                         <span>No CGPA Cutoff</span>
                       </span>
                     )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-zinc-400">
-                    <div className="flex items-center gap-1.5 font-medium text-zinc-300">
-                      <Building2 className="w-4 h-4 text-zinc-500" />
-                      {sample.company}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-4 h-4 text-zinc-500" />
-                      {sample.location}
-                    </div>
-                    <span className="capitalize bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded text-[10px] font-bold text-indigo-300 tracking-wider uppercase">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold tracking-wider uppercase shrink-0">
                       {sample.source}
                     </span>
-                    <div className="font-mono text-green-400 font-medium bg-green-500/5 px-2 py-0.5 rounded border border-green-500/10 text-xs">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-medium shrink-0">
                       {sample.pay}
-                    </div>
+                    </span>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 mt-3">
+                  <div className="flex flex-wrap gap-1.5 pt-1">
                     {sample.skills.map(s => (
                       <span key={s} className="px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-zinc-300 text-[11px] font-medium">
                         {s}
@@ -637,7 +652,7 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 shrink-0 border-t md:border-t-0 border-zinc-800 pt-4 md:pt-0 justify-between md:justify-end">
+                <div className="flex items-center gap-3 shrink-0 border-t xl:border-t-0 border-zinc-800/60 pt-3 xl:pt-0 justify-between sm:justify-end">
                   <SignInButton mode="modal">
                     <button className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm">
                       <span>Sign In to Apply</span>
@@ -645,11 +660,11 @@ function DashboardContent() {
                     </button>
                   </SignInButton>
 
-                  <div className="flex flex-col items-end justify-center pl-4 border-l border-zinc-800/80 min-w-[70px]">
-                    <div className="text-3xl font-black tracking-tighter leading-none text-green-400">
+                  <div className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 shrink-0 min-w-[62px]">
+                    <div className="text-xl sm:text-2xl font-black tracking-tight leading-none text-emerald-400">
                       {sample.score}
                     </div>
-                    <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mt-1">Match</div>
+                    <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold mt-0.5">Match</div>
                   </div>
                 </div>
               </div>
@@ -1187,68 +1202,75 @@ function DashboardContent() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                   key={job.id} 
-                  className="bg-zinc-900/60 p-5 rounded-2xl border border-zinc-800/80 hover:border-indigo-500/40 hover:-translate-y-1 hover:bg-zinc-900 hover:shadow-[0_8px_30px_rgb(0,0,0,0.4)] transition-all duration-300 flex flex-col md:flex-row md:items-center justify-between gap-5 group"
+                  className="bg-zinc-900/60 p-4 sm:p-5 rounded-2xl border border-zinc-800/80 hover:border-indigo-500/40 hover:-translate-y-0.5 hover:bg-zinc-900 hover:shadow-[0_8px_30px_rgb(0,0,0,0.4)] transition-all duration-300 flex flex-col xl:flex-row xl:items-center justify-between gap-4 group"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <div className="flex-1 min-w-0 space-y-2.5">
+                    {/* Title & Status */}
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <Link 
                         href={`/jobs/${job.id}`} 
-                        className="font-bold text-lg text-zinc-100 hover:text-indigo-300 transition-colors truncate max-w-[80%]"
+                        className="font-bold text-base sm:text-lg text-white hover:text-indigo-400 transition-colors tracking-tight line-clamp-1"
+                        title={cleanTitle(job.role_title)}
                       >
-                        {job.role_title}
+                        {cleanTitle(job.role_title)}
                       </Link>
                       {analysis && (
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${verdictStyle}`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0 ${verdictStyle}`}>
                           {analysis.verdict}
                         </span>
                       )}
                       {currentStatus && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1 shrink-0">
                           <ListTodo className="w-3 h-3" /> {currentStatus}
                         </span>
                       )}
                     </div>
                     
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-zinc-400">
-                      <div className="flex items-center gap-1.5 font-medium text-zinc-300">
-                        <Building2 className="w-4 h-4 text-zinc-500" />
-                        {job.company}
-                      </div>
+                    {/* Aligned Metadata Pills Ribbon */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {/* Company */}
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-zinc-200 font-semibold shrink-0">
+                        <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="truncate max-w-[150px]">{job.company}</span>
+                      </span>
                       
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="w-4 h-4 text-zinc-500" />
-                        {job.location || 'Location Unclear'}
-                      </div>
+                      {/* Location */}
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-zinc-300 shrink-0">
+                        <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="truncate max-w-[150px]">{job.location || 'Location Unspecified'}</span>
+                      </span>
 
                       {/* Internship Badge */}
                       {isIntern && (
-                        <span className="flex items-center gap-1 bg-purple-500/15 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded text-[11px] font-bold">
-                          <GraduationCap className="w-3.5 h-3.5" />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold shrink-0">
+                          <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                           <span>Internship</span>
                         </span>
                       )}
 
                       {/* Academic CGPA Cutoff Badge */}
                       {cgpaCutoff ? (
-                        <span className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-2 py-0.5 rounded text-[11px] font-bold" title={`Minimum CGPA requirement: ${cgpaCutoff}`}>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold shrink-0" title={`Minimum CGPA requirement: ${cgpaCutoff}`}>
                           <span>Min {cgpaCutoff} CGPA</span>
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 bg-zinc-800/80 border border-zinc-700/50 text-zinc-400 px-2 py-0.5 rounded text-[11px] font-medium" title="No CGPA cutoff mentioned in JD">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/40 border border-zinc-700/40 text-zinc-400 shrink-0" title="No CGPA cutoff mentioned in JD">
                           <span>No CGPA Cutoff</span>
                         </span>
                       )}
                       
+                      {/* Workplace Type */}
                       {job.remote_type && job.remote_type !== 'unclear' && (
-                        <span className="capitalize bg-zinc-800/80 border border-zinc-700/50 px-2 py-0.5 rounded text-[11px] font-medium text-zinc-300">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-zinc-800/60 border border-zinc-700/50 text-zinc-300 capitalize shrink-0 font-medium">
                           {job.remote_type}
                         </span>
                       )}
                       
+                      {/* Compensation */}
                       {job.pay_min && (
-                        <div className="font-mono text-green-400 font-medium bg-green-500/5 px-2 py-0.5 rounded border border-green-500/10">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-medium shrink-0">
                           ₹{(job.pay_min / 100000).toFixed(1)}L {job.pay_max ? `- ${(job.pay_max / 100000).toFixed(1)}L` : ''}
-                        </div>
+                        </span>
                       )}
 
                       {/* Date Badge */}
@@ -1256,130 +1278,144 @@ function DashboardContent() {
                         const dateInfo = formatJobDate(job.posting_date || job.first_seen_at || job.fetched_at)
                         if (!dateInfo) return null
                         return (
-                          <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border ${
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shrink-0 ${
                             dateInfo.isNew 
                               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-semibold' 
-                              : 'bg-zinc-800/80 text-zinc-300 border-zinc-700/50'
+                              : 'bg-zinc-800/60 text-zinc-300 border-zinc-700/50'
                           }`}>
-                            <Calendar className="w-3.5 h-3.5 text-zinc-400" />
+                            <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                             <span>{dateInfo.label}</span>
                             {dateInfo.isNew && (
-                              <span className="ml-0.5 px-1 py-0.2 text-[9px] font-black uppercase tracking-wider bg-emerald-500 text-zinc-950 rounded">
+                              <span className="px-1 py-0.2 text-[9px] font-black uppercase tracking-wider bg-emerald-500 text-zinc-950 rounded">
                                 NEW
                               </span>
                             )}
-                          </div>
+                          </span>
                         )
                       })()}
 
                       {/* Source ATS Badge */}
                       {job.source_type && job.source_type !== 'manual' && (
-                        <span className="capitalize bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded text-[10px] font-bold text-indigo-300 tracking-wider uppercase">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold tracking-wider uppercase shrink-0">
                           {job.source_type}
                         </span>
                       )}
                       
+                      {/* Deadline */}
                       {job.deadline && (
-                        <div className="flex items-center gap-1 text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 text-[11px] font-medium">
-                          <Clock className="w-3.5 h-3.5" />
-                          {new Date(job.deadline).toLocaleDateString()}
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300 shrink-0 font-medium">
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span>{new Date(job.deadline).toLocaleDateString()}</span>
+                        </span>
                       )}
                     </div>
                   </div>
                   
-                  {/* Actions & Score */}
-                  <div className="flex items-center gap-4 shrink-0 mt-2 md:mt-0 border-t md:border-t-0 border-zinc-800 pt-4 md:pt-0">
-                    {/* Track Button */}
-                    <button 
-                      onClick={() => trackMutation.mutate({ job, status: currentStatus ? (currentStatus === 'applied' ? 'interview' : 'applied') : 'saved' })}
-                      disabled={trackMutation.isPending}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                        currentStatus 
-                          ? 'bg-zinc-800/80 text-indigo-400 border border-indigo-500/30 hover:bg-zinc-800'
-                          : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700 hover:text-white'
-                      }`}
-                    >
-                      <ListTodo className="w-3.5 h-3.5" />
-                      {currentStatus ? currentStatus.toUpperCase() : 'Track'}
-                    </button>
+                  {/* Actions & Score Cluster */}
+                  <div className="flex items-center gap-3 shrink-0 justify-between sm:justify-end flex-wrap xl:flex-nowrap pt-3 xl:pt-0 border-t xl:border-t-0 border-zinc-800/60">
+                    {/* Action Buttons Group */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Track Button */}
+                      <button 
+                        onClick={() => trackMutation.mutate({ job, status: currentStatus ? (currentStatus === 'applied' ? 'interview' : 'applied') : 'saved' })}
+                        disabled={trackMutation.isPending}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95 cursor-pointer ${
+                          currentStatus 
+                            ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25'
+                            : 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/60 hover:text-white'
+                        }`}
+                        title={currentStatus ? `Tracked: ${currentStatus}` : "Track this role"}
+                      >
+                        <ListTodo className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>{currentStatus ? currentStatus.toUpperCase() : 'Track'}</span>
+                      </button>
 
-                    {/* AI Coach Prep Link */}
-                    <Link
-                      href={`/jobs/${job.id}?tab=coach`}
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 transition-all flex items-center gap-1 shrink-0"
-                      title="Prepare for this interview with AI Coach"
-                    >
-                      <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />
-                      <span className="hidden lg:inline">Coach</span>
-                    </Link>
+                      {/* AI Coach Prep Link */}
+                      <Link
+                        href={`/jobs/${job.id}?tab=coach`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20 transition-all active:scale-95 shrink-0"
+                        title="Prepare for this interview with AI Coach"
+                      >
+                        <BrainCircuit className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Coach</span>
+                      </Link>
 
-                    {/* Bookmark Toggle */}
-                    <button
-                      onClick={async () => {
-                        const newBm = !job.is_bookmarked
-                        await apiFetch(`/api/jobs/${job.id}/bookmark`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ is_bookmarked: newBm })
-                        })
-                        refetchJobs()
-                      }}
-                      className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                        job.is_bookmarked 
-                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
-                          : 'border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700'
-                      }`}
-                      title={job.is_bookmarked ? 'Remove bookmark' : 'Bookmark job'}
-                    >
-                      <Bookmark className={`w-4 h-4 ${job.is_bookmarked ? 'fill-amber-400' : ''}`} />
-                    </button>
+                      {/* Bookmark Toggle */}
+                      <button
+                        onClick={async () => {
+                          const newBm = !job.is_bookmarked
+                          await apiFetch(`/api/jobs/${job.id}/bookmark`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ is_bookmarked: newBm })
+                          })
+                          refetchJobs()
+                        }}
+                        className={`p-1.5 rounded-xl border transition-all active:scale-95 cursor-pointer ${
+                          job.is_bookmarked 
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
+                            : 'border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:text-amber-400 hover:border-zinc-700'
+                        }`}
+                        title={job.is_bookmarked ? 'Remove bookmark' : 'Bookmark job'}
+                      >
+                        <Bookmark className={`w-3.5 h-3.5 ${job.is_bookmarked ? 'fill-amber-400' : ''}`} />
+                      </button>
 
-                    {/* Quick Apply Link */}
-                    {job.url && (
-                      <div className="flex items-center gap-1.5">
+                      {/* Quick Apply Link */}
+                      {job.url && (
                         <a 
                           href={job.url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-2 rounded-lg transition-colors flex items-center justify-center shadow-sm"
-                          title="Open job posting"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-indigo-600/30 active:scale-95 shrink-0"
+                          title="Open official job posting"
                         >
-                          <ArrowUpRight className="w-4 h-4" />
+                          <span>Apply</span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
                         </a>
+                      )}
 
+                      {/* Auto-Apply */}
+                      {job.url && (
                         <button 
                           onClick={() => autoApplyMutation.mutate({ url: job.url, jobId: job.id })}
                           disabled={autoApplyMutation.isPending}
-                          className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold px-2.5 py-1.5 rounded-lg transition-colors text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all active:scale-95 cursor-pointer disabled:opacity-50 shrink-0"
                           title="Experimental Playwright Auto-Apply"
                         >
-                          <Zap className="w-3.5 h-3.5 fill-emerald-400" />
-                          {autoApplyMutation.isPending ? 'Working...' : 'Auto-Apply'}
+                          <Zap className="w-3.5 h-3.5 fill-emerald-400 shrink-0" />
+                          <span>{autoApplyMutation.isPending ? '...' : 'Auto'}</span>
                         </button>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Quick Dismiss / Delete Job */}
-                    <button
-                      onClick={() => {
-                        if (confirm(`Remove "${job.role_title}" at ${job.company} from your feed?`)) {
-                          deleteJobMutation.mutate(job.id);
-                        }
-                      }}
-                      disabled={deleteJobMutation.isPending}
-                      className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                      title="Dismiss job"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      {/* Quick Dismiss / Delete Job */}
+                      <button
+                        onClick={() => {
+                          if (confirm(`Remove "${cleanTitle(job.role_title)}" at ${job.company} from your feed?`)) {
+                            deleteJobMutation.mutate(job.id);
+                          }
+                        }}
+                        disabled={deleteJobMutation.isPending}
+                        className="p-1.5 rounded-xl border border-transparent hover:border-red-500/20 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-all active:scale-95 cursor-pointer shrink-0"
+                        title="Dismiss job"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
+                    {/* Match Score Display */}
                     {analysis && (
-                      <Link href={`/jobs/${job.id}`} className="flex flex-col items-end justify-center pl-4 border-l border-zinc-800/80 group-hover:border-indigo-500/30 transition-colors min-w-[70px]">
-                        <div className={`text-3xl font-black tracking-tighter leading-none ${analysis.match_score >= 80 ? 'text-green-400' : analysis.match_score >= 50 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                      <Link 
+                        href={`/jobs/${job.id}`} 
+                        className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 hover:border-indigo-500/40 group-hover:bg-zinc-950 transition-all shrink-0 min-w-[62px]"
+                        title={`AI Match Score: ${analysis.match_score}% - Click to view detailed analysis`}
+                      >
+                        <div className={`text-xl sm:text-2xl font-black tracking-tight leading-none ${
+                          analysis.match_score >= 80 ? 'text-emerald-400' : analysis.match_score >= 50 ? 'text-amber-400' : 'text-zinc-500'
+                        }`}>
                           {analysis.match_score}
                         </div>
-                        <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mt-1">Match</div>
+                        <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-extrabold mt-0.5">Match</div>
                       </Link>
                     )}
                   </div>

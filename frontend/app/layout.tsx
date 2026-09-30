@@ -31,7 +31,7 @@ export default function RootLayout({
         <ClerkProvider>
           <Providers>
           <Navigation />
-          <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 mt-2 animate-in fade-in duration-500 w-full overflow-hidden">
+          <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 mt-2 animate-in fade-in duration-500 w-full">
           {children}
           </main>
           </Providers>
