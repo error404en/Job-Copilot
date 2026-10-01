@@ -94,7 +94,7 @@ def get_digest(user_id: str = Depends(get_current_user)):
             .eq("user_id", user_id) \
             .gte("fetched_at", cutoff_7d) \
             .order("fetched_at", desc=True) \
-            .limit(35) \
+            .limit(80) \
             .execute()
         if response_7d.data and len(response_7d.data) > len(all_jobs):
             all_jobs = response_7d.data
@@ -107,7 +107,7 @@ def get_digest(user_id: str = Depends(get_current_user)):
             .select("*, job_analyses(*, resume_versions(title, target_type))") \
             .eq("user_id", user_id) \
             .order("fetched_at", desc=True) \
-            .limit(30) \
+            .limit(80) \
             .execute()
         if response_all.data:
             all_jobs = response_all.data
@@ -170,6 +170,19 @@ def get_digest(user_id: str = Depends(get_current_user)):
                 else:
                     job["selection_probability"] = "Stretch Reach"
                 matched.append(job)
+
+    # Enforce company diversity balancing: cap at max 3 roles per company in general recommendations
+    # This prevents any single company (e.g. Databricks, Barclays) from flooding the candidate's digest
+    company_counts = {}
+    balanced_matched = []
+    for job in matched:
+        c_name = (job.get("company") or "").lower().strip()
+        count = company_counts.get(c_name, 0)
+        if count >= 3:
+            continue
+        company_counts[c_name] = count + 1
+        balanced_matched.append(job)
+    matched = balanced_matched
 
     matched.sort(
         key=lambda j: (j.get("job_analyses") or [{}])[0].get("match_score", 0),
@@ -255,6 +268,15 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
         resume_summaries = "Software Engineering Candidate. Experience with Python, JavaScript/React, SQL, REST APIs, Git, and Web Development."
 
     # 3. Parse job with full fidelity from raw_jd or title metadata
+    # If raw_jd is short/stub, try fetching the real JD from URL
+    if (not req.raw_jd or len(req.raw_jd.strip()) < 350 or "[Extracted via" in req.raw_jd) and req.url and req.url.startswith("http"):
+        try:
+            scraped = scrape_job_url(req.url, user_id=user_id)
+            if scraped and scraped.get("raw_jd") and len(scraped["raw_jd"]) > len(req.raw_jd or ""):
+                req.raw_jd = scraped["raw_jd"]
+        except Exception as se:
+            print(f"[quick_score_job] Could not auto-fetch full JD: {se}")
+
     raw_text = req.raw_jd or f"{req.role_title} at {req.company}\nLocation: {req.location}\nExperience: {req.experience_level or req.seniority_required or '0-2yr'}"
     parsed_job = parse_job_description(raw_text)
     
@@ -276,11 +298,12 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LLM Analysis Failed: {str(e)}")
 
-    # 5. Insert backing job and analysis into DB
+    # 5. Insert backing job and analysis into DB (with bulletproof duplicate recovery)
     job_id = None
     try:
         job_insert = {
             "source": "deep_dive_role",
+            "source_type": "deep_dive",
             "url": req.url,
             "company": req.company,
             "role_title": req.role_title,
@@ -294,6 +317,23 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
         job_res = supabase.table("jobs").insert(job_insert).execute()
         if job_res.data:
             job_id = job_res.data[0]["id"]
+    except Exception as e:
+        print(f"[quick_score_job] DB save error: {e}")
+        # Recover existing job ID so job_id is NEVER None
+        try:
+            if req.url:
+                ex = supabase.table("jobs").select("id").eq("user_id", user_id).eq("url", req.url).limit(1).execute()
+                if ex.data:
+                    job_id = ex.data[0]["id"]
+            if not job_id and req.company and req.role_title:
+                ex = supabase.table("jobs").select("id").eq("user_id", user_id).eq("company", req.company).eq("role_title", req.role_title).limit(1).execute()
+                if ex.data:
+                    job_id = ex.data[0]["id"]
+        except Exception as fe:
+            print(f"[quick_score_job] Failed to recover existing job_id: {fe}")
+
+    if job_id:
+        try:
             analysis_insert = {
                 "job_id": job_id,
                 "match_score": fit_report.match_score,
@@ -307,9 +347,10 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
                 "company_info": fit_report.culture_assessment,
                 "user_id": user_id
             }
-            supabase.table("job_analyses").insert(analysis_insert).execute()
-    except Exception as e:
-        print(f"[quick_score_job] DB save error: {e}")
+            # Upsert into job_analyses
+            supabase.table("job_analyses").upsert(analysis_insert, on_conflict="job_id").execute()
+        except Exception as ae:
+            print(f"[quick_score_job] Analysis save error: {ae}")
 
     return {
         "job_id": job_id,
@@ -678,7 +719,7 @@ def sync_live_jobs(background_tasks: BackgroundTasks, user_id: str = Depends(get
             logger.warning("Failed fetching ATS %s for %s: %s", source, token, e)
             continue
             
-        for job_data in jobs_to_process[:8]:
+        for job_data in jobs_to_process[:3]: # Cap to top 3 per ATS company to maintain high company diversity
             try:
                 p_req = ParseRequest(
                     raw_jd=job_data.get("raw_jd", ""),

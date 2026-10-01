@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useApiClient } from '@/lib/useApiClient'
 import { PlusCircle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
+
+const STORAGE_KEY_JOBS_NEW = 'apply_tool_jobs_new_state'
+const STORAGE_KEY_DEEP_DIVE_CACHE = 'apply_tool_deep_dive_cache'
 
 export default function AddJobPage() {
   const router = useRouter()
@@ -58,6 +61,7 @@ export default function AddJobPage() {
   const [trackedJobs, setTrackedJobs] = useState<Record<string, boolean>>({})
   const [roleScores, setRoleScores] = useState<Record<number, any>>({})
   const [scoringRoleIdx, setScoringRoleIdx] = useState<number | null>(null)
+  const [analyzingRoleIdx, setAnalyzingRoleIdx] = useState<number | null>(null)
 
   // Screenshot Upload & Clipboard Paste State
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -66,23 +70,258 @@ export default function AddJobPage() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [pastedFromClipboard, setPastedFromClipboard] = useState(false)
 
-  // Auto-detect URL query params (e.g. from Target Companies directory)
+  const isHydratedRef = useRef(false)
+
+  const parseMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiFetch('/api/jobs/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) throw new Error('Failed to parse job')
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.job_id) {
+        router.push(`/jobs/${data.job_id}`)
+      }
+    },
+    onError: (err: any) => setError(err.message)
+  })
+
+  const atsMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiFetch('/api/jobs/fetch-ats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) throw new Error('Failed to fetch ATS jobs')
+      return res.json()
+    },
+    onSuccess: () => {
+      alert('Started fetching jobs in the background! They will appear on your dashboard shortly.')
+      router.push('/')
+    },
+    onError: (err: any) => setError(err.message)
+  })
+  
+  const discoverAtsMutation = useMutation({
+    mutationFn: async (companyName: string) => {
+      const res = await apiFetch('/api/research/discover-ats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_name: companyName })
+      })
+      if (!res.ok) throw new Error('Failed to discover ATS')
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.ats_info) {
+        setAtsSystem(data.ats_info.system)
+        setCompanyToken(data.ats_info.token)
+        alert(`Detected ${data.ats_info.system} ATS!`)
+      } else {
+        alert("Could not auto-detect ATS. You may need to enter it manually, or use Company Deep Dive.")
+      }
+    },
+    onError: (err: any) => setError(err.message)
+  })
+
+  const researchMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiFetch('/api/research/company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      if (!res.ok) throw new Error('Research failed')
+      return res.json()
+    },
+    onSuccess: (data) => {
+      setResearchData(data)
+      if (typeof window !== 'undefined' && deepDiveCompany) {
+        try {
+          const cacheRaw = sessionStorage.getItem(STORAGE_KEY_DEEP_DIVE_CACHE)
+          const cache = cacheRaw ? JSON.parse(cacheRaw) : {}
+          cache[deepDiveCompany.toLowerCase().trim()] = {
+            researchData: data,
+            roleScores: {},
+            trackedJobs: {},
+            timestamp: Date.now()
+          }
+          sessionStorage.setItem(STORAGE_KEY_DEEP_DIVE_CACHE, JSON.stringify(cache))
+        } catch {}
+      }
+    },
+    onError: (err: any) => setError(err.message)
+  })
+
+  // Hydrate state from URL query params and sessionStorage on mount and popstate (Back/Forward)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const hydrate = () => {
+      if (typeof window === 'undefined') return
       const params = new URLSearchParams(window.location.search)
-      const tab = params.get('tab')
-      const company = params.get('company')
-      if (tab === 'deep-dive' || tab === 'screenshot' || tab === 'manual' || tab === 'ats') {
-        setActiveTab(tab)
+      const urlTab = params.get('tab') as any
+      const urlCompany = params.get('company')
+      const urlLoc = params.get('loc')
+      const urlExp = params.get('exp')
+      const urlSal = params.get('sal')
+
+      let saved: any = null
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY_JOBS_NEW)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+
+      // Tab restoration
+      const targetTab = (urlTab && ['manual', 'screenshot', 'deep-dive', 'ats'].includes(urlTab))
+        ? urlTab
+        : (saved?.activeTab || 'manual')
+      setActiveTab(targetTab)
+
+      // Company restoration
+      const targetCompany = urlCompany || saved?.deepDiveCompany || ''
+      if (targetCompany) setDeepDiveCompany(targetCompany)
+      if (saved?.deepDiveKeywords) setDeepDiveKeywords(saved.deepDiveKeywords)
+
+      // Filter restoration
+      const targetLoc = urlLoc || saved?.deepDiveLocFilter || 'all'
+      const targetExp = urlExp || saved?.deepDiveExpFilter || 'all'
+      const targetSal = urlSal || saved?.deepDiveSalaryFilter || 'all'
+      setDeepDiveLocFilter(targetLoc)
+      setDeepDiveExpFilter(targetExp)
+      setDeepDiveSalaryFilter(targetSal)
+
+      // Restore research data & scores
+      let loadedData = null
+      let loadedScores = {}
+      let loadedTracked = {}
+
+      if (saved?.deepDiveCompany && targetCompany && saved.deepDiveCompany.toLowerCase().trim() === targetCompany.toLowerCase().trim() && saved.researchData) {
+        loadedData = saved.researchData
+        loadedScores = saved.roleScores || {}
+        loadedTracked = saved.trackedJobs || {}
+      } else if (targetCompany) {
+        try {
+          const cacheRaw = sessionStorage.getItem(STORAGE_KEY_DEEP_DIVE_CACHE)
+          if (cacheRaw) {
+            const cache = JSON.parse(cacheRaw)
+            const companyCache = cache[targetCompany.toLowerCase().trim()]
+            if (companyCache?.researchData) {
+              loadedData = companyCache.researchData
+              loadedScores = companyCache.roleScores || {}
+              loadedTracked = companyCache.trackedJobs || {}
+            }
+          }
+        } catch {}
       }
-      if (company) {
-        setDeepDiveCompany(company)
-        if (tab === 'deep-dive') {
-          researchMutation.mutate({ company_name: company })
-        }
+
+      if (loadedData) {
+        setResearchData(loadedData)
+        setRoleScores(loadedScores)
+        setTrackedJobs(loadedTracked)
+      } else if (targetCompany && targetTab === 'deep-dive') {
+        researchMutation.mutate({ company_name: targetCompany })
       }
+
+      // Restore manual form fields if saved
+      if (saved?.rawJd) setRawJd(saved.rawJd)
+      if (saved?.source) setSource(saved.source)
+      if (saved?.url) setUrl(saved.url)
+      if (saved?.companyName) setCompanyName(saved.companyName)
+
+      // Restore ATS form fields if saved
+      if (saved?.atsSystem) setAtsSystem(saved.atsSystem)
+      if (saved?.companyToken) setCompanyToken(saved.companyToken)
+      if (saved?.targetKeywords) setTargetKeywords(saved.targetKeywords)
+      if (saved?.atsSubscribe !== undefined) setAtsSubscribe(saved.atsSubscribe)
+
+      isHydratedRef.current = true
     }
+
+    hydrate()
+
+    const handlePopState = () => {
+      hydrate()
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
   }, [])
+
+  // Sync state to URL and sessionStorage so browser Back button & page refresh never lose selections
+  useEffect(() => {
+    if (!isHydratedRef.current || typeof window === 'undefined') return
+
+    const params = new URLSearchParams()
+    if (activeTab !== 'manual') params.set('tab', activeTab)
+    if (activeTab === 'deep-dive') {
+      if (deepDiveCompany.trim()) params.set('company', deepDiveCompany.trim())
+      if (deepDiveLocFilter !== 'all') params.set('loc', deepDiveLocFilter)
+      if (deepDiveExpFilter !== 'all') params.set('exp', deepDiveExpFilter)
+      if (deepDiveSalaryFilter !== 'all') params.set('sal', deepDiveSalaryFilter)
+    }
+
+    const q = params.toString()
+    const newUrl = q ? `/jobs/new?${q}` : '/jobs/new'
+    window.history.replaceState(null, '', newUrl)
+
+    try {
+      const stateToSave = {
+        activeTab,
+        deepDiveCompany,
+        deepDiveKeywords,
+        deepDiveLocFilter,
+        deepDiveExpFilter,
+        deepDiveSalaryFilter,
+        researchData,
+        roleScores,
+        trackedJobs,
+        rawJd,
+        source,
+        url,
+        companyName,
+        atsSystem,
+        companyToken,
+        targetKeywords,
+        atsSubscribe
+      }
+      sessionStorage.setItem(STORAGE_KEY_JOBS_NEW, JSON.stringify(stateToSave))
+
+      if (deepDiveCompany && researchData) {
+        const cacheRaw = sessionStorage.getItem(STORAGE_KEY_DEEP_DIVE_CACHE)
+        const cache = cacheRaw ? JSON.parse(cacheRaw) : {}
+        cache[deepDiveCompany.toLowerCase().trim()] = {
+          researchData,
+          roleScores,
+          trackedJobs,
+          timestamp: Date.now()
+        }
+        sessionStorage.setItem(STORAGE_KEY_DEEP_DIVE_CACHE, JSON.stringify(cache))
+      }
+    } catch (e) {
+      console.warn('Failed saving to sessionStorage:', e)
+    }
+  }, [
+    activeTab,
+    deepDiveCompany,
+    deepDiveKeywords,
+    deepDiveLocFilter,
+    deepDiveExpFilter,
+    deepDiveSalaryFilter,
+    researchData,
+    roleScores,
+    trackedJobs,
+    rawJd,
+    source,
+    url,
+    companyName,
+    atsSystem,
+    companyToken,
+    targetKeywords,
+    atsSubscribe
+  ])
 
   // Listen for Ctrl+V paste anywhere on the page
   useEffect(() => {
@@ -145,76 +384,6 @@ export default function AddJobPage() {
     }
   }
 
-  const parseMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await apiFetch('/api/jobs/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!res.ok) throw new Error('Failed to parse job')
-      return res.json()
-    },
-    onSuccess: (data) => {
-      if (data.job_id) {
-        router.push(`/jobs/${data.job_id}`)
-      }
-    },
-    onError: (err: any) => setError(err.message)
-  })
-
-  const atsMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await apiFetch('/api/jobs/fetch-ats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!res.ok) throw new Error('Failed to fetch ATS jobs')
-      return res.json()
-    },
-    onSuccess: () => {
-      alert('Started fetching jobs in the background! They will appear on your dashboard shortly.')
-      router.push('/')
-    },
-    onError: (err: any) => setError(err.message)
-  })
-  
-  const discoverAtsMutation = useMutation({
-    mutationFn: async (companyName: string) => {
-      const res = await apiFetch('/api/research/discover-ats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_name: companyName })
-      })
-      if (!res.ok) throw new Error('Failed to discover ATS')
-      return res.json()
-    },
-    onSuccess: (data) => {
-      if (data.ats_info) {
-        setAtsSystem(data.ats_info.system)
-        setCompanyToken(data.ats_info.token)
-        alert(`Detected ${data.ats_info.system} ATS!`)
-      } else {
-        alert("Could not auto-detect ATS. You may need to enter it manually, or use Company Deep Dive.")
-      }
-    },
-    onError: (err: any) => setError(err.message)
-  })
-  const researchMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await apiFetch('/api/research/company', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      })
-      if (!res.ok) throw new Error('Research failed')
-      return res.json()
-    },
-    onSuccess: (data) => setResearchData(data),
-    onError: (err: any) => setError(err.message)
-  })
-
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -239,6 +408,7 @@ export default function AddJobPage() {
     e.preventDefault()
     setError(null)
     setResearchData(null)
+    setRoleScores({})
     researchMutation.mutate({ company_name: deepDiveCompany, target_keywords: deepDiveKeywords || undefined })
   }
 
@@ -334,7 +504,18 @@ export default function AddJobPage() {
         })
       })
       if (res.ok) {
-        setTrackedJobs(prev => ({ ...prev, [idx]: true }))
+        setTrackedJobs(prev => {
+          const next = { ...prev, [idx]: true }
+          if (typeof window !== 'undefined') {
+            try {
+              const raw = sessionStorage.getItem(STORAGE_KEY_JOBS_NEW)
+              const saved = raw ? JSON.parse(raw) : {}
+              saved.trackedJobs = next
+              sessionStorage.setItem(STORAGE_KEY_JOBS_NEW, JSON.stringify(saved))
+            } catch {}
+          }
+          return next
+        })
       }
     } catch (err) {
       console.error(err)
@@ -360,11 +541,92 @@ export default function AddJobPage() {
       })
       if (!res.ok) throw new Error('Failed to score role')
       const data = await res.json()
-      setRoleScores(prev => ({ ...prev, [idx]: data }))
+      setRoleScores(prev => {
+        const next = { ...prev, [idx]: data }
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = sessionStorage.getItem(STORAGE_KEY_JOBS_NEW)
+            const saved = raw ? JSON.parse(raw) : {}
+            saved.roleScores = next
+            sessionStorage.setItem(STORAGE_KEY_JOBS_NEW, JSON.stringify(saved))
+
+            if (deepDiveCompany) {
+              const cacheRaw = sessionStorage.getItem(STORAGE_KEY_DEEP_DIVE_CACHE)
+              const cache = cacheRaw ? JSON.parse(cacheRaw) : {}
+              if (cache[deepDiveCompany.toLowerCase().trim()]) {
+                cache[deepDiveCompany.toLowerCase().trim()].roleScores = next
+                sessionStorage.setItem(STORAGE_KEY_DEEP_DIVE_CACHE, JSON.stringify(cache))
+              }
+            }
+          } catch {}
+        }
+        return next
+      })
     } catch (err: any) {
       alert(err.message || 'Error scoring role.')
     } finally {
       setScoringRoleIdx(null)
+    }
+  }
+
+  const handleFullAnalysis = async (job: any, idx: number) => {
+    // If this role was already scored and has a valid job_id, directly navigate
+    const existingJobId = roleScores[idx]?.job_id
+    if (existingJobId) {
+      router.push(`/jobs/${existingJobId}`)
+      return
+    }
+
+    setAnalyzingRoleIdx(idx)
+    try {
+      const res = await apiFetch('/api/jobs/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_jd: job.raw_jd,
+          source: job.source || 'deep_dive_role',
+          source_type: 'deep_dive',
+          url: job.url,
+          company_name: deepDiveCompany,
+          role_title: job.role_title
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Failed to start full analysis')
+      if (data.job_id) {
+        setRoleScores(prev => {
+          const next = {
+            ...prev,
+            [idx]: { ...(prev[idx] || {}), job_id: data.job_id }
+          }
+          if (typeof window !== 'undefined') {
+            try {
+              const raw = sessionStorage.getItem(STORAGE_KEY_JOBS_NEW)
+              const saved = raw ? JSON.parse(raw) : {}
+              saved.roleScores = next
+              sessionStorage.setItem(STORAGE_KEY_JOBS_NEW, JSON.stringify(saved))
+
+              if (deepDiveCompany) {
+                const cacheRaw = sessionStorage.getItem(STORAGE_KEY_DEEP_DIVE_CACHE)
+                const cache = cacheRaw ? JSON.parse(cacheRaw) : {}
+                if (cache[deepDiveCompany.toLowerCase().trim()]) {
+                  cache[deepDiveCompany.toLowerCase().trim()].roleScores = next
+                  sessionStorage.setItem(STORAGE_KEY_DEEP_DIVE_CACHE, JSON.stringify(cache))
+                }
+              }
+            } catch {}
+          }
+          return next
+        })
+        router.push(`/jobs/${data.job_id}`)
+      } else {
+        alert('Job analysis queued! Opening dashboard...')
+        router.push('/')
+      }
+    } catch (err: any) {
+      alert(`Error starting analysis: ${err.message}`)
+    } finally {
+      setAnalyzingRoleIdx(null)
     }
   }
 
@@ -936,13 +1198,21 @@ export default function AddJobPage() {
                         const isTracked = trackedJobs[i]
                         const score = roleScores[i]
                         const isScoringThis = scoringRoleIdx === i
+                        const isAnalyzingThis = analyzingRoleIdx === i
 
                         return (
-                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 space-y-4 hover:border-blue-500/50 hover:-translate-y-1.5 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.2)] transition-all duration-300">
+                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 space-y-4 hover:border-purple-500/50 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(168,85,247,0.15)] transition-all duration-300">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <h3 className="font-bold text-white text-lg">{j.role_title}</h3>
+                                  <h3 
+                                    onClick={() => handleFullAnalysis(j, i)}
+                                    className="font-bold text-white text-lg hover:text-purple-300 cursor-pointer transition-colors flex items-center gap-1.5"
+                                    title="Click to view full analysis and tailored materials"
+                                  >
+                                    <span>{j.role_title}</span>
+                                    <span className="text-xs text-zinc-500 hover:text-purple-400">↗</span>
+                                  </h3>
                                   {j.experience_level && (
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                       j.experience_level.includes('0-2') || j.experience_level.includes('Freshers')
@@ -1023,13 +1293,23 @@ export default function AddJobPage() {
                                     {score.reasoning}
                                   </p>
                                 )}
-                                {score.job_id && (
-                                  <div className="pt-1 flex justify-end">
-                                    <Link href={`/jobs/${score.job_id}`} className="text-purple-400 hover:text-purple-300 font-semibold hover:underline">
-                                      View Deep Breakdown & Cover Letter →
+                                <div className="pt-1 flex justify-end">
+                                  {score.job_id ? (
+                                    <Link href={`/jobs/${score.job_id}`} className="text-purple-400 hover:text-purple-300 font-semibold hover:underline flex items-center gap-1">
+                                      <span>View Deep Breakdown & Cover Letter</span>
+                                      <span>→</span>
                                     </Link>
-                                  </div>
-                                )}
+                                  ) : (
+                                    <button 
+                                      type="button"
+                                      onClick={() => handleFullAnalysis(j, i)}
+                                      disabled={isAnalyzingThis}
+                                      className="text-purple-400 hover:text-purple-300 font-semibold hover:underline flex items-center gap-1 disabled:opacity-50"
+                                    >
+                                      <span>{isAnalyzingThis ? '⚙️ Opening Analysis...' : 'View Deep Breakdown & Cover Letter →'}</span>
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             )}
 
@@ -1042,6 +1322,7 @@ export default function AddJobPage() {
                                   target="_blank" 
                                   rel="noopener noreferrer" 
                                   className="bg-white text-zinc-950 font-bold px-3.5 py-1.5 rounded-lg text-xs hover:bg-zinc-200 transition-colors flex items-center gap-1.5 shadow-sm"
+                                  title="Open official job application in a new tab"
                                 >
                                   <span>🚀</span>
                                   <span>Apply Now ↗</span>
@@ -1074,12 +1355,23 @@ export default function AddJobPage() {
 
                                 {/* Full Analysis */}
                                 <button 
-                                  onClick={() => {
-                                    parseMutation.mutate({ raw_jd: j.raw_jd, source: j.source, url: j.url, company_name: deepDiveCompany })
-                                  }}
-                                  className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                                  type="button"
+                                  onClick={() => handleFullAnalysis(j, i)}
+                                  disabled={isAnalyzingThis}
+                                  className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                                  title="Analyze full JD, view match score breakdown, and generate tailored cover letter"
                                 >
-                                  Full Analysis
+                                  {isAnalyzingThis ? (
+                                    <>
+                                      <span className="animate-spin text-[10px]">⚙️</span>
+                                      <span>Analyzing...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>Full Analysis</span>
+                                      <span>→</span>
+                                    </>
+                                  )}
                                 </button>
                               </div>
                             </div>

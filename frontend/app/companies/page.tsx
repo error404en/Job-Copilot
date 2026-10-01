@@ -3,12 +3,14 @@ import { Search, Building2, MapPin, Briefcase, GraduationCap, CheckCircle2, Aler
 import { motion, AnimatePresence } from 'framer-motion'
 
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useApiClient } from '@/lib/useApiClient'
 import { PageHeader } from '@/components/ui/PageHeader'
+
+const STORAGE_KEY_COMPANIES = 'apply_tool_companies_state'
 
 const LOCATION_OPTIONS = [
   { id: 'all', label: '📍 All Locations' },
@@ -41,6 +43,67 @@ export default function CompaniesPage() {
   const [trackedMap, setTrackedMap] = useState<Record<string, boolean>>({})
   const [companyScores, setCompanyScores] = useState<Record<string, any>>({})
   const [loadingScores, setLoadingScores] = useState<Record<string, boolean>>({})
+
+  const isHydratedRef = useRef(false)
+
+  // Hydrate on mount or popstate
+  useEffect(() => {
+    const hydrate = () => {
+      if (typeof window === 'undefined') return
+      const sp = new URLSearchParams(window.location.search)
+      const hasUrlParams = window.location.search && window.location.search.length > 1
+
+      let saved: any = null
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY_COMPANIES)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+
+      const targetLoc = hasUrlParams ? (sp.get('loc') || 'all') : (saved?.selectedLocation || 'all')
+      const targetInd = hasUrlParams ? (sp.get('ind') || 'all') : (saved?.selectedIndustry || 'all')
+      const targetFresher = hasUrlParams ? (sp.get('fresher') === 'true') : (saved?.fresherOnly || false)
+      const targetQ = hasUrlParams ? (sp.get('q') || '') : (saved?.searchQuery || '')
+
+      setSelectedLocation(targetLoc)
+      setSelectedIndustry(targetInd)
+      setFresherOnly(targetFresher)
+      setSearchQuery(targetQ)
+
+      isHydratedRef.current = true
+    }
+
+    hydrate()
+
+    const handlePopState = () => {
+      hydrate()
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Sync to URL and sessionStorage
+  useEffect(() => {
+    if (!isHydratedRef.current || typeof window === 'undefined') return
+
+    const params = new URLSearchParams()
+    if (selectedLocation !== 'all') params.set('loc', selectedLocation)
+    if (selectedIndustry !== 'all') params.set('ind', selectedIndustry)
+    if (fresherOnly) params.set('fresher', 'true')
+    if (searchQuery.trim()) params.set('q', searchQuery.trim())
+
+    const q = params.toString()
+    const newUrl = q ? `/companies?${q}` : '/companies'
+    window.history.replaceState(null, '', newUrl)
+
+    try {
+      sessionStorage.setItem(STORAGE_KEY_COMPANIES, JSON.stringify({
+        selectedLocation,
+        selectedIndustry,
+        fresherOnly,
+        searchQuery
+      }))
+    } catch {}
+  }, [selectedLocation, selectedIndustry, fresherOnly, searchQuery])
 
   const handleCheckFit = async (company: any, roleTitle?: string, seniority?: string) => {
     const key = `${company.id}_${roleTitle || 'default'}`
@@ -215,6 +278,10 @@ export default function CompaniesPage() {
                 setSelectedIndustry('all')
                 setFresherOnly(false)
                 setSearchQuery('')
+                if (typeof window !== 'undefined') {
+                  try { sessionStorage.removeItem(STORAGE_KEY_COMPANIES) } catch {}
+                  window.history.replaceState(null, '', '/companies')
+                }
               }}
               className="text-[11px] text-indigo-400 hover:text-indigo-300 font-bold tracking-wide uppercase px-2 py-1 rounded bg-indigo-500/10 border border-indigo-500/20 transition-colors ml-auto"
             >

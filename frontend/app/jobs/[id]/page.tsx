@@ -107,9 +107,7 @@ export default function JobDetailPage() {
   
   const jobId = params.id as string
   const initialTab = (searchParams.get('tab') as any) || 'analysis'
-  const [activeTab, setActiveTab] = useState<'analysis' | 'studio' | 'coach' | 'description' | 'resume-target'>(
-    ['analysis', 'studio', 'coach', 'description', 'resume-target'].includes(initialTab) ? initialTab : 'analysis'
-  )
+  const [activeTab, setActiveTab] = useState<'analysis' | 'studio' | 'coach' | 'description' | 'resume-target'>('analysis')
   const [tailorPrompt, setTailorPrompt] = useState('')
   const [isEditingDeadline, setIsEditingDeadline] = useState(false)
   const [deadlineInput, setDeadlineInput] = useState('')
@@ -117,26 +115,42 @@ export default function JobDetailPage() {
   const [copiedResumeTitle, setCopiedResumeTitle] = useState(false)
   const [jdSearchQuery, setJdSearchQuery] = useState('')
 
-  // Sync tab with URL search parameter on browser popstate / back button
+  // Sync tab with URL search parameter and sessionStorage on browser popstate / back button / mount
   useEffect(() => {
-    const handlePopState = () => {
+    const syncTab = () => {
+      if (typeof window === 'undefined') return
       const sp = new URLSearchParams(window.location.search)
-      const tab = (sp.get('tab') as any) || 'analysis'
+      let tab = sp.get('tab') as any
+      if (!tab) {
+        try {
+          tab = sessionStorage.getItem(`apply_tool_job_tab_${jobId}`)
+        } catch {}
+      }
       if (['analysis', 'studio', 'coach', 'description', 'resume-target'].includes(tab)) {
         setActiveTab(tab)
       } else {
         setActiveTab('analysis')
       }
     }
+    syncTab()
+
+    const handlePopState = () => {
+      syncTab()
+    }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+  }, [jobId])
 
   const handleTabChange = (newTab: 'analysis' | 'studio' | 'coach' | 'description' | 'resume-target') => {
     setActiveTab(newTab)
-    const url = new URL(window.location.href)
-    url.searchParams.set('tab', newTab)
-    window.history.replaceState(null, '', url.pathname + url.search)
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(`apply_tool_job_tab_${jobId}`, newTab)
+      } catch {}
+      const url = new URL(window.location.href)
+      url.searchParams.set('tab', newTab)
+      window.history.replaceState(null, '', url.pathname + url.search)
+    }
   }
 
   // 1. Fetch Job
@@ -410,13 +424,20 @@ export default function JobDetailPage() {
       
       {/* Top Breadcrumb Trail & Quick Actions */}
       <div className="flex items-center justify-between text-xs text-zinc-400">
-        <Link 
-          href="/" 
-          className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors group cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.history.length > 1) {
+              router.back()
+            } else {
+              router.push('/')
+            }
+          }}
+          className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors group cursor-pointer bg-transparent border-0 p-0 text-xs font-medium"
         >
           <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-          <span>Back to Live Feed</span>
-        </Link>
+          <span>Back</span>
+        </button>
         <div className="flex items-center gap-2">
           <button
             onClick={() => reanalyzeMutation.mutate()}

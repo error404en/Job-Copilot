@@ -158,6 +158,14 @@ def validate_role_title(title: str, company_name: str = "") -> tuple[bool, str]:
     if any(title_lower.startswith(s) for s in suspicious_starts):
         return False, f"Navigational title: '{clean_title}'"
 
+    # Block JD body fragments parsed as titles (e.g. 'you will manage and grow the team...')
+    if len(clean_title.split()) > 10:
+        return False, f"Title contains excessive words ({len(clean_title.split())} words), likely JD paragraph snippet: '{clean_title}'"
+
+    sentence_markers = ["you will", "we are looking", "responsible for", "the ideal candidate", "as a member of", "reporting to", "duties include", "role overview"]
+    if any(marker in title_lower for marker in sentence_markers):
+        return False, f"JD description snippet detected as title: '{clean_title}'"
+
     return True, "Valid Title"
 
 

@@ -28,7 +28,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Suspense, useState, useMemo, useEffect } from 'react'
+import { Suspense, useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useApiClient } from '@/lib/useApiClient'
 import { PageHeader } from '@/components/ui/PageHeader'
@@ -101,6 +101,8 @@ function getJobCgpaCutoff(job: any): number | null {
   return null
 }
 
+const STORAGE_KEY_DASHBOARD = 'apply_tool_dashboard_filters'
+
 function DashboardContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -133,10 +135,56 @@ function DashboardContent() {
   )
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
 
+  const isHydratedRef = useRef(false)
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
 
-  // Sync state to URL without reloading so the browser's Back button restores exact filters
+  // Hydrate filters from URL query parameters or sessionStorage fallback on mount and browser navigation (Back/Forward)
   useEffect(() => {
+    const hydrate = () => {
+      if (typeof window === 'undefined') return
+      const sp = new URLSearchParams(window.location.search)
+      const hasUrlParams = window.location.search && window.location.search.length > 1
+
+      let saved: any = null
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY_DASHBOARD)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+
+      const targetTab = hasUrlParams ? (sp.get('tab') as any || 'all') : (saved?.filter || sp.get('tab') as any || 'all')
+      const targetType = hasUrlParams ? (sp.get('type') as any || 'all') : (saved?.roleTypeFilter || sp.get('type') as any || 'all')
+      const targetCgpa = hasUrlParams ? (sp.get('cgpa') || 'all') : (saved?.cgpaFilter || sp.get('cgpa') || 'all')
+      const targetVerdict = hasUrlParams ? (sp.get('verdict') || 'all') : (saved?.verdictFilter || sp.get('verdict') || 'all')
+      const targetQ = hasUrlParams ? (sp.get('q') || '') : (saved?.searchQuery || sp.get('q') || '')
+      const targetLoc = hasUrlParams ? (sp.get('loc') || 'all') : (saved?.locationFilter || sp.get('loc') || 'all')
+      const targetDate = hasUrlParams ? (sp.get('date') as any || 'all') : (saved?.dateFilter || sp.get('date') as any || 'all')
+      const targetSort = hasUrlParams ? (sp.get('sort') as any || 'score') : (saved?.sortBy || sp.get('sort') as any || 'score')
+
+      if (['all', 'bookmarks', 'deadlines', 'internships'].includes(targetTab)) setFilter(targetTab)
+      if (['all', 'internship', 'fulltime'].includes(targetType)) setRoleTypeFilter(targetType)
+      setCgpaFilter(targetCgpa)
+      setVerdictFilter(targetVerdict)
+      setSearchQuery(targetQ)
+      setLocationFilter(targetLoc)
+      if (['all', '24h', '3d', '7d', '14d', '30d'].includes(targetDate)) setDateFilter(targetDate)
+      if (['score', 'newest', 'oldest', 'deadline', 'salary'].includes(targetSort)) setSortBy(targetSort)
+
+      isHydratedRef.current = true
+    }
+
+    hydrate()
+
+    const handlePopState = () => {
+      hydrate()
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Sync state to URL and sessionStorage so the browser's Back button and refresh restore exact filters
+  useEffect(() => {
+    if (!isHydratedRef.current || typeof window === 'undefined') return
+
     const params = new URLSearchParams()
     if (filter !== 'all') params.set('tab', filter)
     if (roleTypeFilter !== 'all') params.set('type', roleTypeFilter)
@@ -150,24 +198,20 @@ function DashboardContent() {
     const queryStr = params.toString()
     const newUrl = queryStr ? `/?${queryStr}` : '/'
     window.history.replaceState(null, '', newUrl)
-  }, [filter, roleTypeFilter, cgpaFilter, verdictFilter, searchQuery, locationFilter, dateFilter, sortBy])
 
-  // Listen to browser Back/Forward (popstate) to restore previous tab/filter state
-  useEffect(() => {
-    const handlePopState = () => {
-      const sp = new URLSearchParams(window.location.search)
-      setFilter((sp.get('tab') as any) || 'all')
-      setRoleTypeFilter((sp.get('type') as any) || 'all')
-      setCgpaFilter(sp.get('cgpa') || 'all')
-      setVerdictFilter(sp.get('verdict') || 'all')
-      setSearchQuery(sp.get('q') || '')
-      setLocationFilter(sp.get('loc') || 'all')
-      setDateFilter((sp.get('date') as any) || 'all')
-      setSortBy((sp.get('sort') as any) || 'score')
-    }
-    window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+    try {
+      sessionStorage.setItem(STORAGE_KEY_DASHBOARD, JSON.stringify({
+        filter,
+        roleTypeFilter,
+        cgpaFilter,
+        verdictFilter,
+        searchQuery,
+        locationFilter,
+        dateFilter,
+        sortBy
+      }))
+    } catch {}
+  }, [filter, roleTypeFilter, cgpaFilter, verdictFilter, searchQuery, locationFilter, dateFilter, sortBy])
 
   const { data: jobs, isLoading, refetch: refetchJobs } = useQuery({
     queryKey: ['jobs'],
@@ -435,6 +479,13 @@ function DashboardContent() {
     setFilter('all')
     setRoleTypeFilter('all')
     setCgpaFilter('all')
+    setSortBy('score')
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(STORAGE_KEY_DASHBOARD)
+      } catch {}
+      window.history.replaceState(null, '', '/')
+    }
   }
 
   // Filter counts

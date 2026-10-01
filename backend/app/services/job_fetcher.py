@@ -20,6 +20,32 @@ def clean_html(raw_html: str) -> str:
     text = soup.get_text(separator=" ", strip=True)
     return text
 
+def is_location_fresher_or_india_friendly(loc_str: str) -> bool:
+    """
+    Prevents overseas offices (Belgrade, Tokyo, Amsterdam, London, Sydney, etc.)
+    from flooding the student's Indian / remote opportunity pipeline.
+    """
+    if not loc_str:
+        return True
+    loc = loc_str.lower()
+    indian_or_remote = [
+        "india", "bengaluru", "bangalore", "hyderabad", "mumbai", "pune", 
+        "delhi", "noida", "gurgaon", "gurugram", "chennai", "kolkata", 
+        "remote", "anywhere", "global", "flexible", "apac"
+    ]
+    if any(k in loc for k in indian_or_remote):
+        return True
+    
+    overseas = [
+        "belgrade", "serbia", "tokyo", "japan", "london", "uk", "united kingdom", 
+        "berlin", "germany", "warsaw", "poland", "paris", "france", "sydney", 
+        "australia", "toronto", "canada", "amsterdam", "netherlands", "zurich", 
+        "switzerland", "new york", "san francisco", "austin", "seattle", "dublin", "ireland"
+    ]
+    if any(k in loc for k in overseas):
+        return False
+    return True
+
 def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> list:
     """
     Fetches jobs from a Greenhouse board and returns a list of job dicts.
@@ -37,9 +63,21 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
         print(f"Failed to fetch Greenhouse board {board_token}: {e}")
         return []
 
+    from app.services.job_validator import validate_role_title
     jobs = []
     for job in data.get("jobs", []):
-        title = job.get("title", "")
+        title = (job.get("title") or "").strip()
+        loc_name = job.get("location", {}).get("name", "")
+        
+        # Check valid role designation (blocks JD body fragments like 'you will manage...')
+        ok_t, _ = validate_role_title(title, board_token)
+        if not ok_t:
+            continue
+
+        # Prevent foreign non-remote roles from flooding Indian feed
+        if not is_location_fresher_or_india_friendly(loc_name):
+            continue
+
         # Filter by keyword if provided
         if target_keywords:
             if not any(kw.lower() in title.lower() for kw in target_keywords):
@@ -59,8 +97,8 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
             "url": direct_apply,
             "official_apply_url": direct_apply,
             "external_job_id": job_id,
-            "location": job.get("location", {}).get("name", ""),
-            "raw_jd": f"{title}\nLocation: {job.get('location', {}).get('name', '')}\n\n{clean_content}"
+            "location": loc_name,
+            "raw_jd": f"{title}\nLocation: {loc_name}\n\n{clean_content}"
         })
         
     return jobs
@@ -82,9 +120,19 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
         print(f"Failed to fetch Lever board {board_token}: {e}")
         return []
 
+    from app.services.job_validator import validate_role_title
     jobs = []
     for job in data:
-        title = job.get("text", "")
+        title = (job.get("text") or "").strip()
+        loc_name = job.get("categories", {}).get("location", "")
+
+        ok_t, _ = validate_role_title(title, board_token)
+        if not ok_t:
+            continue
+
+        if not is_location_fresher_or_india_friendly(loc_name):
+            continue
+
         if target_keywords:
             if not any(kw.lower() in title.lower() for kw in target_keywords):
                 continue
@@ -278,9 +326,19 @@ def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
         print(f"Failed to fetch Ashby board {board_token}: {e}")
         return []
 
+    from app.services.job_validator import validate_role_title
     jobs = []
     for job in data.get("jobs", []):
-        title = job.get("title", "")
+        title = (job.get("title") or "").strip()
+        loc_name = job.get("location", "")
+
+        ok_t, _ = validate_role_title(title, board_token)
+        if not ok_t:
+            continue
+
+        if not is_location_fresher_or_india_friendly(loc_name):
+            continue
+
         if target_keywords and not any(kw.lower() in title.lower() for kw in target_keywords):
             continue
             
@@ -314,9 +372,19 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
         print(f"Failed to fetch SmartRecruiters board {board_token}: {e}")
         return []
 
+    from app.services.job_validator import validate_role_title
     jobs = []
     for job in data.get("content", []):
-        title = job.get("name", "")
+        title = (job.get("name") or "").strip()
+        loc_name = job.get("location", {}).get("city", "")
+
+        ok_t, _ = validate_role_title(title, board_token)
+        if not ok_t:
+            continue
+
+        if not is_location_fresher_or_india_friendly(loc_name):
+            continue
+
         if target_keywords and not any(kw.lower() in title.lower() for kw in target_keywords):
             continue
         
@@ -759,8 +827,30 @@ VERIFIED_COMPANY_ROLES = {
                 "experience_level": "0-2 Yrs (Associate)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹20.5L CTC (Base ₹15.0L + Stock ₹4.0L)",
-                "required_skills": ["C", "C++", "Data Structures", "Linux", "OS Fundamentals"],
-                "raw_jd": "Associate Software Engineer at Qualcomm India. Building low-level embedded software, modem stacks, and Snapdragon device drivers. Open to fresh graduates and engineers with 0-2 years of systems programming experience in C/C++.",
+                "required_skills": ["C", "C++", "Data Structures", "Linux", "OS Fundamentals", "RTOS", "Multi-threading"],
+                "raw_jd": (
+                    "Role: Associate Engineer - Software (Modem / 5G / AI)\n"
+                    "Company: Qualcomm India Private Limited\n"
+                    "Locations: Bengaluru / Hyderabad, India\n"
+                    "Employment Type: Full-Time (Freshers & 0-2 Years Associate)\n\n"
+                    "About the Role:\n"
+                    "Qualcomm is looking for an Associate Software Engineer to join our Snapdragon Core System Software and Modem Engineering teams in Bengaluru and Hyderabad. You will contribute to low-level systems software, RTOS, device drivers, and AI-accelerated 5G modem stacks powering billions of connected mobile, automotive, and IoT devices.\n\n"
+                    "Key Responsibilities:\n"
+                    "- Design, develop, unit-test, and debug core low-level embedded software and device drivers (PCIe, I2C, SPI, UART) in C and C++.\n"
+                    "- Collaborate on real-time 5G/LTE protocol stack components, physical layer interface software, and memory-constrained microcontrollers.\n"
+                    "- Optimize execution speed, memory footprint, and power consumption across Snapdragon CPU, Hexagon DSP, and NPU cores.\n"
+                    "- Debug low-level system faults, kernel panics, and concurrency race conditions using JTAG debuggers, logic analyzers, and Qualcomm diagnostic suites (QXDM, QPST).\n"
+                    "- Participate in design reviews, automated test suite development, and continuous integration workflows.\n\n"
+                    "Minimum Qualifications:\n"
+                    "- Bachelor's or Master's degree in Computer Science, Computer Engineering, Electrical Engineering, or related discipline.\n"
+                    "- Strong programming proficiency in C and C++ with good grasp of pointers, dynamic memory allocation, and bitwise operations.\n"
+                    "- Solid understanding of Data Structures, Algorithms, Operating Systems concepts (concurrency, synchronization, virtual memory, interrupt handling), and Computer Architecture.\n"
+                    "- Familiarity with Linux/Unix development environment, shell scripting, and Git version control.\n\n"
+                    "Preferred Qualifications:\n"
+                    "- Hands-on academic or internship experience with RTOS (FreeRTOS, Zephyr), embedded Linux kernel modules, or hardware interfaces.\n"
+                    "- Understanding of wireless communications standards (5G NR, LTE, Wi-Fi) or hardware acceleration for machine learning.\n"
+                    "- Strong analytical reasoning and debugging aptitude."
+                ),
                 "source": "official_portal"
             },
             {
@@ -771,8 +861,25 @@ VERIFIED_COMPANY_ROLES = {
                 "experience_level": "2-4 Yrs (Mid-Level)",
                 "seniority_required": "2-5yr",
                 "compensation_range": "₹35.0L CTC (Base ₹24.0L + Stock ₹8.0L)",
-                "required_skills": ["Embedded Linux", "C++", "Device Drivers", "Kernel", "RTOS"],
-                "raw_jd": "Software Engineer II at Qualcomm. Developing kernel modules, BSPs, and peripheral drivers for next-generation mobile and IoT chipsets. Requires 2-4 years of hands-on embedded systems experience.",
+                "required_skills": ["Embedded Linux", "C++", "Device Drivers", "Kernel", "RTOS", "BSP", "ARM Architecture"],
+                "raw_jd": (
+                    "Role: Engineer II - Embedded Linux & System Software\n"
+                    "Company: Qualcomm India Private Limited\n"
+                    "Locations: Bengaluru / Chennai / Noida, India\n"
+                    "Experience Required: 2-4 Years\n\n"
+                    "Role Overview:\n"
+                    "As an Embedded Linux Software Engineer II at Qualcomm, you will architect, implement, and maintain Board Support Packages (BSPs) and Linux kernel device drivers for the next generation of Qualcomm Snapdragon mobile, compute, and automotive platforms.\n\n"
+                    "Key Responsibilities:\n"
+                    "- Develop Linux kernel drivers for camera, audio, display, power management, and high-speed communication interfaces.\n"
+                    "- Bring up new silicon chips, write bootloaders (U-Boot/ABL), and configure device tree source (DTS) definitions.\n"
+                    "- Triage and resolve kernel crashes, memory leaks, and CPU scheduling latency on multi-core ARM Cortex/Oryon architectures.\n"
+                    "- Work closely with silicon design and architecture teams to validate hardware blocks and optimize software-hardware partitioning.\n\n"
+                    "Requirements:\n"
+                    "- 2-4 years of experience in Embedded Software Engineering and Linux Kernel development.\n"
+                    "- Strong expertise in C, C++, ARM assembly, and Linux kernel internals (IPC, locking, interrupts, DMA).\n"
+                    "- Proven experience bringing up hardware platforms, device tree bindings, and peripheral bus drivers.\n"
+                    "- Strong problem-solving, oscilloscope/logic analyzer debugging, and hardware troubleshooting skills."
+                ),
                 "source": "official_portal"
             },
             {
@@ -783,8 +890,23 @@ VERIFIED_COMPANY_ROLES = {
                 "experience_level": "4+ Yrs (Senior)",
                 "seniority_required": "senior",
                 "compensation_range": "₹54.0L CTC (Base ₹35.0L + Stock ₹14.0L)",
-                "required_skills": ["Machine Learning", "ONNX", "TensorFlow", "C++", "NPU Optimization"],
-                "raw_jd": "Senior AI Systems Engineer at Qualcomm. Optimizing generative AI and LLM inference models on Qualcomm Snapdragon NPU and Hexagon DSP accelerators. Requires 4+ years in ML systems and model quantization.",
+                "required_skills": ["Machine Learning", "ONNX", "TensorFlow", "PyTorch", "C++", "NPU Optimization", "Quantization"],
+                "raw_jd": (
+                    "Role: Senior AI/ML Systems Engineer (Snapdragon Edge AI)\n"
+                    "Company: Qualcomm India Private Limited\n"
+                    "Locations: Hyderabad / Bengaluru, India\n"
+                    "Experience Required: 4+ Years\n\n"
+                    "About the Team:\n"
+                    "The Qualcomm AI Research and Edge AI Software team builds state-of-the-art inference acceleration engines for Large Language Models (LLMs), generative vision models, and transformer architectures on Qualcomm Hexagon NPU and Adreno GPU.\n\n"
+                    "Responsibilities:\n"
+                    "- Optimize deep learning models (LLaMA, Whisper, Stable Diffusion) using quantization (INT4/INT8/FP16), operator fusion, and custom hardware graph compilers.\n"
+                    "- Implement high-performance C++ inference runtimes and Qualcomm Neural Processing SDK (QNN) kernel backends.\n"
+                    "- Benchmark throughput, latency, and memory bandwidth utilization across Snapdragon mobile and edge platforms.\n\n"
+                    "Requirements:\n"
+                    "- Bachelor's or Master's/PhD in Computer Science, Electrical Engineering, or related field with 4+ years of relevant experience.\n"
+                    "- Expertise in deep learning frameworks (PyTorch, ONNX, TensorFlow) and high-performance modern C++ (C++17/20).\n"
+                    "- Hands-on knowledge of neural network quantization, pruning, graph compilers (TVM, MLIR, XLA), and SIMD/vector programming."
+                ),
                 "source": "official_portal"
             }
         ]

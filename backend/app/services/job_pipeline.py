@@ -16,6 +16,7 @@ class ParseRequest(BaseModel):
     official_apply_url: Optional[str] = None
     external_job_id: Optional[str] = None
     company_name: Optional[str] = None
+    role_title: Optional[str] = None
     use_groq: bool = False
 
 
@@ -150,6 +151,17 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
     """
     target_url = req.url.strip() if req.url else None
 
+    # Auto-fetch full JD if raw_jd is just a placeholder/stub and a real HTTP URL is provided
+    if (not req.raw_jd or len(req.raw_jd.strip()) < 350 or "[Extracted via" in req.raw_jd) and target_url and target_url.startswith("http"):
+        try:
+            from app.api.jobs import scrape_job_url
+            scraped = scrape_job_url(target_url, user_id=user_id)
+            if scraped and scraped.get("raw_jd") and len(scraped["raw_jd"]) > len(req.raw_jd or ""):
+                req.raw_jd = scraped["raw_jd"]
+                print(f"[Pipeline] Auto-fetched full JD from {target_url} ({len(req.raw_jd)} chars)")
+        except Exception as se:
+            print(f"[Pipeline] Could not auto-fetch full JD from URL {target_url}: {se}")
+
     # 1. Parse JD using best available model
     try:
         parsed_job = parse_job_description(req.raw_jd, use_groq=req.use_groq)
@@ -158,15 +170,17 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
         from app.models.job import ParsedJob
         parsed_job = ParsedJob(
             company=req.company_name or "Unknown Company",
-            role_title="Unknown Role",
+            role_title=req.role_title or "Unknown Role",
             location="India",
             remote_type="unclear",
             required_skills=[],
         )
 
-    # Override company name if explicitly provided (e.g. from deep-dive flow)
+    # Override company name and role title if explicitly provided from verified/ATS source
     if req.company_name:
         parsed_job.company = req.company_name
+    if req.role_title:
+        parsed_job.role_title = req.role_title
 
     # 2. Validate job before storing
     resolved_url = target_url or parsed_job.apply_link or ""
@@ -225,11 +239,38 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
             except Exception as update_e:
                 print(f"Failed to update last_seen_at for duplicate job: {update_e}")
 
-            existing_job = supabase.table("jobs").select("id") \
-                .eq("user_id", user_id).eq("source_type", req.source_type) \
-                .eq("company", parsed_job.company).eq(dedup_col, dedup_val).execute()
-            if existing_job.data:
-                return {"job_id": existing_job.data[0]["id"], "is_duplicate": True}
+            existing_id = None
+            try:
+                # Primary lookup matching full identity
+                primary_res = supabase.table("jobs").select("id") \
+                    .eq("user_id", user_id).eq("source_type", req.source_type) \
+                    .eq("company", parsed_job.company).eq(dedup_col, dedup_val).execute()
+                if primary_res.data:
+                    existing_id = primary_res.data[0]["id"]
+            except Exception as p_err:
+                print(f"[Pipeline] Primary duplicate lookup error: {p_err}")
+
+            # Fallback duplicate recovery without source_type constraint
+            if not existing_id:
+                try:
+                    if resolved_url:
+                        ex_res = supabase.table("jobs").select("id").eq("user_id", user_id).eq("url", resolved_url).limit(1).execute()
+                        if ex_res.data:
+                            existing_id = ex_res.data[0]["id"]
+                    if not existing_id and parsed_job.company and parsed_job.role_title:
+                        ex_res = supabase.table("jobs").select("id").eq("user_id", user_id).eq("company", parsed_job.company).eq("role_title", parsed_job.role_title).limit(1).execute()
+                        if ex_res.data:
+                            existing_id = ex_res.data[0]["id"]
+                except Exception as find_err:
+                    print(f"[Pipeline] Fallback duplicate recovery error: {find_err}")
+
+            if existing_id:
+                if not skip_analysis:
+                    if background_tasks is not None:
+                        background_tasks.add_task(_run_analysis, existing_id, user_id, parsed_job, req.raw_jd, req.use_groq)
+                    else:
+                        _run_analysis(existing_id, user_id, parsed_job, req.raw_jd, req.use_groq)
+                return {"job_id": existing_id, "is_duplicate": True}
             return {"job_id": None, "is_duplicate": True}
         raise HTTPException(status_code=400, detail=f"Failed to insert job: {err_str}")
 

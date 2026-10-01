@@ -2,7 +2,7 @@
 import { ClipboardList, Building2, Plus, Search, MapPin, XCircle, MoreVertical, LayoutGrid, List, CheckCircle2, Star, CalendarClock, Briefcase, Send, Target, Phone, X, Check, ArrowUpRight, Sparkles, BrainCircuit } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useApiClient } from '@/lib/useApiClient'
@@ -18,6 +18,8 @@ const STATUS_COLUMNS = [
 
 import { StatusDatePicker } from '@/components/ui/StatusDatePicker'
 
+const STORAGE_KEY_TRACKER = 'apply_tool_tracker_state'
+
 export default function TrackerPage() {
   const queryClient = useQueryClient()
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
@@ -25,6 +27,63 @@ export default function TrackerPage() {
   const [locationFilter, setLocationFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban')
+
+  const isHydratedRef = useRef(false)
+
+  // Hydrate on mount or popstate
+  useEffect(() => {
+    const hydrate = () => {
+      if (typeof window === 'undefined') return
+      const sp = new URLSearchParams(window.location.search)
+      const hasUrlParams = window.location.search && window.location.search.length > 1
+
+      let saved: any = null
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY_TRACKER)
+        if (raw) saved = JSON.parse(raw)
+      } catch {}
+
+      const targetView = hasUrlParams ? (sp.get('view') as any || 'kanban') : (saved?.viewMode || 'kanban')
+      const targetLoc = hasUrlParams ? (sp.get('loc') || 'all') : (saved?.locationFilter || 'all')
+      const targetQ = hasUrlParams ? (sp.get('q') || '') : (saved?.searchQuery || '')
+
+      if (['kanban', 'list'].includes(targetView)) setViewMode(targetView)
+      setLocationFilter(targetLoc)
+      setSearchQuery(targetQ)
+
+      isHydratedRef.current = true
+    }
+
+    hydrate()
+
+    const handlePopState = () => {
+      hydrate()
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Sync to URL and sessionStorage
+  useEffect(() => {
+    if (!isHydratedRef.current || typeof window === 'undefined') return
+
+    const params = new URLSearchParams()
+    if (viewMode !== 'kanban') params.set('view', viewMode)
+    if (locationFilter !== 'all') params.set('loc', locationFilter)
+    if (searchQuery.trim()) params.set('q', searchQuery.trim())
+
+    const q = params.toString()
+    const newUrl = q ? `/tracker?${q}` : '/tracker'
+    window.history.replaceState(null, '', newUrl)
+
+    try {
+      sessionStorage.setItem(STORAGE_KEY_TRACKER, JSON.stringify({
+        viewMode,
+        locationFilter,
+        searchQuery
+      }))
+    } catch {}
+  }, [viewMode, locationFilter, searchQuery])
   
   // Modal state for manual custom application
   const [isModalOpen, setIsModalOpen] = useState(false)

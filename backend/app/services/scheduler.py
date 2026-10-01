@@ -67,7 +67,7 @@ def fetch_latest_jobs_task():
                 continue
             
             new_count = 0
-            for job_data in jobs_to_process:
+            for job_data in jobs_to_process[:3]: # Cap to top 3 per ATS company to prevent 1 company flooding the pipeline
                 try:
                     p_req = ParseRequest(
                         raw_jd=job_data["raw_jd"],
