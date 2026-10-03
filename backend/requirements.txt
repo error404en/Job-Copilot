@@ -6,6 +6,7 @@ google-genai
 Pillow
 groq
 python-dotenv
+pypdf
 PyPDF2
 PyMuPDF
 beautifulsoup4

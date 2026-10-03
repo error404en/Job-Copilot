@@ -185,8 +185,8 @@ def process_pending_analyses_task():
         if not pending_jobs:
             return
 
-        from app.services.jd_parser import parse_job_description
-        from app.services.match_scorer import score_match
+        from app.services.jd_parser import parse_job_description_deterministic
+        from app.services.match_scorer import score_match_deterministic
         from app.api.profile import get_or_create_user_profile
 
         for job in pending_jobs:
@@ -207,11 +207,12 @@ def process_pending_analyses_task():
                 else:
                     resume_summaries = "Software Engineering Candidate Profile. (No specific resume uploaded yet)."
 
-                parsed_job = parse_job_description(job["raw_jd"], use_groq=False)
+                # Deterministic high-speed background engine: 0 cloud LLM tokens consumed
+                parsed_job = parse_job_description_deterministic(job["raw_jd"])
                 if not parsed_job.company:
                     parsed_job.company = job["company"]
 
-                fit_report = score_match(parsed_job, user_profile, resume_summaries, use_groq=False)
+                fit_report = score_match_deterministic(parsed_job, user_profile, resume_summaries)
                 
                 best_resume_id = resumes_resp.data[0]["id"] if resumes_resp.data else None
                 role_lower = parsed_job.role_title.lower()
@@ -256,6 +257,7 @@ def process_pending_analyses_task():
                     "seniority_required": parsed_job.seniority_required,
                     "required_skills": parsed_job.required_skills
                 }).eq("id", job_id).execute()
+                time.sleep(0.2)
             except Exception as e:
                 print(f"[Scheduler] Analysis failed for job {job_id}: {e}")
                 supabase.table("jobs").update({"analysis_status": "failed"}).eq("id", job_id).execute()

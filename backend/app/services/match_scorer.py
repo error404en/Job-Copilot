@@ -247,7 +247,7 @@ def score_match(parsed_job: ParsedJob, user_profile: dict, resume_summary: str, 
     - Remote OK: {user_profile.get("remote_ok", True)}
     - Pay Floor: ₹{pay_floor} INR
     - Target Roles: {target_roles}
-    - Resume Summary: {resume_summary}
+    - Resume Summary: {resume_summary[:1500]}
 
     JOB POSTING:
     - Role: {parsed_job.role_title} ({parsed_job.company})
@@ -256,7 +256,7 @@ def score_match(parsed_job: ParsedJob, user_profile: dict, resume_summary: str, 
     - Required Degree: {parsed_job.degree_required}
     - Domain: {parsed_job.domain_category}
     - Pay: {parsed_job.pay_min} to {parsed_job.pay_max} {parsed_job.pay_currency} ({parsed_job.pay_confidence})
-    - Required Skills: {parsed_job.required_skills}
+    - Required Skills: {parsed_job.required_skills[:12]}
 
     STRICT DISQUALIFICATION RULES:
     1. If the job requires 3+ years experience, Senior, Staff, Principal, or Manager, verdict MUST be 'skip' and match_score <= 35.

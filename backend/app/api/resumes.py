@@ -169,7 +169,11 @@ def upload_resume(request: Request, file: UploadFile = File(...), user_id: str =
     raw_text = ""
     MAX_PAGES = 15
     try:
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+        try:
+            import pypdf
+            pdf_reader = pypdf.PdfReader(io.BytesIO(content))
+        except ImportError:
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
         for i, page in enumerate(pdf_reader.pages):
             if i >= MAX_PAGES:
                 break
@@ -180,8 +184,11 @@ def upload_resume(request: Request, file: UploadFile = File(...), user_id: str =
     if not raw_text.strip():
         # Fallback: PyMuPDF handles scanned/complex PDFs better
         try:
-            import fitz  # PyMuPDF
-            with fitz.open(stream=content, filetype="pdf") as doc:
+            try:
+                import pymupdf
+            except ImportError:
+                import fitz as pymupdf
+            with pymupdf.open(stream=content, filetype="pdf") as doc:
                 for i, page in enumerate(doc):
                     if i >= MAX_PAGES:
                         break

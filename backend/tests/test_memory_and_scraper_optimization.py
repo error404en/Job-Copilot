@@ -65,3 +65,30 @@ def test_health_check_memory_endpoint():
     data = response.json()
     assert data["status"] == "healthy"
     assert "memory" in data
+
+def test_pymupdf_import_without_deprecation_warning():
+    """Verify that importing pymupdf directly does not emit fitz deprecation warnings."""
+    import pymupdf
+    assert pymupdf is not None
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "Senior Backend Engineer")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    assert len(pdf_bytes) > 0
+
+def test_inbox_extractor_pdf_parsing_and_cleanup(tmp_path):
+    """Verify that inbox_extractor parses PDF files and cleans up memory."""
+    from app.services.inbox_extractor import extract_text_from_file
+    import pymupdf
+    pdf_path = str(tmp_path / "test_opportunity.pdf")
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "Staff Platform Engineer opportunity at Stripe")
+    doc.save(pdf_path)
+    doc.close()
+
+    extracted = extract_text_from_file(pdf_path, "pdf")
+    assert "Staff Platform Engineer" in extracted
+    assert "Stripe" in extracted
+

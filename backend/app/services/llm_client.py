@@ -23,31 +23,77 @@ if GEMINI_API_KEY:
 # on any error (rate limit, 404, network, etc).
 # ---------------------------------------------------------------------------
 
+import hashlib
+import time
+from collections import OrderedDict
+
+# ---------------------------------------------------------------------------
+# In-memory prompt cache: SHA256(prompt) -> (timestamp, response_str)
+# Caches identical analyses for 2 hours, saving 100% of tokens on re-runs.
+# ---------------------------------------------------------------------------
+_LLM_CACHE: OrderedDict[str, tuple] = OrderedDict()
+_LLM_CACHE_TTL = 7200  # 2 hours
+_LLM_CACHE_MAX_SIZE = 500
+
+def _get_from_cache(prompt: str) -> Optional[str]:
+    key = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if key in _LLM_CACHE:
+        ts, val = _LLM_CACHE[key]
+        if time.time() - ts < _LLM_CACHE_TTL:
+            _LLM_CACHE.move_to_end(key)
+            return val
+        else:
+            del _LLM_CACHE[key]
+    return None
+
+def _put_in_cache(prompt: str, val: str):
+    if not val:
+        return
+    key = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if len(_LLM_CACHE) >= _LLM_CACHE_MAX_SIZE:
+        _LLM_CACHE.popitem(last=False)
+    _LLM_CACHE[key] = (time.time(), val)
+
+# Circuit breakers: pause calls to exhausted providers instead of cascading failures
+_gemini_exhausted_until = 0.0
+_groq_exhausted_until = 0.0
+
+def _is_rate_limit_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(term in msg for term in [
+        "429", "resource_exhausted", "quota", "rate limit", 
+        "tokens per day", "tpd", "too many requests"
+    ])
+
+# ---------------------------------------------------------------------------
+# Fallback model chains — High-quota production tier
+# ---------------------------------------------------------------------------
+
 GEMINI_TEXT_MODELS = [
-    GEMINI_MODEL,           # gemini-2.5-flash (default, from settings)
-    "gemini-3.6-flash",     # next-gen stable
-    "gemini-flash-latest",  # always latest active flash
-    "gemini-2.5-flash-lite",# high quota lightweight fallback
+    GEMINI_MODEL,              # gemini-3.5-flash
+    "gemini-3.5-flash-lite",   # high-speed, lightweight
+    "gemini-3.1-flash-lite",   # fast reliable fallback
+    "gemma-4-26b-a4b-it",      # open weights instruction model
+    "gemini-2.5-flash",        # standard flash
 ]
 
 GEMINI_JSON_MODELS = [
-    GEMINI_MODEL,
-    "gemini-3.6-flash",
-    "gemini-flash-latest",
-    "gemini-2.5-flash-lite",
+    GEMINI_MODEL,              # gemini-3.5-flash
+    "gemini-3.5-flash-lite",   # verified JSON mode
+    "gemini-3.1-flash-lite",   # verified JSON mode
+    "gemini-2.5-flash",        # standard flash
 ]
 
 GEMINI_VISION_MODELS = [
-    GEMINI_VISION_MODEL,    # gemini-2.5-flash (default, from settings)
-    "gemini-2.5-flash-image",
-    "gemini-3.1-flash-image",
+    GEMINI_VISION_MODEL,       # gemini-3.5-flash
+    "gemini-3.5-flash-lite",
 ]
 
 GROQ_MODELS = [
-    GROQ_MODEL,             # Default from settings
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "qwen/qwen3.8-27b",
+    GROQ_MODEL,                # qwen/qwen3.8-27b
+    "openai/gpt-oss-20b",      # fast, high quota
+    "allam-2-7b",
+    "openai/gpt-oss-120b",      # 120b fallback (200k TPD)
 ]
 
 
@@ -124,7 +170,10 @@ def _ollama_json(prompt: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _try_gemini_text(prompt: str) -> Optional[str]:
+    global _gemini_exhausted_until
     if not gemini_client:
+        return None
+    if time.time() < _gemini_exhausted_until:
         return None
     for model in GEMINI_TEXT_MODELS:
         try:
@@ -134,10 +183,17 @@ def _try_gemini_text(prompt: str) -> Optional[str]:
             return result
         except Exception as e:
             print(f"[LLM] Gemini text {model} failed: {e}")
+            if _is_rate_limit_error(e):
+                _gemini_exhausted_until = time.time() + 300  # 5m backoff
+                print("[LLM] Gemini quota reached. Circuit breaker engaged for 5m.")
+                break
     return None
 
 def _try_gemini_json(prompt: str) -> Optional[str]:
+    global _gemini_exhausted_until
     if not gemini_client:
+        return None
+    if time.time() < _gemini_exhausted_until:
         return None
     for model in GEMINI_JSON_MODELS:
         try:
@@ -147,9 +203,25 @@ def _try_gemini_json(prompt: str) -> Optional[str]:
             return result
         except Exception as e:
             print(f"[LLM] Gemini JSON {model} failed: {e}")
+            if _is_rate_limit_error(e):
+                _gemini_exhausted_until = time.time() + 300  # 5m backoff
+                print("[LLM] Gemini quota reached. Circuit breaker engaged for 5m.")
+                break
     return None
 
 AVAILABLE_GROQ_MODELS = None
+
+def _groq_model_priority(model_id: str) -> int:
+    id_lower = model_id.lower()
+    if "qwen3.8-27b" in id_lower:
+        return 0  # Highest priority: smart, fast, generous quota
+    if "gpt-oss-20b" in id_lower and "safeguard" not in id_lower:
+        return 1  # Second: 20b efficient model
+    if "allam" in id_lower:
+        return 2
+    if "gpt-oss-120b" in id_lower:
+        return 3  # Lower priority because 200k daily token limit exhausts quickly
+    return 4
 
 def _get_groq_models():
     global AVAILABLE_GROQ_MODELS
@@ -159,14 +231,14 @@ def _get_groq_models():
             valid_models = []
             for m in res.data:
                 id = m.id.lower()
-                # Exclude audio, vision, guardrails, and experimental non-chat models
-                if any(x in id for x in ["whisper", "guard", "vision", "canopy", "allam"]):
+                # Exclude audio, vision, guardrails
+                if any(x in id for x in ["whisper", "guard", "vision", "canopy"]):
                     continue
                 # Include only known high-quality LLM families
-                if any(x in id for x in ["llama", "qwen", "mixtral", "gemma", "gpt-oss"]):
+                if any(x in id for x in ["qwen", "gpt-oss", "allam", "llama"]):
                     valid_models.append(m.id)
-            # Sort to put larger/better models first (e.g. 70b over 8b)
-            valid_models.sort(key=lambda x: "70b" in x or "32768" in x, reverse=True)
+            # Sort by priority so qwen and 20b come before 120b
+            valid_models.sort(key=_groq_model_priority)
             AVAILABLE_GROQ_MODELS = valid_models
         except Exception as e:
             print(f"[LLM] Failed to fetch dynamic Groq models: {e}")
@@ -174,8 +246,13 @@ def _get_groq_models():
     return AVAILABLE_GROQ_MODELS
 
 def _try_groq_text(prompt: str) -> Optional[str]:
+    global _groq_exhausted_until
     if not groq_client:
         return None
+    if time.time() < _groq_exhausted_until:
+        return None
+        
+    safe_prompt = prompt if len(prompt) <= 12000 else prompt[:12000] + "\n[Content truncated for token safety]"
         
     models_to_try = [GROQ_MODEL] + _get_groq_models()
     seen = set()
@@ -187,17 +264,26 @@ def _try_groq_text(prompt: str) -> Optional[str]:
             
     for model in models[:4]:
         try:
-            result = _groq_text(model, prompt)
+            result = _groq_text(model, safe_prompt)
             if model != GROQ_MODEL:
                 print(f"[LLM] Groq text fallback used: {model}")
             return result
         except Exception as e:
             print(f"[LLM] Groq text {model} failed: {e}")
+            if "tokens per day" in str(e).lower() or "tpd" in str(e).lower():
+                _groq_exhausted_until = time.time() + 600
+                print("[LLM] Groq daily token limit reached. Circuit breaker engaged for 10m.")
+                break
     return None
 
 def _try_groq_json(prompt: str) -> Optional[str]:
+    global _groq_exhausted_until
     if not groq_client:
         return None
+    if time.time() < _groq_exhausted_until:
+        return None
+        
+    safe_prompt = prompt if len(prompt) <= 12000 else prompt[:12000] + "\n[Content truncated for token safety]"
         
     models_to_try = [GROQ_MODEL] + _get_groq_models()
     seen = set()
@@ -209,12 +295,16 @@ def _try_groq_json(prompt: str) -> Optional[str]:
             
     for model in models[:4]:
         try:
-            result = _groq_json(model, prompt)
+            result = _groq_json(model, safe_prompt)
             if model != GROQ_MODEL:
                 print(f"[LLM] Groq JSON fallback used: {model}")
             return result
         except Exception as e:
             print(f"[LLM] Groq JSON {model} failed: {e}")
+            if "tokens per day" in str(e).lower() or "tpd" in str(e).lower():
+                _groq_exhausted_until = time.time() + 600
+                print("[LLM] Groq daily token limit reached. Circuit breaker engaged for 10m.")
+                break
     return None
 
 def _try_ollama_text(prompt: str) -> Optional[str]:
@@ -249,6 +339,10 @@ def get_completion(prompt: str, use_groq: bool = False) -> str:
     Default: Gemini chain -> Groq chain -> Local Ollama.
     use_groq=True: Groq chain -> Gemini chain -> Local Ollama.
     """
+    cached = _get_from_cache(prompt)
+    if cached is not None:
+        return cached
+
     result = None
     if use_groq:
         result = _try_groq_text(prompt)
@@ -266,6 +360,7 @@ def get_completion(prompt: str, use_groq: bool = False) -> str:
         result = _try_ollama_text(prompt)
 
     if result is not None:
+        _put_in_cache(prompt, result)
         return result
     raise RuntimeError(
         "All LLM providers exhausted (Gemini + Groq + Local Ollama). "
@@ -279,16 +374,20 @@ def generate_tailoring_text(prompt: str) -> str:
     Used for complex reasoning tasks like cover letter generation or bullet point tailoring.
     Prioritizes the best available Groq open-source model for efficiency and quality.
     """
-    if groq_client:
+    global _groq_exhausted_until
+    if groq_client and time.time() >= _groq_exhausted_until:
         models = _get_groq_models()
         target_model = GROQ_TAILORING_MODEL if GROQ_TAILORING_MODEL in models else (models[0] if models else "llama-3.3-70b-versatile")
         
         try:
             print(f"[LLM] Attempting tailored generation with {target_model}...")
-            result = _groq_text(target_model, prompt)
+            safe_prompt = prompt if len(prompt) <= 12000 else prompt[:12000] + "\n[Content truncated for token safety]"
+            result = _groq_text(target_model, safe_prompt)
             return result
         except Exception as e:
             print(f"[LLM] Tailoring model {target_model} failed: {e}. Falling back to standard waterfall.")
+            if "tokens per day" in str(e).lower() or "tpd" in str(e).lower():
+                _groq_exhausted_until = time.time() + 600
             
     # 2. Fallback: Standard Waterfall (Gemini -> Groq fallback -> Ollama)
     return _try_gemini_text(prompt) or _try_groq_text(prompt) or _try_ollama_text(prompt) or ""
@@ -298,8 +397,10 @@ def generate_tailoring_text_stream(prompt: str):
     Generator for streaming conversational coaching and writing tasks.
     Streams via Groq primary model, falls back to Groq secondary, then Gemini Flash streaming, and finally blocking waterfall.
     """
+    global _groq_exhausted_until, _gemini_exhausted_until
     # 1. Primary & Secondary Groq Streaming
-    if groq_client:
+    if groq_client and time.time() >= _groq_exhausted_until:
+        safe_prompt = prompt if len(prompt) <= 12000 else prompt[:12000] + "\n[Content truncated for token safety]"
         groq_stream_models = [GROQ_TAILORING_MODEL] + _get_groq_models()[:3]
         seen_models = set()
         for m in groq_stream_models:
@@ -309,7 +410,7 @@ def generate_tailoring_text_stream(prompt: str):
             try:
                 print(f"[LLM] Attempting tailored streaming generation with {m}...")
                 response = groq_client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[{"role": "user", "content": safe_prompt}],
                     model=m,
                     temperature=0.7,
                     stream=True
@@ -323,9 +424,12 @@ def generate_tailoring_text_stream(prompt: str):
                     return
             except Exception as e:
                 print(f"[LLM] Groq streaming with {m} failed: {e}")
+                if "tokens per day" in str(e).lower() or "tpd" in str(e).lower():
+                    _groq_exhausted_until = time.time() + 600
+                    break
 
     # 2. Gemini Flash Streaming Fallback
-    if gemini_client:
+    if gemini_client and time.time() >= _gemini_exhausted_until:
         for gm in GEMINI_TEXT_MODELS:
             try:
                 print(f"[LLM] Attempting Gemini streaming generation with {gm}...")
@@ -342,6 +446,9 @@ def generate_tailoring_text_stream(prompt: str):
                     return
             except Exception as e:
                 print(f"[LLM] Gemini streaming with {gm} failed: {e}")
+                if _is_rate_limit_error(e):
+                    _gemini_exhausted_until = time.time() + 300
+                    break
 
     # 3. Final blocking fallback
     print("[LLM] Streaming fallbacks exhausted, falling back to blocking waterfall.")
@@ -362,6 +469,14 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = Fal
         f"Do NOT wrap it in markdown block quotes (no ```json ... ```). "
         f"Schema:\n{schema_class.model_json_schema()}"
     )
+
+    cached_json = _get_from_cache(full_prompt)
+    if cached_json is not None:
+        try:
+            data = json.loads(cached_json.strip())
+            return schema_class(**data)
+        except Exception:
+            pass
 
     raw_json: Optional[str] = None
 
@@ -400,6 +515,7 @@ def generate_structured(prompt: str, schema_class: Type[T], use_groq: bool = Fal
 
     try:
         data = json.loads(raw_json.strip())
+        _put_in_cache(full_prompt, raw_json)
         return schema_class(**data)
     except Exception as e:
         print(f"[LLM] JSON parse error.\nRaw output:\n{raw_json}")
@@ -501,13 +617,19 @@ def extract_jobs_from_page(page_text: str, company_name: str, keywords: list = N
     # Primary: Gemini with native JSON mode (supports array root)
     raw: Optional[str] = _try_gemini_json(prompt)
 
-    # Fallback: Groq text mode (parse JSON manually from text response)
+    # Fallback 1: Groq text mode (parse JSON manually from text response)
     if raw is None and groq_client:
         print(f"[LLM] Gemini failed for extract_jobs_from_page({company_name}), trying Groq text.")
         raw = _try_groq_text(prompt)
 
+    # Fallback 2: Local Ollama text mode
+    if raw is None and ollama_client:
+        print(f"[LLM] Groq failed for extract_jobs_from_page({company_name}), trying Ollama text.")
+        raw = _try_ollama_text(prompt)
+
     if raw is None:
-        raise RuntimeError(f"All LLM models failed to extract jobs for {company_name}. Please check API keys and rate limits.")
+        print(f"[LLM] All LLM models failed to extract jobs for {company_name}. Returning empty list.")
+        return []
 
     try:
         raw = raw.strip()
@@ -527,5 +649,6 @@ def extract_jobs_from_page(page_text: str, company_name: str, keywords: list = N
                     return val
         return []
     except Exception as e:
-        raise RuntimeError(f"extract_jobs_from_page parse failed for {company_name}: {e}")
+        print(f"[LLM] extract_jobs_from_page parse failed for {company_name}: {e}")
+        return []
 

@@ -1,9 +1,11 @@
 import re
+import urllib.parse
+import concurrent.futures
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from app.services.search_manager import perform_resilient_search
-from app.services.company_researcher import research_company
+from app.services.company_researcher import research_company, _get_startup_fallback_intelligence
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, scrape_careers_page
 from app.middleware.auth import get_current_user
 from app.models.discovery import ATSInfo, ATSSystem, CareersDiscoveryResult
@@ -119,6 +121,15 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
                 if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
                     careers_url = href
                     break
+            # Fallback for startups whose root domain was returned (e.g. https://aggroso.com)
+            if not careers_url and results:
+                for r in results:
+                    href = r.get("href", "")
+                    if href and not any(bad in href for bad in ["linkedin.", "facebook.", "twitter.", "wikipedia.", "instagram.", "crunchbase.", "glassdoor."]):
+                        p = urllib.parse.urlparse(href)
+                        if p.netloc:
+                            careers_url = f"{p.scheme}://{p.netloc}/careers"
+                            break
         except Exception as e:
             print(f"Careers URL discovery failed: {e}")
         
@@ -178,12 +189,14 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
         
     return CareersDiscoveryResult(careers_url=url)
 
-@router.post("/company")
-def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_user)):
+def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[str]) -> tuple:
+    """
+    Subroutine for job and ATS discovery. Designed to run concurrently with company research.
+    """
     from app.services.job_fetcher import VERIFIED_COMPANY_ROLES, parse_experience_requirements
 
-    norm = req.company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
-    keywords = [k.strip() for k in req.target_keywords.split(",")] if req.target_keywords else None
+    norm = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
+    keywords = [k.strip() for k in target_keywords.split(",")] if target_keywords else None
 
     # 1. Check if curated company — instant response
     is_curated = any(key in norm or norm in key for key in VERIFIED_COMPANY_ROLES.keys())
@@ -193,42 +206,35 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
     ats_info = None
 
     if is_curated:
-        print(f"[DeepDive] Curated enterprise company detected for {req.company_name}, skipping slow ATS search")
-        from app.services.job_fetcher import scrape_careers_page
-        result = scrape_careers_page(req.company_name, keywords)
+        print(f"[DeepDive] Curated enterprise company detected for {company_name}, skipping slow ATS search")
+        result = scrape_careers_page(company_name, keywords)
         discovered_jobs = result.get("jobs", [])
         careers_url = result.get("careers_url")
-        # Attach known ATS info if available (e.g. Stripe -> Greenhouse, Eternal -> SmartRecruiters)
-        known = discover_careers_url_and_ats(req.company_name)
+        known = discover_careers_url_and_ats(company_name)
         if known and known.ats_info:
             ats_info = known.ats_info
     else:
         # 1. Discover Official Careers URL and ATS
-        discovery = discover_careers_url_and_ats(req.company_name)
+        discovery = discover_careers_url_and_ats(company_name)
         careers_url = discovery.careers_url
         ats_info = discovery.ats_info
         print(f"[DeepDive] Detected ATS: {ats_info.system.value if ats_info else None}, token: {ats_info.token if ats_info else None}")
         
-        # If the careers_url itself isn't an ATS link, we might want to do a deeper check, but the user explicitly requested this exact flow.
-        # Fallback: if discovery didn't find the direct ATS link because it's a vanity url, we can check a direct DDG search for the ATS just in case
         if not ats_info:
             try:
-                norm_c = re.sub(r'[^a-zA-Z0-9]', '', req.company_name.lower())
-                query = f"{req.company_name} greenhouse lever ashby smartrecruiters workday jobs"
-                results = perform_resilient_search(query, max_results=5)
+                norm_c = re.sub(r'[^a-zA-Z0-9]', '', company_name.lower())
+                query = f"{company_name} greenhouse lever ashby smartrecruiters workday jobs"
+                results = perform_resilient_search(query, max_results=4)
                 for r in results:
                     u = r.get("href", "")
-                    cand_disc = discover_careers_url_and_ats(req.company_name, u)
+                    cand_disc = discover_careers_url_and_ats(company_name, u)
                     if cand_disc.ats_info:
                         cand_tok = re.sub(r'[^a-zA-Z0-9]', '', cand_disc.ats_info.token.lower())
-                        # Token MUST match company name (prevents random hijack like upshop/altisource)
                         if norm_c in cand_tok or cand_tok in norm_c:
                             ats_info = cand_disc.ats_info
                             careers_url = u
-                            print(f"[DeepDive] Validated ATS match: {ats_info.system.value} ({ats_info.token}) for {req.company_name}")
+                            print(f"[DeepDive] Validated ATS match: {ats_info.system.value} ({ats_info.token}) for {company_name}")
                             break
-                        else:
-                            print(f"[DeepDive] Rejected false ATS token '{cand_disc.ats_info.token}' for company '{req.company_name}'")
             except Exception as e:
                 print(f"[DeepDive] Fallback ATS search failed: {e}")
 
@@ -247,28 +253,55 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
                 elif system == "workday":
                     from app.services.job_fetcher import fetch_workday_jobs
                     discovered_jobs = fetch_workday_jobs(token, keywords)
-
-                # Two-Stage Relevance happens in `scheduler.py` via `pending` state, but for older fetchers we still infer experience metadata here if missing.
-                for j in discovered_jobs:
-                    if "experience_level" not in j:
-                        meta = parse_experience_requirements(j.get("role_title", ""), j.get("raw_jd", ""))
-                        exp_min = meta.get("experience_min_years", 0)
-                        j["experience_level"] = "0-2 Yrs" if exp_min <= 2 else "2-5 Yrs" if exp_min < 5 else "5+ Yrs"
-                        j["seniority_required"] = meta.get("seniority", "Unknown")
             except Exception as e:
                 print(f"Failed to fetch jobs from discovered ATS {system} for {token}: {e}")
 
         # Tier 3: If no ATS found OR ATS returned 0 jobs -> Generic Playwright Fallback on careers URL
         if not discovered_jobs and careers_url:
-            print(f"[DeepDive] No ATS or 0 ATS jobs found for {req.company_name}. Using Playwright fallback on {careers_url}")
+            print(f"[DeepDive] No ATS or 0 ATS jobs found for {company_name}. Using Playwright fallback on {careers_url}")
             from app.services.job_fetcher import fetch_generic_fallback
             try:
-                discovered_jobs = fetch_generic_fallback(careers_url, req.company_name, keywords)
+                discovered_jobs = fetch_generic_fallback(careers_url, company_name, keywords)
             except Exception as pf_e:
                 print(f"[DeepDive] Generic Playwright fallback failed: {pf_e}")
-        elif not discovered_jobs and not careers_url:
-            print(f"[DeepDive] Could not discover careers URL for {req.company_name}")
-                
+
+        # Tier 4: Startup Job Board Search Fallback (Wellfound, Instahyre, etc.)
+        if not discovered_jobs:
+            try:
+                startup_board_query = f'site:wellfound.com OR site:instahyre.com "{company_name}" ("Software" OR "Engineer" OR "Developer" OR "Intern")'
+                board_results = perform_resilient_search(startup_board_query, max_results=3)
+                for br in board_results:
+                    b_title = br.get("title", "")
+                    b_href = br.get("href", "")
+                    b_body = br.get("body", "")
+                    if b_href and b_title:
+                        cleaned_title = b_title.split(" - ")[0].split(" | ")[0].split(" at ")[0].strip()
+                        if len(cleaned_title) > 65:
+                            cleaned_title = cleaned_title[:65]
+                        discovered_jobs.append({
+                            "source_type": "startup_board",
+                            "source_confidence": 0.8,
+                            "company": company_name,
+                            "role_title": cleaned_title,
+                            "url": b_href,
+                            "official_apply_url": b_href,
+                            "location": "India / Remote",
+                            "seniority_required": "0-2 Yrs",
+                            "raw_jd": f"{cleaned_title}\nCompany: {company_name}\nLocation: India / Remote\n{b_body}"
+                        })
+            except Exception as b_err:
+                print(f"[DeepDive] Startup board search fallback failed: {b_err}")
+
+    # Universal metadata enrichment across all tiers (ATS, generic fallback, startup boards)
+    for j in discovered_jobs:
+        if not j.get("experience_level") or not j.get("seniority_required"):
+            meta = parse_experience_requirements(j.get("role_title", ""), j.get("raw_jd", ""))
+            exp_min = meta.get("experience_min_years", 0)
+            if not j.get("experience_level"):
+                j["experience_level"] = "0-2 Yrs" if exp_min <= 2 else "2-5 Yrs" if exp_min < 5 else "5+ Yrs"
+            if not j.get("seniority_required"):
+                j["seniority_required"] = meta.get("seniority", "Unknown")
+
     # Filter out any invalid jobs or false links
     from app.services.job_validator import is_valid_job_posting
     valid_discovered = []
@@ -276,22 +309,53 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
         valid, _ = is_valid_job_posting(
             role_title=j.get("role_title", ""),
             url=j.get("url") or careers_url or "",
-            company_name=req.company_name,
+            company_name=company_name,
             raw_jd=j.get("raw_jd", "")
         )
         if valid:
             valid_discovered.append(j)
-    discovered_jobs = valid_discovered
 
-    # 2. Company Intelligence (runs fast with benchmark fallback, but searches might take time)
-    # By running this AFTER job fetching, we prioritize the ATS extraction which is more important.
-    company_info = research_company(req.company_name)
-            
+    return valid_discovered, careers_url, ats_info
+
+
+@router.post("/company")
+def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_user)):
+    """
+    Executes ATS/job discovery and company intelligence in parallel with safe timeouts.
+    Never fails or throws 500 on small startups.
+    """
+    discovered_jobs = []
+    careers_url = None
+    ats_info = None
+    company_info = None
+
+    # Execute ATS/Jobs Discovery and Company Intelligence concurrently
+    # This prevents Vercel 10-15s proxy timeout by cutting latency in half!
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_jobs = executor.submit(_discover_company_jobs_and_ats, req.company_name, req.target_keywords)
+        future_info = executor.submit(research_company, req.company_name)
+
+        try:
+            discovered_jobs, careers_url, ats_info = future_jobs.result(timeout=14)
+        except Exception as e:
+            print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {e}")
+            discovered_jobs, careers_url, ats_info = [], None, None
+
+        try:
+            company_info = future_info.result(timeout=14)
+        except Exception as e:
+            print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {e}")
+            company_info = _get_startup_fallback_intelligence(req.company_name)
+
+    if not company_info:
+        company_info = _get_startup_fallback_intelligence(req.company_name)
+
+    norm_c = req.company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
     return {
         "company_info": company_info,
         "ats_info": ats_info.model_dump() if ats_info else None,
-        "careers_url": careers_url,
-        "jobs": discovered_jobs
+        "careers_url": careers_url or f"https://www.{norm_c}.com",
+        "jobs": discovered_jobs or []
     }
 
 @router.post("/discover-ats")

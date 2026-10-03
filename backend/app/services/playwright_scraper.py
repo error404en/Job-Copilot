@@ -2,6 +2,7 @@ import gc
 import os
 import re
 import time
+import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 from app.utils.security import validate_safe_url
@@ -45,6 +46,16 @@ def _scrape_fast_http(url: str) -> str:
                     s_text = script.get_text()
                     if "JobPosting" in s_text or "title" in s_text:
                         structured_parts.append(s_text.strip())
+                except Exception:
+                    pass
+
+            # Preserve anchor links with absolute URLs so direct apply links are preserved
+            for a in soup.find_all("a", href=True):
+                try:
+                    href = a.get("href", "").strip()
+                    if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                        full_href = urllib.parse.urljoin(url, href)
+                        a.append(f" ({full_href}) ")
                 except Exception:
                     pass
 
@@ -150,7 +161,22 @@ def scrape_dynamic_page(url: str) -> str:
                 print(f"[Playwright] DOM load timeout on {url}: {nav_e}")
 
             time.sleep(1.5)
-            extracted = page.evaluate("document.body.innerText")
+            extracted = page.evaluate("""
+                () => {
+                    try {
+                        const clone = document.body.cloneNode(true);
+                        clone.querySelectorAll('a[href]').forEach(a => {
+                            const href = a.getAttribute('href');
+                            if (href && !href.startsWith('#') && !href.startsWith('javascript:') && !href.startsWith('mailto:')) {
+                                a.textContent += ' (' + a.href + ') ';
+                            }
+                        });
+                        return clone.innerText;
+                    } catch (e) {
+                        return document.body.innerText;
+                    }
+                }
+            """)
             if extracted and len(extracted.strip()) > len(text_content):
                 text_content = extracted.strip()
 

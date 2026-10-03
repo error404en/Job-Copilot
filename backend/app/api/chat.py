@@ -12,9 +12,12 @@ from app.utils.security import safe_read_file, validate_image_content, validate_
 from app.middleware.rate_limit import limiter
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf
 except ImportError:
-    fitz = None
+    try:
+        import fitz as pymupdf
+    except ImportError:
+        pymupdf = None
 
 router = APIRouter()
 
@@ -203,19 +206,36 @@ def send_message(
                         validate_pdf_content(file_bytes)
                         extracted = ""
                         MAX_PAGES = 10
-                        if fitz is not None:
-                            pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
-                            for i, page in enumerate(pdf_doc):
-                                if i >= MAX_PAGES:
-                                    break
-                                extracted += page.get_text() + "\n"
-                        else:
-                            import PyPDF2
-                            reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+
+                        # 1. Prefer lightweight pure-Python parser first (<10MB RAM, no native leaks)
+                        try:
+                            try:
+                                import pypdf
+                                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                            except ImportError:
+                                import PyPDF2
+                                reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
                             for i, page in enumerate(reader.pages):
                                 if i >= MAX_PAGES:
                                     break
-                                extracted += (page.extract_text() or "") + "\n"
+                                page_text = page.extract_text()
+                                if page_text:
+                                    extracted += page_text + "\n"
+                        except Exception:
+                            extracted = ""
+
+                        # 2. Fallback to PyMuPDF only if pure-Python failed or found no text
+                        if not extracted.strip() and pymupdf is not None:
+                            with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf_doc:
+                                for i, page in enumerate(pdf_doc):
+                                    if i >= MAX_PAGES:
+                                        break
+                                    extracted += page.get_text() + "\n"
+
+                        # 3. Explicitly collect garbage to free C buffers in low-memory containers
+                        import gc
+                        gc.collect()
+
                         attachment_text += f"\n[User Attached PDF ({safe_fname}). Extracted Text:]\n{extracted}\n"
                     except Exception as e:
                         raise HTTPException(status_code=400, detail=f"Failed to process PDF {safe_fname}: {e}")

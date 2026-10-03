@@ -43,3 +43,73 @@ def test_deep_dive_instant_curated_roles():
         for j in res["jobs"]:
             assert "role_title" in j
             assert "url" in j
+
+def test_startup_research_resilience():
+    """Verify that unknown/small startups gracefully return complete intelligence without crashing."""
+    startup_info = research_company("nonexistent_tiny_stealth_startup_123")
+    assert "work_culture" in startup_info
+    assert "work_life_balance" in startup_info
+    assert "perks" in startup_info
+    assert "compensation_estimates" in startup_info
+    assert "bonds_or_contracts" in startup_info
+    assert startup_info["overall_sentiment"] is not None
+
+def test_extract_direct_html_jobs_and_filtering():
+    """Verify that direct DOM extraction parses all published roles (tech, intern, business) without artificial drops."""
+    from app.services.job_fetcher import extract_direct_html_jobs, fetch_generic_fallback
+    from unittest.mock import patch, MagicMock
+
+    mock_html = """
+    <html>
+      <body>
+        <a class="vacancy-card" href="/careers/full-stack-developer">
+          <h3>Full Stack Developer</h3>
+          <span>Remote-first</span><span>Full-time</span>
+        </a>
+        <a class="vacancy-card" href="/careers/full-stack-intern">
+          <h3>Full Stack Intern</h3>
+          <span>Remote-first</span><span>Internship</span>
+        </a>
+        <a class="vacancy-card" href="/careers/business-development-executive">
+          <h3>Business Development Executive</h3>
+          <span>Remote-first</span><span>Full-time</span>
+        </a>
+        <a class="vacancy-card" href="/careers/business-development-intern">
+          <h3>Business Development Intern</h3>
+          <span>Remote-first</span><span>Internship</span>
+        </a>
+      </body>
+    </html>
+    """
+    jobs = extract_direct_html_jobs(mock_html, "https://aggroso.com/careers")
+    assert len(jobs) == 4
+    titles = [j["role_title"] for j in jobs]
+    assert "Full Stack Developer" in titles
+    assert "Full Stack Intern" in titles
+    assert "Business Development Executive" in titles
+    assert "Business Development Intern" in titles
+    assert all(j["url"].startswith("https://aggroso.com/careers/") for j in jobs)
+
+    # Test fetch_generic_fallback with mock HTTP response
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = mock_html
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = None
+
+    with patch("requests.get", return_value=mock_resp):
+        # 1. No target_keywords -> returns all 4 roles
+        all_jobs = fetch_generic_fallback("https://aggroso.com/careers", "aggroso", target_keywords=None)
+        assert len(all_jobs) == 4
+        all_titles = [j["role_title"] for j in all_jobs]
+        assert "Business Development Executive" in all_titles
+        assert "Full Stack Intern" in all_titles
+
+        # 2. Explicit keywords -> correctly filters
+        intern_jobs = fetch_generic_fallback("https://aggroso.com/careers", "aggroso", target_keywords=["intern"])
+        assert len(intern_jobs) == 2
+        intern_titles = [j["role_title"] for j in intern_jobs]
+        assert "Full Stack Intern" in intern_titles
+        assert "Business Development Intern" in intern_titles
+
+

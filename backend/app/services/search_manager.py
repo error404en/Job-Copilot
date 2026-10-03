@@ -1,6 +1,12 @@
 import json
 from typing import List, Dict, Optional
-from ddgs import DDGS
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        DDGS = None
 from app.services.llm_client import gemini_client, GEMINI_MODEL
 
 def gemini_web_search(query: str, max_results: int = 3) -> List[Dict[str, str]]:
@@ -33,7 +39,9 @@ def gemini_web_search(query: str, max_results: int = 3) -> List[Dict[str, str]]:
                 temperature=0.0
             )
         )
-        raw = response.text.strip()
+        raw = (getattr(response, "text", "") or "").strip()
+        if not raw:
+            return []
         if raw.startswith("```json"):
             raw = raw[7:]
             raw = raw[:raw.rfind("```")]

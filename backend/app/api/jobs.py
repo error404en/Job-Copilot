@@ -373,8 +373,9 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
 @router.post("/scrape-url")
 def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
     """
-    Scraper with automatic link unshortener, promotional funnel detection,
-    and high-precision LinkedIn guest API extraction.
+    Unified multi-tier scraper with automatic link unshortener, promotional funnel detection,
+    specialized ATS adapters (LinkedIn guest, Greenhouse, Lever, Workday CXS),
+    fast HTTP with JSON-LD parser, and dynamic Playwright browser fallback.
     """
     if "google.com/search" in url:
         raise HTTPException(
@@ -382,90 +383,22 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
             detail="The URL provided is a Google search result link, not a direct job posting. Please enter the direct company job posting or careers URL."
         )
 
-    url_info = resolve_redirects_and_detect_promo(url)
-    resolved_url = url_info.get("resolved_url") or url
-    is_promo = url_info.get("is_promo", False)
-    promo_name = url_info.get("promo_name")
-
-    if is_promo:
-        return {
-            "raw_jd": f"[⚠️ Creator Promotional / Affiliate Link Detected]\n"
-                      f"This link redirected to: {resolved_url} ({promo_name}).\n"
-                      f"This is an influencer promotional/bootcamp page, not an official company job posting.",
-            "resolved_url": resolved_url,
-            "is_promo": True,
-            "promo_name": promo_name
-        }
-
+    from app.services.scraper_engine import scrape_job_posting_url
     try:
-        validate_safe_url(resolved_url)
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9'
-        }
-
-        # Specialized LinkedIn handler (unrolls search result URLs and queries guest job API)
-        if "linkedin.com" in resolved_url:
-            import re
-            jid_match = re.search(r'(?:currentJobId=|jobs/view/|jobId=)(\d+)', resolved_url)
-            if jid_match:
-                jid = jid_match.group(1)
-                api_url = f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{jid}"
-                try:
-                    res = requests.get(api_url, headers=headers, timeout=12)
-                    if res.status_code == 200:
-                        soup = BeautifulSoup(res.text, 'html.parser')
-                        title_el = soup.find('h2') or soup.find('h1')
-                        title_text = title_el.get_text(strip=True) if title_el else "Job Opening"
-                        comp_el = soup.find('a', class_='topcard__org-name-link') or soup.find('span', class_='topcard__flavor')
-                        comp_text = comp_el.get_text(strip=True) if comp_el else "Company"
-                        loc_el = soup.find('span', class_='topcard__flavor topcard__flavor--bullet')
-                        loc_text = loc_el.get_text(strip=True) if loc_el else "Location Unspecified"
-
-                        desc_el = soup.find('div', class_='description__text') or soup
-                        for s in desc_el(["script", "style", "nav", "footer"]):
-                            s.extract()
-                        desc_text = desc_el.get_text(separator='\n', strip=True)
-                        full_jd = f"{title_text} at {comp_text}\nLocation: {loc_text}\n\n{desc_text}"
-
-                        return {
-                            "raw_jd": full_jd,
-                            "resolved_url": f"https://www.linkedin.com/jobs/view/{jid}",
-                            "is_promo": False
-                        }
-                    elif res.status_code == 404:
-                        raise HTTPException(
-                            status_code=404,
-                            detail=f"This LinkedIn job posting (Job ID {jid}) has expired or was removed by the employer."
-                        )
-                except HTTPException:
-                    raise
-                except Exception as li_err:
-                    logger.warning("LinkedIn guest API fetch error: %s", li_err)
-
-        res = requests.get(resolved_url, headers=headers, timeout=10)
-        res.raise_for_status()
-        
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        # Remove script and style elements
-        for script in soup(["script", "style", "nav", "footer", "header"]):
-            script.extract()
-            
-        text = soup.get_text(separator='\n')
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = '\n'.join(chunk for chunk in chunks if chunk)
-        
+        result = scrape_job_posting_url(url)
         return {
-            "raw_jd": text,
-            "resolved_url": resolved_url,
-            "is_promo": False
+            "raw_jd": result.raw_jd,
+            "resolved_url": result.resolved_url,
+            "role_title": result.role_title,
+            "company_name": result.company_name,
+            "location": result.location,
+            "is_promo": result.is_promo,
+            "promo_name": result.promo_name,
+            "source_type": result.source_type
         }
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to scrape URL {resolved_url}. Error: {str(e)}")
+        logger.exception("scrape_job_url failed for %s", url)
+        raise HTTPException(status_code=400, detail=f"Failed to scrape URL {url}. Error: {str(e)}")
 
 @router.get("/{id}")
 def get_job(id: str, user_id: str = Depends(get_current_user)):

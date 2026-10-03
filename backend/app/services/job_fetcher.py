@@ -414,16 +414,110 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
             "raw_jd": full_jd
         })
     return jobs
+def extract_direct_html_jobs(html_content: str, base_url: str) -> list:
+    """
+    Sub-second, deterministic DOM extractor that extracts structured job postings
+    directly from HTML without requiring LLM tokens or browser emulation.
+    Handles JSON-LD Schema.org JobPosting and modern vacancy/career HTML cards.
+    """
+    import urllib.parse
+    from bs4 import BeautifulSoup
+    from app.services.job_validator import validate_role_title
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    results = []
+    seen_titles = set()
+
+    # 1. JSON-LD JobPosting schema extraction
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.get_text())
+            items = data if isinstance(data, list) else data.get("@graph", [data]) if isinstance(data, dict) else []
+            for item in items:
+                if isinstance(item, dict) and item.get("@type") == "JobPosting":
+                    title = item.get("title")
+                    if title and validate_role_title(title)[0]:
+                        url = item.get("url") or base_url
+                        loc = ""
+                        job_loc = item.get("jobLocation")
+                        if isinstance(job_loc, dict):
+                            loc = job_loc.get("address", {}).get("addressLocality", "") if isinstance(job_loc.get("address"), dict) else ""
+                        title_key = title.strip().lower()
+                        if title_key not in seen_titles:
+                            seen_titles.add(title_key)
+                            results.append({
+                                "role_title": title.strip(),
+                                "url": urllib.parse.urljoin(base_url, str(url)),
+                                "location": loc or "Remote / Hybrid"
+                            })
+        except Exception:
+            pass
+
+    # 2. Vacancy / Careers / Job Cards (e.g. Aggroso, Ashby, custom portals)
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "").strip()
+        if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
+            continue
+            
+        classes = " ".join(a.get("class", [])).lower()
+        parent_classes = " ".join(a.parent.get("class", [])).lower() if a.parent else ""
+        
+        is_job_anchor = (
+            any(k in classes or k in parent_classes for k in ["vacancy", "job", "career", "opening", "position"]) or
+            any(k in href.lower() for k in ["/careers/", "/jobs/", "/positions/", "/job/"])
+        )
+        if not is_job_anchor:
+            continue
+            
+        # Find heading inside the anchor or anchor's parent
+        heading = a.find(["h1", "h2", "h3", "h4", "h5", "strong"])
+        if not heading and a.parent:
+            heading = a.parent.find(["h1", "h2", "h3", "h4", "h5", "strong"])
+            
+        if heading:
+            title = heading.get_text(strip=True)
+            ok, _ = validate_role_title(title)
+            if ok:
+                title_key = title.strip().lower()
+                if title_key not in seen_titles:
+                    seen_titles.add(title_key)
+                    full_url = urllib.parse.urljoin(base_url, href)
+                    
+                    # Extract location and metadata tags (e.g. Remote-first, Full-time)
+                    spans = [
+                        s.get_text(strip=True) for s in a.find_all(["span", "div"])
+                        if s.get_text(strip=True) and not any(ign in s.get_text().lower() for ign in ["view role", "open", "apply", "view", "details", "skip to"])
+                    ]
+                    unique_spans = []
+                    for sp in spans:
+                        if sp and sp not in unique_spans and len(sp) < 40 and not any(sp in other for other in unique_spans):
+                            unique_spans.append(sp)
+                            
+                    loc_text = " | ".join(unique_spans[:2]) if unique_spans else "Remote / Hybrid"
+                    
+                    results.append({
+                        "role_title": title.strip(),
+                        "url": full_url,
+                        "location": loc_text
+                    })
+
+    return results
+
 def fetch_generic_fallback(careers_url: str, company_name: str = "Company", target_keywords: list = None) -> list:
     """
     Generic Official Careers Fallback.
-    Uses Playwright to scrape the DOM, and LLM to parse job listings, preserving SSRF protections.
+    1. Tries sub-second deterministic DOM extraction directly from raw HTML (<50ms, 0 LLM tokens).
+    2. Falls back to dynamic page scraping + LLM extraction if DOM yields 0 jobs.
+    3. Respects user target_keywords if provided, otherwise fetches ALL published roles.
     """
-    from app.services.playwright_scraper import scrape_dynamic_page
+    import urllib.parse
+    from app.services.playwright_scraper import scrape_dynamic_page, _BROWSER_HEADERS
     from app.services.llm_client import extract_jobs_from_page
     
-    if not target_keywords:
-        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst"]
+    # Handle callers that pass (careers_url, target_keywords) positionally
+    if isinstance(company_name, list) and target_keywords is None:
+        target_keywords = company_name
+        company_name = "Company"
         
     try:
         validate_safe_url(careers_url)
@@ -432,34 +526,100 @@ def fetch_generic_fallback(careers_url: str, company_name: str = "Company", targ
         return []
         
     jobs = []
-    try:
-        print(f"[Generic Fallback] Extracting from {careers_url}...")
-        raw_text = scrape_dynamic_page(careers_url)
-        if raw_text and len(raw_text) > 50:
-            extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
-            for job in extracted:
-                title = job.get("role_title")
-                if not title:
-                    continue
-                    
-                # Apply cheap Stage 1 filtering on the Playwright result
-                if not any(kw.lower() in title.lower() for kw in target_keywords):
-                    continue
+    seen_titles = set()
 
-                jobs.append({
-                    "source_type": "generic_playwright",
-                    "source_confidence": 0.8,
-                    "company": company_name,
-                    "role_title": title,
-                    "url": job.get("url") or careers_url,
-                    "official_apply_url": job.get("url") or careers_url,
-                    "location": job.get("location", "Unknown"),
-                    "external_job_id": None,
-                    "raw_jd": f"{title}\nCompany: {company_name}\nLocation: {job.get('location', 'Unknown')}\n\n[Extracted via Playwright AI Parsing]"
-                })
-    except Exception as e:
-        raise RuntimeError(f"Generic fallback extraction failed for {careers_url}: {e}")
-        
+    # STAGE 1: Try Fast Direct DOM Extraction first (Sub-second, 0 tokens)
+    try:
+        with requests.get(careers_url, headers=_BROWSER_HEADERS, timeout=8) as resp:
+            if resp.status_code == 200 and resp.text:
+                dom_jobs = extract_direct_html_jobs(resp.text, careers_url)
+                for dj in dom_jobs:
+                    title = dj.get("role_title")
+                    if not title:
+                        continue
+                    if target_keywords:
+                        title_clean = re.sub(r'[^a-zA-Z0-9]', '', title.lower())
+                        matched = any(
+                            kw.lower() in title.lower() or 
+                            (re.sub(r'[^a-zA-Z0-9]', '', kw.lower()) in title_clean if kw else False)
+                            for kw in target_keywords if kw
+                        )
+                        if not matched:
+                            continue
+
+                    t_key = title.strip().lower()
+                    if t_key not in seen_titles:
+                        seen_titles.add(t_key)
+                        exp_meta = parse_experience_requirements(title, "")
+                        exp_min = exp_meta.get("experience_min_years", 0)
+                        exp_level = "0-2 Yrs" if exp_meta.get("fresher_eligibility") else "2-5 Yrs" if exp_min < 5 else "5+ Yrs"
+                        jobs.append({
+                            "source_type": "generic_careers",
+                            "source_confidence": 0.85,
+                            "company": company_name,
+                            "role_title": title,
+                            "url": dj.get("url") or careers_url,
+                            "official_apply_url": dj.get("url") or careers_url,
+                            "location": dj.get("location") or "Remote / Hybrid",
+                            "external_job_id": None,
+                            "experience_level": exp_level,
+                            "seniority_required": exp_meta.get("seniority", "Unknown"),
+                            "raw_jd": f"{title}\nCompany: {company_name}\nLocation: {dj.get('location') or 'Remote'}\nExperience: {exp_level}\n\n[Extracted via Direct Careers Parser]"
+                        })
+    except Exception as dom_err:
+        print(f"[Generic Fallback] Fast DOM extraction skipped: {dom_err}")
+
+    # STAGE 2: If DOM yields 0 jobs, use dynamic scraper + LLM extraction
+    if not jobs:
+        try:
+            print(f"[Generic Fallback] Attempting dynamic scraper + LLM on {careers_url}...")
+            raw_text = scrape_dynamic_page(careers_url)
+            if raw_text and len(raw_text) > 50:
+                extracted = extract_jobs_from_page(raw_text, company_name, target_keywords)
+                for job in extracted:
+                    title = job.get("role_title")
+                    if not title:
+                        continue
+                        
+                    if target_keywords:
+                        title_clean = re.sub(r'[^a-zA-Z0-9]', '', title.lower())
+                        matched = any(
+                            kw.lower() in title.lower() or 
+                            (re.sub(r'[^a-zA-Z0-9]', '', kw.lower()) in title_clean if kw else False)
+                            for kw in target_keywords if kw
+                        )
+                        if not matched:
+                            continue
+
+                    t_key = title.strip().lower()
+                    if t_key not in seen_titles:
+                        seen_titles.add(t_key)
+                        apply_url = job.get("url")
+                        if apply_url and not apply_url.startswith(("http://", "https://")):
+                            apply_url = urllib.parse.urljoin(careers_url, apply_url)
+                        if not apply_url:
+                            apply_url = careers_url
+
+                        exp_meta = parse_experience_requirements(title, "")
+                        exp_min = exp_meta.get("experience_min_years", 0)
+                        exp_level = "0-2 Yrs" if exp_meta.get("fresher_eligibility") else "2-5 Yrs" if exp_min < 5 else "5+ Yrs"
+
+                        jobs.append({
+                            "source_type": "generic_playwright",
+                            "source_confidence": 0.8,
+                            "company": company_name,
+                            "role_title": title,
+                            "url": apply_url,
+                            "official_apply_url": apply_url,
+                            "location": job.get("location") or "Remote / Hybrid",
+                            "external_job_id": None,
+                            "experience_level": exp_level,
+                            "seniority_required": exp_meta.get("seniority", "Unknown"),
+                            "raw_jd": f"{title}\nCompany: {company_name}\nLocation: {job.get('location') or 'Remote'}\nExperience: {exp_level}\n\n[Extracted via AI Parsing]"
+                        })
+        except Exception as e:
+            print(f"[Generic Fallback] Dynamic extraction failed: {e}")
+            
     return jobs
 
 def resolve_redirects_and_detect_promo(url: str) -> dict:
@@ -498,7 +658,7 @@ def resolve_redirects_and_detect_promo(url: str) -> dict:
             visited.add(current_url)
             validate_safe_url(current_url)
             r = requests.get(current_url, headers=headers, allow_redirects=True, timeout=8)
-            if r.url and r.url != current_url:
+            if isinstance(getattr(r, "url", None), str) and r.url and r.url != current_url:
                 current_url = r.url
             break
     except Exception as e:

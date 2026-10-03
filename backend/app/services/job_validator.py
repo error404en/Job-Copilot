@@ -50,7 +50,8 @@ KNOWN_JOB_PORTALS = {
     "smartrecruiters.com", "icims.com", "breezy.hr", "workable.com", "recruitee.com",
     "rippling-ats.com", "jobvite.com", "pinpointhq.com", "keka.com", "oraclecloud.com",
     "successfactors.com", "taleo.net", "eightfold.ai", "phenompeople.com",
-    "wellfound.com", "instahyre.com"
+    "wellfound.com", "instahyre.com", "himalayas.app", "remote.co", "weworkremotely.com",
+    "builtin.com", "otta.com", "ycombinator.com"
 }
 
 

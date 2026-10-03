@@ -453,6 +453,9 @@ export default function AddJobPage() {
     else if (lowerUrl.includes('glassdoor.com')) setSource('glassdoor')
     else if (lowerUrl.includes('naukri.com')) setSource('naukri')
     else if (lowerUrl.includes('wellfound.com') || lowerUrl.includes('angel.co')) setSource('wellfound')
+    else if (lowerUrl.includes('instahyre.com')) setSource('instahyre')
+    else if (lowerUrl.includes('himalayas.app')) setSource('himalayas')
+    else if (lowerUrl.includes('remote.co')) setSource('remote.co')
     else if (lowerUrl.includes('ycombinator.com')) setSource('ycombinator')
     else setSource('other')
   }, [url])
@@ -477,6 +480,9 @@ export default function AddJobPage() {
           setPromoWarning(`⚠️ Creator Link Warning: This link was detected as an influencer course/bootcamp (${data.promo_name || 'ProPeers/Course'}). It is not an official company job posting. We recommend using Company Deep Dive or Target Companies to find the official careers page!`)
         }
         setRawJd(data.raw_jd)
+        if (data.company_name && data.company_name !== 'Company' && !companyName) {
+          setCompanyName(data.company_name)
+        }
         if (data.resolved_url && data.resolved_url !== url) {
           setUrl(data.resolved_url)
         }
@@ -773,6 +779,9 @@ export default function AddJobPage() {
                   <option value="glassdoor">Glassdoor</option>
                   <option value="naukri">Naukri</option>
                   <option value="wellfound">Wellfound</option>
+                  <option value="instahyre">Instahyre</option>
+                  <option value="himalayas">Himalayas</option>
+                  <option value="remote.co">Remote.co</option>
                   <option value="ycombinator">Y Combinator</option>
                   <option value="other">Other</option>
                 </select>

@@ -251,11 +251,15 @@ def parse_job_description_deterministic(raw_text: str) -> ParsedJob:
     )
 
 
-def parse_job_description(raw_text: str, use_groq: bool = False) -> ParsedJob:
+def parse_job_description(raw_text: str, use_groq: bool = False, deterministic_only: bool = False) -> ParsedJob:
     """
     Extracts structured fields from raw job description text using cloud LLM with
     graceful fallback to deterministic rule-based parsing.
+    If deterministic_only is True, skips cloud LLMs entirely to conserve API quota.
     """
+    if deterministic_only:
+        return parse_job_description_deterministic(raw_text)
+
     prompt = f"""
     You are an expert technical recruiter analyzing a job description.
     Extract the required information from the following job description text.
@@ -283,7 +287,7 @@ def parse_job_description(raw_text: str, use_groq: bool = False) -> ParsedJob:
     
     JOB DESCRIPTION TEXT:
     ---
-    {raw_text}
+    {raw_text[:4000]}
     ---
     """
     

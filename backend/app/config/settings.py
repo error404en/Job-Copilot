@@ -8,14 +8,14 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# gemini-2.5-flash has active quota and supports fast JSON/Text generation
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-# Vision model default
-GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
-# Best available Groq open-source model — primary workhorse for all JSON/text tasks
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+# Primary Gemini model: gemini-3.5-flash (high quota, production tier)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+# Vision model default: gemini-3.5-flash (multimodal generateContent)
+GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-3.5-flash")
+# Primary Groq model: qwen/qwen3.8-27b (extremely fast, high quota, production)
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 # Dedicated model for high-nuance writing tasks (like tailoring)
-# Falls back to best dynamic model if this isn't in the account
-GROQ_TAILORING_MODEL = os.getenv("GROQ_TAILORING_MODEL", "openai/gpt-oss-120b")
+GROQ_TAILORING_MODEL = os.getenv("GROQ_TAILORING_MODEL", "qwen/qwen3.8-27b")
+
 

@@ -73,10 +73,30 @@ def extract_text_from_file(file_path: str, source_type: str) -> str:
     text = ""
     try:
         if source_type == 'pdf':
-            import fitz # PyMuPDF
-            doc = fitz.open(file_path)
-            for page in doc:
-                text += page.get_text() + "\n"
+            # Try lightweight pure-Python parser first (<10MB RAM)
+            try:
+                try:
+                    import pypdf
+                    reader = pypdf.PdfReader(file_path)
+                except ImportError:
+                    import PyPDF2
+                    reader = PyPDF2.PdfReader(file_path)
+                for page in reader.pages:
+                    text += (page.extract_text() or "") + "\n"
+            except Exception:
+                text = ""
+
+            # Fallback to PyMuPDF with guaranteed resource cleanup
+            if not text.strip():
+                try:
+                    import pymupdf
+                except ImportError:
+                    import fitz as pymupdf
+                with pymupdf.open(file_path) as doc:
+                    for page in doc:
+                        text += page.get_text() + "\n"
+            import gc
+            gc.collect()
         elif source_type == 'docx':
             import docx
             doc = docx.Document(file_path)

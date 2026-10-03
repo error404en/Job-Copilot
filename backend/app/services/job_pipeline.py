@@ -162,9 +162,9 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
         except Exception as se:
             print(f"[Pipeline] Could not auto-fetch full JD from URL {target_url}: {se}")
 
-    # 1. Parse JD using best available model
+    # 1. Parse JD: If bulk ingestion (skip_analysis=True), uses deterministic parsing to preserve cloud LLM quota
     try:
-        parsed_job = parse_job_description(req.raw_jd, use_groq=req.use_groq)
+        parsed_job = parse_job_description(req.raw_jd, use_groq=req.use_groq, deterministic_only=skip_analysis)
     except Exception as e:
         print(f"[Pipeline] JD parse failed, using minimal defaults: {e}")
         from app.models.job import ParsedJob
