@@ -199,15 +199,41 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
 
 
     # Relocation analysis
+    from app.services.job_fetcher import check_role_location_and_relocation
     loc_lower = (parsed_job.location or "").lower()
-    is_remote = parsed_job.remote_type == "remote" or "remote" in loc_lower
+    jd_lower = (parsed_job.raw_jd or parsed_job.description or "").lower()
+    is_remote = parsed_job.remote_type == "remote" or "remote" in loc_lower or "anywhere" in loc_lower or "work from home" in loc_lower
     is_local = any(city in loc_lower for city in ["delhi", "ncr", "noida", "gurgaon", "gurugram"])
-    is_india = any(city in loc_lower for city in ["india", "bengaluru", "bangalore", "hyderabad", "pune", "mumbai", "chennai"])
+    is_india = any(city in loc_lower for city in ["india", "bengaluru", "bangalore", "hyderabad", "pune", "mumbai", "chennai", "kolkata"])
     
+    loc_eval = check_role_location_and_relocation(parsed_job.location or "", jd_lower)
+    
+    # HARD GATE: Overseas role without relocation or visa sponsorship
+    if loc_eval["is_abroad"] and not loc_eval["covers_relocation"]:
+        return FitReport(
+            match_score=20,
+            matched_keywords=[],
+            missing_keywords=["Work Authorization / Visa Sponsorship"],
+            pay_floor_pass=True,
+            relocation_required=True,
+            seniority_fit="underqualified",
+            goal_alignment_note="Overseas role without relocation or visa sponsorship for Indian candidates.",
+            verdict="skip",
+            disqualification_reason="abroad_no_relocation",
+            reasoning=(
+                f"Location Disqualification: Position is based abroad ({parsed_job.location or 'Overseas'}) "
+                "without verified international relocation assistance or visa sponsorship. "
+                "Fresher pipeline prioritizes opportunities in India, Remote, or overseas roles covering full relocation."
+            ),
+            culture_assessment=f"Corporate environment at {parsed_job.company}."
+        )
+
     # Non-India onsite/hybrid requires relocation/visa
     relocation_required = not (is_remote or is_local)
-    if not is_remote and not is_local and not is_india:
-        score -= 20
+    if loc_eval["is_abroad"] and loc_eval["covers_relocation"]:
+        score += 5  # Bonus for verified international relocation support
+    elif not is_remote and not is_local and not is_india:
+        score -= 10
 
     # Final verdict calculation
     if score >= 75:

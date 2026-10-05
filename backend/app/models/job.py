@@ -25,6 +25,7 @@ class ParsedJob(BaseModel):
     required_skills: List[str] = Field(default_factory=list, description="List of mandatory technical or soft skills")
     nice_to_have_skills: List[str] = Field(default_factory=list, description="List of preferred or bonus skills")
     apply_link: Optional[str] = Field(default=None, description="The direct apply URL if present in the text, otherwise guess the company's official career page URL.")
+    raw_jd: Optional[str] = Field(default="", description="Original raw JD text if available")
 
 class FitReport(BaseModel):
     match_score: int = Field(description="0-100 score evaluating how well the resume matches the JD")

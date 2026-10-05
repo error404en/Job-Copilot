@@ -98,3 +98,33 @@ def test_genuine_fresher_associate_matches_high_odds():
     assert fit.verdict == "apply"
     assert fit.match_score >= 75
     assert fit.seniority_fit == "good_fit"
+
+def test_abroad_without_relocation_disqualified():
+    from app.services.jd_parser import parse_job_description_deterministic
+    from app.services.match_scorer import score_match_deterministic
+    jd = """
+    Junior Software Engineer at TechCorp
+    Location: San Francisco, CA (Onsite)
+    Must be legally authorized to work in the United States. No visa sponsorship provided.
+    Requirements: 0-1 years experience with Python and React.
+    """
+    pj = parse_job_description_deterministic(jd)
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict == "skip"
+    assert fit.disqualification_reason == "abroad_no_relocation"
+    assert "Location Disqualification" in fit.reasoning
+
+def test_abroad_with_relocation_allowed():
+    from app.services.jd_parser import parse_job_description_deterministic
+    from app.services.match_scorer import score_match_deterministic
+    jd = """
+    Junior Backend Engineer at GlobalAI
+    Location: London, UK
+    Comprehensive relocation assistance provided and visa sponsorship available for international candidates.
+    Requirements: 0-2 years experience with Python, FastAPI, SQL, REST APIs.
+    """
+    pj = parse_job_description_deterministic(jd)
+    fit = score_match_deterministic(pj, PROFILE, RESUME)
+    assert fit.verdict in ("apply", "stretch")
+    assert fit.relocation_required is True
+    assert fit.disqualification_reason != "abroad_no_relocation"

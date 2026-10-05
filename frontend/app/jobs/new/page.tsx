@@ -55,8 +55,8 @@ export default function AddJobPage() {
   const [deepDiveCompany, setDeepDiveCompany] = useState('')
   const [deepDiveKeywords, setDeepDiveKeywords] = useState('')
   const [researchData, setResearchData] = useState<any>(null)
-  const [deepDiveLocFilter, setDeepDiveLocFilter] = useState('all')
-  const [deepDiveExpFilter, setDeepDiveExpFilter] = useState('all')
+  const [deepDiveLocFilter, setDeepDiveLocFilter] = useState('india_remote_reloc')
+  const [deepDiveExpFilter, setDeepDiveExpFilter] = useState('fresher')
   const [deepDiveSalaryFilter, setDeepDiveSalaryFilter] = useState('all')
   const [trackedJobs, setTrackedJobs] = useState<Record<string, boolean>>({})
   const [roleScores, setRoleScores] = useState<Record<number, any>>({})
@@ -187,8 +187,8 @@ export default function AddJobPage() {
       if (saved?.deepDiveKeywords) setDeepDiveKeywords(saved.deepDiveKeywords)
 
       // Filter restoration
-      const targetLoc = urlLoc || saved?.deepDiveLocFilter || 'all'
-      const targetExp = urlExp || saved?.deepDiveExpFilter || 'all'
+      const targetLoc = urlLoc || saved?.deepDiveLocFilter || 'india_remote_reloc'
+      const targetExp = urlExp || saved?.deepDiveExpFilter || 'fresher'
       const targetSal = urlSal || saved?.deepDiveSalaryFilter || 'all'
       setDeepDiveLocFilter(targetLoc)
       setDeepDiveExpFilter(targetExp)
@@ -258,8 +258,8 @@ export default function AddJobPage() {
     if (activeTab !== 'manual') params.set('tab', activeTab)
     if (activeTab === 'deep-dive') {
       if (deepDiveCompany.trim()) params.set('company', deepDiveCompany.trim())
-      if (deepDiveLocFilter !== 'all') params.set('loc', deepDiveLocFilter)
-      if (deepDiveExpFilter !== 'all') params.set('exp', deepDiveExpFilter)
+      if (deepDiveLocFilter !== 'india_remote_reloc') params.set('loc', deepDiveLocFilter)
+      if (deepDiveExpFilter !== 'fresher') params.set('exp', deepDiveExpFilter)
       if (deepDiveSalaryFilter !== 'all') params.set('sal', deepDiveSalaryFilter)
     }
 
@@ -647,12 +647,19 @@ export default function AddJobPage() {
 
     // 1. Location filtering
     if (deepDiveLocFilter !== 'all') {
-      if (deepDiveLocFilter === 'india') {
-        const indianCities = ['india', 'bengaluru', 'bangalore', 'mumbai', 'pune', 'hyderabad', 'delhi', 'ncr', 'gurugram', 'noida', 'chennai', 'remote']
-        const loc = (j.location || '').toLowerCase()
+      const loc = (j.location || '').toLowerCase()
+      const indianCities = ['india', 'bengaluru', 'bangalore', 'mumbai', 'pune', 'hyderabad', 'delhi', 'ncr', 'gurugram', 'noida', 'chennai', 'remote', 'work from home', 'anywhere']
+      const isIndiaOrRemote = indianCities.some(city => loc.includes(city)) || j.is_india_or_remote || !loc
+      const hasRelocation = Boolean(j.covers_relocation)
+
+      if (deepDiveLocFilter === 'india_remote_reloc') {
+        if (!isIndiaOrRemote && !hasRelocation) return false
+      } else if (deepDiveLocFilter === 'relocation') {
+        if (!hasRelocation) return false
+      } else if (deepDiveLocFilter === 'india') {
         if (!indianCities.some(city => loc.includes(city))) return false
       } else {
-        if (!(j.location || '').toLowerCase().includes(deepDiveLocFilter.toLowerCase())) return false
+        if (!loc.includes(deepDiveLocFilter.toLowerCase())) return false
       }
     }
 
@@ -662,8 +669,9 @@ export default function AddJobPage() {
       const sen = (j.seniority_required || '').toLowerCase()
       const title = (j.role_title || '').toLowerCase()
       if (deepDiveExpFilter === 'fresher') {
-        const isFresher = exp.includes('0-2') || exp.includes('fresher') || exp.includes('entry') || exp.includes('0-1') || sen === '0-2yr' || sen === 'entry' || title.includes('analyst') || title.includes('graduate') || title.includes('trainee')
-        if (!isFresher) return false
+        const isFresher = j.is_fresher_role || exp.includes('0-2') || exp.includes('fresher') || exp.includes('entry') || exp.includes('0-1') || sen === '0-2yr' || sen === 'entry' || title.includes('analyst') || title.includes('associate') || title.includes('graduate') || title.includes('trainee') || title.includes('intern')
+        const isSenior = title.includes('senior') || title.includes('sr.') || title.includes('lead') || title.includes('principal') || title.includes('staff') || title.includes('director') || title.includes('manager') || exp.includes('5+')
+        if (!isFresher || isSenior) return false
       } else if (deepDiveExpFilter === 'mid') {
         const isMid = exp.includes('2-5') || exp.includes('mid') || sen === '2-5yr' || title.includes('associate')
         if (!isMid) return false
@@ -1145,7 +1153,7 @@ export default function AddJobPage() {
                           onChange={(e) => setDeepDiveLocFilter(e.target.value)}
                           className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
                         >
-                          <option value="all">All Locations</option>
+                          <option value="india_remote_reloc">🇮🇳 India, Remote & Abroad with Relocation (Fresher Focus)</option>
                           <option value="india">🇮🇳 India (Any)</option>
                           <option value="bengaluru">Bengaluru / Bangalore</option>
                           <option value="mumbai">Mumbai</option>
@@ -1153,7 +1161,9 @@ export default function AddJobPage() {
                           <option value="hyderabad">Hyderabad</option>
                           <option value="delhi">Delhi / NCR</option>
                           <option value="chennai">Chennai</option>
-                          <option value="remote">Remote</option>
+                          <option value="remote">Remote Only</option>
+                          <option value="relocation">✈️ Abroad with Relocation Covered</option>
+                          <option value="all">🌍 All Locations (Including Unsponsored Abroad)</option>
                         </select>
                       </div>
 
@@ -1165,8 +1175,8 @@ export default function AddJobPage() {
                           onChange={(e) => setDeepDiveExpFilter(e.target.value)}
                           className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
                         >
+                          <option value="fresher">🎓 Freshers / 0-2 Yrs (Entry Level & Interns)</option>
                           <option value="all">All Experience Levels</option>
-                          <option value="fresher">🎓 Freshers / 0-2 Yrs (Entry Level)</option>
                           <option value="mid">💼 2-5 Yrs (Mid-Level)</option>
                           <option value="senior">⭐ 5+ Yrs (Senior & Lead)</option>
                         </select>
@@ -1186,16 +1196,16 @@ export default function AddJobPage() {
                         </select>
                       </div>
 
-                      {(deepDiveLocFilter !== 'all' || deepDiveExpFilter !== 'all' || deepDiveSalaryFilter !== 'all') && (
+                      {(deepDiveLocFilter !== 'india_remote_reloc' || deepDiveExpFilter !== 'fresher' || deepDiveSalaryFilter !== 'all') && (
                         <button
                           onClick={() => {
-                            setDeepDiveLocFilter('all')
-                            setDeepDiveExpFilter('all')
+                            setDeepDiveLocFilter('india_remote_reloc')
+                            setDeepDiveExpFilter('fresher')
                             setDeepDiveSalaryFilter('all')
                           }}
                           className="text-xs text-purple-400 hover:underline"
                         >
-                          Reset filters
+                          Reset to Fresher Filters
                         </button>
                       )}
                     </div>
@@ -1231,6 +1241,21 @@ export default function AddJobPage() {
                                         : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                                     }`}>
                                       {j.experience_level}
+                                    </span>
+                                  )}
+                                  {j.covers_relocation && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-blue-500/20 text-blue-300 border-blue-500/30 flex items-center gap-1">
+                                      <span>✈️</span> Relocation Covered
+                                    </span>
+                                  )}
+                                  {j.is_fresher_role && !j.experience_level?.includes('0-2') && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-1">
+                                      <span>🎓</span> Fresher Friendly
+                                    </span>
+                                  )}
+                                  {j.is_abroad && !j.covers_relocation && (
+                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border bg-zinc-800/90 text-zinc-400 border-zinc-700 flex items-center gap-1">
+                                      <span>⚠️</span> Overseas (No Relocation)
                                     </span>
                                   )}
                                   {j.compensation_range && (

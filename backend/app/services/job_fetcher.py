@@ -20,31 +20,57 @@ def clean_html(raw_html: str) -> str:
     text = soup.get_text(separator=" ", strip=True)
     return text
 
-def is_location_fresher_or_india_friendly(loc_str: str) -> bool:
+def check_role_location_and_relocation(loc_str: str, raw_jd: str = "") -> dict:
     """
-    Prevents overseas offices (Belgrade, Tokyo, Amsterdam, London, Sydney, etc.)
-    from flooding the student's Indian / remote opportunity pipeline.
+    Evaluates whether a role is based in India / Remote, or is an abroad role
+    that explicitly covers international relocation assistance / visa sponsorship for Indian candidates.
     """
-    if not loc_str:
-        return True
-    loc = loc_str.lower()
+    loc = (loc_str or "").lower()
+    jd = (raw_jd or "").lower()
+    
     indian_or_remote = [
         "india", "bengaluru", "bangalore", "hyderabad", "mumbai", "pune", 
         "delhi", "noida", "gurgaon", "gurugram", "chennai", "kolkata", 
-        "remote", "anywhere", "global", "flexible", "apac"
+        "remote", "anywhere", "global", "flexible", "apac", "work from home", "wfh"
     ]
-    if any(k in loc for k in indian_or_remote):
-        return True
+    is_india_or_remote = any(k in loc for k in indian_or_remote) or not loc
     
-    overseas = [
+    overseas_cities = [
         "belgrade", "serbia", "tokyo", "japan", "london", "uk", "united kingdom", 
         "berlin", "germany", "warsaw", "poland", "paris", "france", "sydney", 
         "australia", "toronto", "canada", "amsterdam", "netherlands", "zurich", 
-        "switzerland", "new york", "san francisco", "austin", "seattle", "dublin", "ireland"
+        "switzerland", "new york", "san francisco", "austin", "seattle", "dublin", "ireland",
+        "united states", "usa", "us", "singapore", "boston", "chicago"
     ]
-    if any(k in loc for k in overseas):
-        return False
-    return True
+    is_abroad = any(k in loc for k in overseas_cities) and not is_india_or_remote
+    
+    # Check for relocation coverage / visa sponsorship
+    reloc_pos = bool(re.search(
+        r'\b(relocation (?:support|assistance|package|provided|covered|offered|stipend)|visa sponsorship (?:is )?(?:provided|available|offered|supported)|relocation and visa|sponsors? (?:work )?visas?|open to international (?:applicants|candidates)|international (?:applicants|candidates) welcome)\b',
+        jd
+    ))
+    reloc_neg = bool(re.search(
+        r'\b(no (?:visa )?sponsorship|cannot sponsor|will not sponsor|unable to sponsor|must have existing work authorization|no relocation|not eligible for (?:visa )?sponsorship|us citizenship required|must be authorized to work in)\b',
+        jd
+    ))
+    
+    covers_relocation = reloc_pos and not reloc_neg
+    is_eligible_for_indian_fresher = is_india_or_remote or covers_relocation
+    
+    return {
+        "is_india_or_remote": is_india_or_remote,
+        "is_abroad": is_abroad,
+        "covers_relocation": covers_relocation,
+        "is_eligible_for_indian_fresher": is_eligible_for_indian_fresher
+    }
+
+def is_location_fresher_or_india_friendly(loc_str: str, raw_jd: str = "") -> bool:
+    """
+    Prevents overseas offices from flooding the Indian fresher pipeline
+    unless the opening explicitly covers relocation / visa sponsorship for international candidates.
+    """
+    info = check_role_location_and_relocation(loc_str, raw_jd)
+    return info["is_eligible_for_indian_fresher"]
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
 def _safe_post(url, **kwargs):

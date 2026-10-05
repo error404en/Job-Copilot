@@ -247,7 +247,8 @@ def parse_job_description_deterministic(raw_text: str) -> ParsedJob:
         is_internship=is_internship,
         min_cgpa=min_cgpa,
         required_skills=detected_skills or ["Problem Solving", "Software Engineering Fundamentals"],
-        nice_to_have_skills=[]
+        nice_to_have_skills=[],
+        raw_jd=raw_clean
     )
 
 

@@ -423,7 +423,14 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
                 print(f"[DeepDive] Startup board search fallback failed: {b_err}")
 
     # Universal metadata enrichment across all tiers (ATS, generic fallback, startup boards)
+    from app.services.job_fetcher import check_role_location_and_relocation
     for j in discovered_jobs:
+        loc_info = check_role_location_and_relocation(j.get("location", ""), j.get("raw_jd", ""))
+        j["is_india_or_remote"] = loc_info["is_india_or_remote"]
+        j["is_abroad"] = loc_info["is_abroad"]
+        j["covers_relocation"] = loc_info["covers_relocation"]
+        j["is_eligible_for_indian_fresher"] = loc_info["is_eligible_for_indian_fresher"]
+
         if not j.get("experience_level") or not j.get("seniority_required"):
             meta = parse_experience_requirements(j.get("role_title", ""), j.get("raw_jd", ""))
             exp_min = meta.get("experience_min_years", 0)
@@ -431,6 +438,12 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
                 j["experience_level"] = "0-2 Yrs" if exp_min <= 2 else "2-5 Yrs" if exp_min < 5 else "5+ Yrs"
             if not j.get("seniority_required"):
                 j["seniority_required"] = meta.get("seniority", "Unknown")
+
+        title_lower = (j.get("role_title") or "").lower()
+        sen_lower = (j.get("seniority_required") or "").lower()
+        exp_lower = (j.get("experience_level") or "").lower()
+        is_senior = any(re.search(r'\b' + re.escape(w) + r'\b', title_lower) for w in ["senior", "sr", "lead", "principal", "staff", "architect", "director", "manager", "head"]) or "5+" in exp_lower
+        j["is_fresher_role"] = not is_senior and ("0-2" in exp_lower or "fresher" in sen_lower or "entry" in sen_lower or "intern" in title_lower or "associate" in title_lower or "analyst" in title_lower or "graduate" in title_lower or "trainee" in title_lower)
 
     # Filter out any invalid jobs or false links
     from app.services.job_validator import is_valid_job_posting
@@ -445,6 +458,22 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
         if valid:
             valid_discovered.append(j)
 
+    # Smart Fresher-First Sorting: India/Remote fresher roles & abroad roles with relocation appear first
+    def _fresher_loc_priority(job):
+        is_fresher = job.get("is_fresher_role", False)
+        is_eligible_loc = job.get("is_eligible_for_indian_fresher", False)
+        has_reloc = job.get("covers_relocation", False)
+        if is_fresher and is_eligible_loc:
+            return 0  # 1st Priority: India/Remote Fresher or Relocation-covered Fresher
+        if is_eligible_loc:
+            return 1  # 2nd Priority: Other India/Remote openings
+        if has_reloc:
+            return 2  # 3rd Priority: Abroad with verified relocation
+        if is_fresher:
+            return 3  # 4th Priority: Fresher abroad
+        return 4      # Lowest Priority: Senior abroad without relocation
+
+    valid_discovered.sort(key=_fresher_loc_priority)
     return valid_discovered, careers_url, ats_info
 
 
