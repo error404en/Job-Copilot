@@ -10,7 +10,7 @@ class TailoredBullets(BaseModel):
 BANNED_WORDS = (
     "delve, dive, navigate, landscape, tapestry, thrilled, excited, passionate, honored, "
     "robust, dynamic, seamless, cutting-edge, unparalleled, testament to, pivotal, transformative, "
-    "In today's fast-paced, Spearheaded, Synergized, —, -, em dash, comfortable with, "
+    "In today's fast-paced, Spearheaded, Synergized, —, --, em dash, comfortable with, "
     "translating ambiguous business and technical requirements"
 )
 
@@ -117,15 +117,28 @@ def generate_targeted_cover_letter(resume_summary: str, jd_text: str, role_title
     return response.strip()
 
 
-def _parse_json_response(raw: str) -> dict:
-    """Strips markdown fences and parses JSON safely."""
+def _parse_json_response(raw: str):
+    """Strips markdown fences and parses JSON safely, extracting bracketed structures."""
     raw = raw.strip()
     if raw.startswith("```json"):
         raw = raw[7:]
-        raw = raw[:raw.rfind("```")]
     elif raw.startswith("```"):
         raw = raw[3:]
+    if "```" in raw:
         raw = raw[:raw.rfind("```")]
+    raw = raw.strip()
+    
+    start_arr = raw.find('[')
+    start_obj = raw.find('{')
+    if start_arr != -1 and (start_obj == -1 or start_arr < start_obj):
+        end_arr = raw.rfind(']')
+        if end_arr != -1:
+            raw = raw[start_arr:end_arr+1]
+    elif start_obj != -1:
+        end_obj = raw.rfind('}')
+        if end_obj != -1:
+            raw = raw[start_obj:end_obj+1]
+            
     return json.loads(raw.strip())
 
 
@@ -345,15 +358,59 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     Return ONLY a raw JSON array of strings. Example: ["bullet 1", "bullet 2", ...]
     """
 
-    try:
-        raw_tailor = generate_tailoring_text(tailor_prompt)
-        tailored_bullets = _parse_json_response(raw_tailor)
-        if not isinstance(tailored_bullets, list) or len(tailored_bullets) != len(all_bullets):
-            print(f"[Tailor DOCX] Bullet count mismatch (got {len(tailored_bullets) if isinstance(tailored_bullets, list) else 'non-list'}, expected {len(all_bullets)}). Using original bullets.")
-            tailored_bullets = [item["original"] for item in all_bullets]
-    except Exception as e:
-        print(f"[Tailor DOCX] Pass 2 (tailor) failed: {e}. Using original bullets.")
-        tailored_bullets = [item["original"] for item in all_bullets]
+    # Chunk bullets into batches of 4-5 to avoid LLM token overflow on Groq
+    tailored_bullets = []
+    chunk_size = 5
+    for c_start in range(0, len(all_bullets), chunk_size):
+        chunk = all_bullets[c_start:c_start + chunk_size]
+        chunk_input = json.dumps([item["original"] for item in chunk], indent=2)
+        chunk_prompt = f"""
+    You are an elite technical resume writer generating resume bullets that match the gold-standard quality of Claude.
+    Rewrite the following {len(chunk)} resume bullet points to align with the target job description while strictly obeying Claude's writing guidelines.
+    
+    CLAUDE BULLET GUIDELINES (STRICT COMPLIANCE REQUIRED):
+    1. ZERO TECHNICAL DILUTION:
+       - You MUST preserve all specific tools, libraries, frameworks, model names, and architectures mentioned in each bullet (e.g. PyTorch, YOLOv8n, Llama 4, Groq Whisper, TinyStories, DistilBERT, Inngest, Qdrant, D3.js, FastAPI, Next.js, Supabase, Docker).
+       - NEVER dilute engineering details into vague abstractions.
+    
+    2. CONCRETE METRICS VERBATIM:
+       - Every metric and parameter must be preserved verbatim (e.g. "29M-parameter", "18-25 FPS across 80 categories", "sub-150ms vector search latency", "sub-50ms repeat-query latency", "1000-character chunking with 200-character overlap", "15+ REST APIs", "300+ technical documents").
+       - Do NOT delete or round down metrics, and do NOT fabricate new ones.
+    
+    3. AUTHORITATIVE ENGINEERING ACTION VERBS:
+       - Every bullet MUST begin with a decisive engineering action verb:
+         "Engineered", "Architected", "Delivered", "Tuned", "Designed", "Built", "Cut", "Automated", "Created".
+       - NEVER use passive or administrative verbs like "Translated requirements", "Validated system outputs", "Helped", "Assisted", "Worked on".
+    
+    4. NO KEYWORD STUFFING:
+       - Target JD Keywords: {keywords_str}
+       - If a keyword has a genuine architectural counterpart in the bullet, adapt framing naturally at most ONCE across the chunk.
+    
+    5. FORMATTING & DENSITY:
+       - Exactly 1 to 2 lines per bullet. Concise, high-density, action -> architecture -> metric.
+       - Return EXACTLY {len(chunk)} bullets, in the exact same order.
+       - Never use: {BANNED_WORDS}
+    {custom_rule}
+    
+    Input bullets ({len(chunk)} to rewrite):
+    {chunk_input}
+    
+    Target Job Description:
+    {jd_text[:1500]}
+    
+    Return ONLY a raw JSON array of strings containing exactly {len(chunk)} strings. Example: ["bullet 1", "bullet 2", ...]
+    """
+        try:
+            raw_chunk = generate_tailoring_text(chunk_prompt)
+            parsed_chunk = _parse_json_response(raw_chunk)
+            if isinstance(parsed_chunk, list) and len(parsed_chunk) == len(chunk):
+                tailored_bullets.extend(parsed_chunk)
+            else:
+                print(f"[Tailor DOCX] Chunk count mismatch ({len(parsed_chunk) if isinstance(parsed_chunk, list) else 'non-list'} vs {len(chunk)}). Using original.")
+                tailored_bullets.extend([item["original"] for item in chunk])
+        except Exception as e:
+            print(f"[Tailor DOCX] Chunk tailoring failed: {e}. Using original.")
+            tailored_bullets.extend([item["original"] for item in chunk])
 
     # Reinsert tailored bullets back into the structured JSON
     bullet_idx = 0
