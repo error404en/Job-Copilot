@@ -117,35 +117,55 @@ def parse_job_description_deterministic(raw_text: str) -> ParsedJob:
         is_senior_title = True
 
     # Step B: Check Explicit Years of Experience in Text
-    # Matches "5+ years", "6+ years of experience", "minimum 3 years", "8-10 years"
-    yoe_patterns = [
-        r'(\d+)\+?\s*(?:to|-)\s*(\d+)\+?\s*years?(?:\s+of)?(?:\s+(?:relevant|work|professional|industry|hands-on|technical|engineering|tax|direct))?\s+experience',
-        r'(\d+)\+?\s*years?(?:\s+of)?(?:\s+(?:relevant|work|professional|industry|hands-on|technical|engineering|tax|direct))?\s+experience',
-        r'(?:minimum|at least|with)\s+(\d+)\+?\s*years?(?:\s+of)?\s+experience',
-        r'(\d+)\+?\s*(?:years|yrs)\b'
-    ]
-    detected_years = []
-    for pat in yoe_patterns:
-        for match in re.finditer(pat, full_text_lower):
-            groups = match.groups()
-            for g in groups:
-                if g and g.isdigit():
-                    val = int(g)
-                    if 0 < val <= 25:
-                        detected_years.append(val)
-
-    if detected_years:
-        max_yoe = max(detected_years)
-        if max_yoe >= 5:
+    # Matches "5+ years", "6+ years of experience", "minimum 3 years", "8-10 years", "0-2 years"
+    range_pat = r'(\d+)\+?\s*(?:to|-)\s*(\d+)\+?\s*(?:years?|yrs)\b(?:\s+of)?(?:\s+(?:relevant|work|professional|industry|hands-on|technical|engineering|tax|direct))?(?:\s+experience)?'
+    range_match = re.search(range_pat, full_text_lower)
+    
+    if range_match:
+        min_val = int(range_match.group(1))
+        max_val = int(range_match.group(2))
+        if min_val == 0 or (min_val <= 1 and max_val <= 2):
+            # Explicit fresher/entry-level range (e.g. 0-2 yrs, 0-1 yrs)
+            seniority = "0-2yr"
+            min_years_experience = 0
+        elif min_val >= 5:
             seniority = "senior"
-            min_years_experience = max(min_years_experience, max_yoe)
-        elif max_yoe >= 3:
+            min_years_experience = max(min_years_experience, min_val)
+        elif min_val >= 3:
             seniority = "senior"
-            min_years_experience = max(min_years_experience, max_yoe)
-        elif max_yoe == 2:
+            min_years_experience = max(min_years_experience, min_val)
+        elif min_val == 2:
             if not is_senior_title:
                 seniority = "2-5yr"
                 min_years_experience = max(min_years_experience, 2)
+    else:
+        single_pats = [
+            r'(\d+)\+?\s*years?(?:\s+of)?(?:\s+(?:relevant|work|professional|industry|hands-on|technical|engineering|tax|direct))?\s+experience',
+            r'(?:minimum|at least|with)\s+(\d+)\+?\s*years?(?:\s+of)?\s+experience',
+            r'(\d+)\+?\s*(?:years|yrs)\b'
+        ]
+        detected_years = []
+        for pat in single_pats:
+            for match in re.finditer(pat, full_text_lower):
+                groups = match.groups()
+                for g in groups:
+                    if g and g.isdigit():
+                        val = int(g)
+                        if 0 < val <= 25:
+                            detected_years.append(val)
+
+        if detected_years:
+            max_yoe = max(detected_years)
+            if max_yoe >= 5:
+                seniority = "senior"
+                min_years_experience = max(min_years_experience, max_yoe)
+            elif max_yoe >= 3:
+                seniority = "senior"
+                min_years_experience = max(min_years_experience, max_yoe)
+            elif max_yoe == 2:
+                if not is_senior_title:
+                    seniority = "2-5yr"
+                    min_years_experience = max(min_years_experience, 2)
 
     # Step C: Intern & Fresher Keywords (STRICT WORD BOUNDARIES)
     # Must NOT run if Step A or B identified a Senior/Staff/Lead/5+ YoE role!
@@ -153,7 +173,7 @@ def parse_job_description_deterministic(raw_text: str) -> ParsedJob:
         if re.search(r'\b(intern|internship|apprentice)\b', title_lower):
             seniority = "fresher"
             min_years_experience = 0
-        elif re.search(r'\b(graduate|trainee|fresher|entry[\s-]level|associate|junior|jr\.?|new grad|new graduate|campus hire)\b', title_lower):
+        elif re.search(r'\b(graduate|trainee|fresher|entry[\s-]level|associate|junior|jr\.?|new grad|new graduate|campus hire|btsa)\b', title_lower):
             seniority = "fresher"
             min_years_experience = 0
         elif re.search(r'\b(internship|fresher|freshers|entry[\s-]level|new grad|new graduate|campus hire)\b', full_text_lower):
@@ -179,6 +199,8 @@ def parse_job_description_deterministic(raw_text: str) -> ParsedJob:
         domain_category = "tax_finance_accounting"
     elif re.search(r'\b(enterprise security|security engineer|infosec|appsec|cloud security|soc analyst|iam|sspm|scim|trust boundary|secrets management|token handling|threat intelligence|penetration testing|vulnerability)\b', title_and_body):
         domain_category = "security_governance"
+    elif re.search(r'\b(business technology|btsa|solutions associate|technical business analyst|technology analyst|decision scientist|tech enablement|ai enablement|technology consulting|patent analysis|technical research)\b', title_and_body):
+        domain_category = "business_technology_consulting"
     elif re.search(r'\b(data scientist|data science|quantitative|quant developer|statistician|econometrician|bi analyst|business intelligence)\b', title_and_body):
         domain_category = "data_science_analytics"
     elif re.search(r'\b(ai engineer|ml engineer|machine learning engineer|deep learning|genai|generative ai|llm|rag|nlp|computer vision|prompt engineering)\b', title_and_body):
@@ -196,7 +218,11 @@ def parse_job_description_deterministic(raw_text: str) -> ParsedJob:
         "AWS", "GCP", "Azure", "Docker", "Kubernetes", "Terraform", "Git", "Linux",
         "PyTorch", "TensorFlow", "Scikit-Learn", "Machine Learning", "Deep Learning", "System Design",
         "REST APIs", "GraphQL", "Microservices", "ETL", "ELT", "Data Pipelines",
-        "Tax Automation", "NetSuite", "Salesforce", "SAP", "SSO", "SCIM", "IAM", "Unity Catalog"
+        "Tax Automation", "NetSuite", "Salesforce", "SAP", "SSO", "SCIM", "IAM", "Unity Catalog",
+        "Data Analytics", "Data Analysis", "Business Analysis", "Technical Analysis", "Technical Research",
+        "Patent Analysis", "Technology Landscape", "Workflow Design", "Requirements Gathering",
+        "Generative AI Tools", "Problem Solving", "Analytical Thinking", "Tableau", "Power BI", "Excel",
+        "Data Modeling", "Tech Enablement", "Prompt Engineering"
     ]
     detected_skills = [
         sk for sk in TECH_SKILL_PATTERNS 

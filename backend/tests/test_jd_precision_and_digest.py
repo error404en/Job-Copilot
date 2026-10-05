@@ -128,3 +128,34 @@ def test_abroad_with_relocation_allowed():
     assert fit.verdict in ("apply", "stretch")
     assert fit.relocation_required is True
     assert fit.disqualification_reason != "abroad_no_relocation"
+
+def test_business_technology_solutions_btsa_match():
+    profile_with_btsa = {
+        "base_location": "Noida, Delhi NCR",
+        "remote_ok": True,
+        "pay_floor_ncr_remote": 600000,
+        "target_roles": ["Backend Engineer", "Generative AI Engineer", "Business Technology Solutions Associate (BTSA)", "Technical Business Analyst"]
+    }
+    jd = """
+    Business Technology Solutions Associate (BTSA) at ZS Associates
+    Location: Pune / New Delhi / Gurugram
+    Requirements: Open to fresh college graduates and early-career professionals (0-2 years).
+    Skills: SQL, Python, Problem Solving, Data Analytics, Tech Enablement.
+    """
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required in ("0-2yr", "fresher")
+    assert pj.min_years_experience == 0
+    assert pj.domain_category == "business_technology_consulting"
+    
+    fit = score_match_deterministic(pj, profile_with_btsa, RESUME)
+    assert fit.verdict == "apply"
+    assert fit.match_score >= 80
+    assert fit.seniority_fit == "good_fit"
+    assert fit.disqualification_reason is None
+
+def test_0_to_2_years_range_parsing():
+    jd = "Junior Tech Analyst. Requirements: 0-2 years of relevant experience or recent graduate. Skills: SQL, Python."
+    pj = parse_job_description_deterministic(jd)
+    assert pj.seniority_required == "0-2yr"
+    assert pj.min_years_experience == 0
+

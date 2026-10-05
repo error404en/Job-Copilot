@@ -151,8 +151,26 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
     # -------------------------------------------------------------------------
     req_skills = parsed_job.required_skills or []
     if req_skills:
-        matched = [s for s in req_skills if s.lower() in resume_lower]
-        missing = [s for s in req_skills if s.lower() not in resume_lower]
+        matched = []
+        missing = []
+        for s in req_skills:
+            s_low = s.lower()
+            if s_low in resume_lower:
+                matched.append(s)
+            elif s_low in ["problem solving", "analytical thinking"] and any(w in resume_lower for w in ["dsa", "data structures", "algorithms", "problem solving", "analytics"]):
+                matched.append(s)
+            elif s_low in ["software engineering fundamentals", "computer science fundamentals"] and any(w in resume_lower for w in ["fundamentals", "software engineering", "cs fundamentals", "oop", "dbms", "system design"]):
+                matched.append(s)
+            elif s_low in ["technical research", "technical analysis", "technology landscape"] and any(w in resume_lower for w in ["technical", "research", "engineering", "applied ai", "architecture"]):
+                matched.append(s)
+            elif s_low in ["data analytics", "data analysis", "data modeling"] and any(w in resume_lower for w in ["sql", "data", "analytics", "pipeline", "dbms"]):
+                matched.append(s)
+            elif s_low in ["tech enablement", "generative ai tools", "ai enablement"] and any(w in resume_lower for w in ["generative ai", "ai", "llm", "rag", "prompt engineering"]):
+                matched.append(s)
+            elif s_low in ["workflow design", "product requirements", "business analysis"] and any(w in resume_lower for w in ["apis", "system design", "architecture", "workflows", "microservices"]):
+                matched.append(s)
+            else:
+                missing.append(s)
         skill_ratio = len(matched) / len(req_skills)
     else:
         matched = ["Software Engineering Fundamentals", "Problem Solving"]
@@ -163,9 +181,20 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
     score = int(40 + (skill_ratio * 40))
 
     # Target role bonus (up to +15 pts)
-    if any(tr in role_title_lower for tr in target_roles):
+    btsa_tokens = ["business technology", "btsa", "solutions associate", "technical business analyst", "technical analyst", "business analyst", "solutions analyst", "technology analyst", "product analyst", "decision scientist", "research associate"]
+    has_target_match = False
+    for tr in target_roles:
+        clean_tr = re.sub(r'[\(\)]', '', tr).strip()
+        if tr in role_title_lower or clean_tr in role_title_lower:
+            has_target_match = True
+            break
+        if ("btsa" in tr or "business technology" in tr or "business analyst" in tr) and any(tok in role_title_lower for tok in btsa_tokens):
+            has_target_match = True
+            break
+
+    if has_target_match:
         score += 12
-    elif any(kw in role_title_lower for kw in ["software", "developer", "engineer", "full stack", "backend", "ai", "machine learning"]):
+    elif any(kw in role_title_lower for kw in ["software", "developer", "engineer", "full stack", "backend", "ai", "machine learning", "btsa", "business technology", "technical analyst", "solutions associate", "product analyst", "data"]):
         score += 8
 
     # Seniority calibration
@@ -183,9 +212,11 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
     # Prefer < 200 people
     c_size = (parsed_job.company_size or "").lower()
     if c_size:
-        # Penalize large companies/enterprises if inferred
+        # Penalize large companies/enterprises if inferred, UNLESS it is a verified benchmark or dream company
         if any(x in c_size for x in ["500", "1000", "10,000", "5000"]):
-            score -= 10
+            is_dream_or_verified = any(dc.lower() in (parsed_job.company or "").lower() for dc in user_profile.get("dream_companies", [])) or (parsed_job.company or "").lower() in ["zs associates", "barclays", "qualcomm", "goldman sachs", "stripe", "openai", "fractal analytics", "mu sigma", "trinity life sciences"]
+            if not is_dream_or_verified:
+                score -= 10
         elif any(x in c_size for x in ["1-10", "11-50", "51-200"]):
             score += 10
             

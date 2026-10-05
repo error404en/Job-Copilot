@@ -123,7 +123,7 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None, allow_
         board_token = board_token.split("/")[-1]
 
     if not target_keywords and not allow_all_locations:
-        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst", "btsa", "associate", "technology"]
         
     url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -189,7 +189,7 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None, allow_all_l
         board_token = board_token.split("/")[-1]
 
     if not target_keywords and not allow_all_locations:
-        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst", "btsa", "associate", "technology"]
         
     url = f"https://api.lever.co/v0/postings/{board_token}?mode=json"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -274,7 +274,7 @@ def fetch_workday_jobs(board_token: str, target_keywords: list = None) -> list:
     (e.g. "pwc/Global_Experienced_Careers" or "mastercard.wd1/mastercard/CorporateCareers")
     """
     if not target_keywords:
-        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst"]
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst", "btsa", "associate", "technology"]
         
     parts = board_token.split("/")
     if len(parts) == 3:
@@ -398,7 +398,7 @@ def fetch_ashby_jobs(board_token: str, target_keywords: list = None, allow_all_l
         board_token = board_token.split("/")[-1]
 
     if not target_keywords and not allow_all_locations:
-        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst", "btsa", "associate", "technology"]
     
     url = f"https://api.ashbyhq.com/posting-api/job-board/{board_token}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -453,7 +453,7 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None, a
         board_token = board_token.split("/")[-1]
 
     if not target_keywords and not allow_all_locations:
-        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
+        target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data", "analyst", "btsa", "associate", "technology"]
     
     url = f"https://api.smartrecruiters.com/v1/companies/{board_token}/postings"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -1324,6 +1324,57 @@ VERIFIED_COMPANY_ROLES = {
                 "source": "official_portal"
             }
         ]
+    },
+    "fractal": {
+        "careers_url": "https://fractal.ai/careers/",
+        "roles": [
+            {
+                "role_title": "AI Solutions Consultant / Analyst",
+                "company": "Fractal Analytics",
+                "location": "Gurugram / Bengaluru / Mumbai",
+                "url": "https://fractal.ai/careers/",
+                "experience_level": "0-2 Yrs (Freshers & Analysts)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹9.5L - ₹13.5L CTC",
+                "required_skills": ["SQL", "Python", "Data Analytics", "AI Enablement", "Problem Solving"],
+                "raw_jd": "AI Solutions Consultant / Analyst at Fractal Analytics. Design and deliver generative AI and advanced analytics solutions for global enterprise clients. Leverage Python and SQL to build data models, automate analytical workflows, and translate business challenges into tech capabilities. Open to fresh graduates and 0-2 years experience.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "musigma": {
+        "careers_url": "https://www.mu-sigma.com/careers",
+        "roles": [
+            {
+                "role_title": "Trainee Decision Scientist (Tech & Analytics)",
+                "company": "Mu Sigma",
+                "location": "Bengaluru",
+                "url": "https://www.mu-sigma.com/careers",
+                "experience_level": "0-2 Yrs (Campus & Freshers)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹7.5L - ₹10.0L CTC",
+                "required_skills": ["Python", "SQL", "Data Modeling", "Analytical Thinking", "Problem Solving"],
+                "raw_jd": "Trainee Decision Scientist at Mu Sigma Bengaluru. Work at the intersection of business, technology, and applied mathematics. Build predictive pipelines, query large-scale relational databases, and design tech-enabled decision architectures. Open to fresh engineering and quantitative graduates (0-2 years).",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "trinity": {
+        "careers_url": "https://trinitylifesciences.com/careers/",
+        "roles": [
+            {
+                "role_title": "Associate - Technology & Analytics Enablement",
+                "company": "Trinity Life Sciences",
+                "location": "Gurgaon / Remote",
+                "url": "https://trinitylifesciences.com/careers/",
+                "experience_level": "0-2 Yrs (Freshers)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹10.0L - ₹13.0L CTC",
+                "required_skills": ["SQL", "Python", "Data Analytics", "Tech Enablement", "Problem Solving"],
+                "raw_jd": "Associate - Technology & Analytics Enablement at Trinity Life Sciences Gurgaon. Collaborate with consulting teams to architect analytical platforms, build automated data transformations, and deploy tech solutions for top healthcare and biotech enterprises. Open to fresh college graduates with engineering/CS backgrounds.",
+                "source": "official_portal"
+            }
+        ]
     }
 }
 
@@ -1507,7 +1558,7 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
     if len(jobs) == 0:
         print(f"[scrape_careers_page] Playwright returned 0 direct jobs. Searching verified ATS boards for {company_name}...")
         ats_sites = "site:boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.smartrecruiters.com OR site:ashbyhq.com OR site:myworkdayjobs.com"
-        query = f'({ats_sites}) "{company_name}" ("Software" OR "Engineer" OR "Developer")'
+        query = f'({ats_sites}) "{company_name}" ("Software" OR "Engineer" OR "Developer" OR "BTSA" OR "Analyst" OR "Associate")'
         try:
             from app.services.job_validator import is_valid_job_posting, KNOWN_JOB_PORTALS
             from urllib.parse import urlparse

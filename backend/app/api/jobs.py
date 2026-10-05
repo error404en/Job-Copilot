@@ -546,10 +546,15 @@ def sync_live_jobs(background_tasks: BackgroundTasks, user_id: str = Depends(get
     # Derive candidate-specific keywords
     candidate_keywords = []
     for r in target_roles:
-        cleaned = r.lower().replace("engineer", "").replace("developer", "").strip()
+        r_low = r.lower()
+        cleaned = re.sub(r'[\(\)]', '', r_low).replace("engineer", "").replace("developer", "").strip()
         if cleaned and len(cleaned) > 2 and cleaned not in candidate_keywords:
             candidate_keywords.append(cleaned)
-        candidate_keywords.append(r.lower())
+        candidate_keywords.append(r_low)
+        if any(term in r_low for term in ["btsa", "business technology", "analyst", "solutions"]):
+            for token in ["btsa", "business technology", "solutions associate", "technical analyst", "business analyst", "analyst"]:
+                if token not in candidate_keywords:
+                    candidate_keywords.append(token)
 
     # Fallback to general tech + AI terms if empty
     if not candidate_keywords:
