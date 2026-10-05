@@ -149,6 +149,28 @@ Respond in JSON only with keys: "careers_url", "ats_system", "ats_token"
             ats_sys = (data.get("ats_system") or "").lower().strip()
             ats_tok = data.get("ats_token")
             
+            # Clean and sanitize ats_tok if it's a full URL or has trailing slashes/params
+            if ats_tok and isinstance(ats_tok, str):
+                ats_tok = ats_tok.strip().split("?")[0].strip("/")
+                if "lever.co/" in ats_tok:
+                    m = re.search(r"lever\.co/([^/?#]+)", ats_tok)
+                    if m:
+                        ats_tok = m.group(1)
+                elif "greenhouse.io/" in ats_tok:
+                    m = re.search(r"greenhouse\.io/([^/?#]+)", ats_tok)
+                    if m:
+                        ats_tok = m.group(1)
+                elif "ashbyhq.com/" in ats_tok:
+                    m = re.search(r"ashbyhq\.com/([^/?#]+)", ats_tok)
+                    if m:
+                        ats_tok = m.group(1)
+                elif "smartrecruiters.com/" in ats_tok:
+                    m = re.search(r"smartrecruiters\.com/([^/?#]+)", ats_tok)
+                    if m:
+                        ats_tok = m.group(1)
+                elif "/" in ats_tok and "workday" not in ats_sys:
+                    ats_tok = ats_tok.split("/")[-1]
+            
             ats_info = None
             for known_sys in [ATSSystem.GREENHOUSE, ATSSystem.LEVER, ATSSystem.ASHBY, ATSSystem.SMARTRECRUITERS, ATSSystem.WORKDAY]:
                 if known_sys.value in ats_sys and ats_tok:
@@ -166,9 +188,16 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
     """
     Company -> official domain -> official careers URL -> detect known ATS
     """
+    c_raw = (company_name or "").strip()
+    c_lower = c_raw.lower()
+
+    # 0a. Check if company_name itself is an ATS URL or domain URL
+    if not careers_url and any(ats_domain in c_lower for ats_domain in ["jobs.lever.co", "boards.greenhouse.io", "jobs.ashbyhq.com", "jobs.smartrecruiters.com", "myworkdayjobs.com"]):
+        careers_url = c_raw if c_raw.startswith("http") else f"https://{c_raw}"
+
     norm = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
     
-    # 0. Check curated high-priority registry first (instant 0ms resolution)
+    # 0b. Check curated high-priority registry first (instant 0ms resolution)
     if not careers_url:
         for k, res in KNOWN_COMPANY_ATS.items():
             if k in norm or norm in k:
@@ -197,58 +226,87 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
             print(f"Careers URL discovery failed: {e}")
         
     url = careers_url
+    ats_found = None
     
     # Check Greenhouse
     if url:
-        gh_match = re.search(r"boards\.greenhouse\.io/([^/]+)", url)
+        gh_match = re.search(r"boards\.greenhouse\.io/([^/?#]+)", url)
         if gh_match:
-            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token=gh_match.group(1)))
+            ats_found = ATSInfo(system=ATSSystem.GREENHOUSE, token=gh_match.group(1))
             
         # Check Lever
-        lever_match = re.search(r"jobs\.lever\.co/([^/]+)", url)
-        if lever_match:
-            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.LEVER, token=lever_match.group(1)))
+        if not ats_found:
+            lever_match = re.search(r"jobs\.lever\.co/([^/?#]+)", url)
+            if lever_match:
+                ats_found = ATSInfo(system=ATSSystem.LEVER, token=lever_match.group(1))
             
         # Check Ashby
-        ashby_match = re.search(r"jobs\.ashbyhq\.com/([^/]+)", url)
-        if ashby_match:
-            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.ASHBY, token=ashby_match.group(1)))
+        if not ats_found:
+            ashby_match = re.search(r"jobs\.ashbyhq\.com/([^/?#]+)", url)
+            if ashby_match:
+                ats_found = ATSInfo(system=ATSSystem.ASHBY, token=ashby_match.group(1))
             
         # Check SmartRecruiters
-        sr_match = re.search(r"jobs\.smartrecruiters\.com/([^/]+)", url)
-        if sr_match:
-            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr_match.group(1)))
+        if not ats_found:
+            sr_match = re.search(r"jobs\.smartrecruiters\.com/([^/?#]+)", url)
+            if sr_match:
+                ats_found = ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr_match.group(1))
             
         # Check Workday
-        wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)(?:/([^/]+))?", url)
-        if wd_match:
-            host_prefix = wd_match.group(1)
-            part1 = wd_match.group(2)
-            part2 = wd_match.group(3)
-            
-            if part2 and (part1.lower() == "en-us" or len(part1) == 2):
-                site = part2
-                tenant = host_prefix.split(".")[0]
-            elif part1 == "wday":
-                path_parts = url.split("wday/cxs/")
-                if len(path_parts) > 1:
-                    sub_parts = path_parts[1].split("/")
-                    if len(sub_parts) >= 2:
-                        tenant = sub_parts[0]
-                        site = sub_parts[1]
+        if not ats_found:
+            wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)(?:/([^/]+))?", url)
+            if wd_match:
+                host_prefix = wd_match.group(1)
+                part1 = wd_match.group(2)
+                part2 = wd_match.group(3)
+                
+                if part2 and (part1.lower() == "en-us" or len(part1) == 2):
+                    site = part2
+                    tenant = host_prefix.split(".")[0]
+                elif part1 == "wday":
+                    path_parts = url.split("wday/cxs/")
+                    if len(path_parts) > 1:
+                        sub_parts = path_parts[1].split("/")
+                        if len(sub_parts) >= 2:
+                            tenant = sub_parts[0]
+                            site = sub_parts[1]
+                        else:
+                            tenant = host_prefix.split(".")[0]
+                            site = part2 if part2 else part1
                     else:
                         tenant = host_prefix.split(".")[0]
                         site = part2 if part2 else part1
                 else:
                     tenant = host_prefix.split(".")[0]
-                    site = part2 if part2 else part1
-            else:
-                tenant = host_prefix.split(".")[0]
-                site = part1
-                
-            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token=f"{host_prefix}/{tenant}/{site}"))
+                    site = part1
+                    
+                ats_found = ATSInfo(system=ATSSystem.WORKDAY, token=f"{host_prefix}/{tenant}/{site}")
 
-    # Try LLM ATS detection if no known ATS was parsed from URL
+    if ats_found:
+        return CareersDiscoveryResult(careers_url=url, ats_info=ats_found)
+
+    # If careers_url is a custom domain, inspect page HTML for embedded Lever / Greenhouse / Ashby / SmartRecruiters links
+    if url and not ats_found:
+        try:
+            resp = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            if resp.status_code == 200:
+                html_chunk = resp.text[:100000]
+                lev = re.search(r"https?://jobs\.lever\.co/([a-zA-Z0-9_\-]+)", html_chunk)
+                if lev:
+                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.LEVER, token=lev.group(1)))
+                gh = re.search(r"https?://boards\.greenhouse\.io/([a-zA-Z0-9_\-]+)", html_chunk)
+                if gh:
+                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token=gh.group(1)))
+                ash = re.search(r"https?://jobs\.ashbyhq\.com/([a-zA-Z0-9_\-]+)", html_chunk)
+                if ash:
+                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.ASHBY, token=ash.group(1)))
+                sr = re.search(r"https?://jobs\.smartrecruiters\.com/([a-zA-Z0-9_\-]+)", html_chunk)
+                if sr:
+                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr.group(1)))
+        except Exception as html_e:
+            print(f"[DeepDive] Career page HTML inspection skipped: {html_e}")
+
+    # Try LLM ATS detection if no known ATS was parsed from URL or HTML
     llm_disc = detect_ats_with_llm(company_name)
     if llm_disc:
         return CareersDiscoveryResult(
@@ -315,13 +373,13 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
             token = ats_info.token
             try:
                 if system == "greenhouse":
-                    discovered_jobs = fetch_greenhouse_jobs(token, keywords)
+                    discovered_jobs = fetch_greenhouse_jobs(token, keywords, allow_all_locations=True)
                 elif system == "lever":
-                    discovered_jobs = fetch_lever_jobs(token, keywords)
+                    discovered_jobs = fetch_lever_jobs(token, keywords, allow_all_locations=True)
                 elif system == "ashby":
-                    discovered_jobs = fetch_ashby_jobs(token, keywords)
+                    discovered_jobs = fetch_ashby_jobs(token, keywords, allow_all_locations=True)
                 elif system == "smartrecruiters":
-                    discovered_jobs = fetch_smartrecruiters_jobs(token, keywords)
+                    discovered_jobs = fetch_smartrecruiters_jobs(token, keywords, allow_all_locations=True)
                 elif system == "workday":
                     from app.services.job_fetcher import fetch_workday_jobs
                     discovered_jobs = fetch_workday_jobs(token, keywords)

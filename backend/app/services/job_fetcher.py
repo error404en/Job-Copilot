@@ -46,17 +46,40 @@ def is_location_fresher_or_india_friendly(loc_str: str) -> bool:
         return False
     return True
 
-def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> list:
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
+def _safe_post(url, **kwargs):
+    response = requests.post(url, **kwargs)
+    if response.status_code == 429 or response.status_code >= 500:
+        response.raise_for_status() # Trigger retry
+    return response
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
+def _safe_get(url, **kwargs):
+    response = requests.get(url, **kwargs)
+    if response.status_code == 429 or response.status_code >= 500:
+        response.raise_for_status() # Trigger retry
+    return response
+
+def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None, allow_all_locations: bool = False) -> list:
     """
     Fetches jobs from a Greenhouse board and returns a list of job dicts.
     """
-    if not target_keywords:
+    if "boards.greenhouse.io/" in board_token:
+        m = re.search(r"boards\.greenhouse\.io/([^/?#]+)", board_token)
+        if m:
+            board_token = m.group(1)
+    board_token = board_token.strip().split("?")[0].strip("/")
+    if "/" in board_token:
+        board_token = board_token.split("/")[-1]
+
+    if not target_keywords and not allow_all_locations:
         target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
         
     url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         validate_safe_url(url)
-        response = requests.get(url, timeout=10)
+        response = _safe_get(url, headers=headers, timeout=15)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -74,8 +97,8 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
         if not ok_t:
             continue
 
-        # Prevent foreign non-remote roles from flooding Indian feed
-        if not is_location_fresher_or_india_friendly(loc_name):
+        # Prevent foreign non-remote roles from flooding Indian feed unless explicitly allowed
+        if not allow_all_locations and not is_location_fresher_or_india_friendly(loc_name):
             continue
 
         # Filter by keyword if provided
@@ -103,17 +126,26 @@ def fetch_greenhouse_jobs(board_token: str, target_keywords: list = None) -> lis
         
     return jobs
 
-def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
+def fetch_lever_jobs(board_token: str, target_keywords: list = None, allow_all_locations: bool = False) -> list:
     """
     Fetches jobs from a Lever board.
     """
-    if not target_keywords:
+    if "jobs.lever.co/" in board_token:
+        m = re.search(r"jobs\.lever\.co/([^/?#]+)", board_token)
+        if m:
+            board_token = m.group(1)
+    board_token = board_token.strip().split("?")[0].strip("/")
+    if "/" in board_token:
+        board_token = board_token.split("/")[-1]
+
+    if not target_keywords and not allow_all_locations:
         target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
         
     url = f"https://api.lever.co/v0/postings/{board_token}?mode=json"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         validate_safe_url(url)
-        response = requests.get(url, timeout=10)
+        response = _safe_get(url, headers=headers, timeout=15)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -130,7 +162,7 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
         if not ok_t:
             continue
 
-        if not is_location_fresher_or_india_friendly(loc_name):
+        if not allow_all_locations and not is_location_fresher_or_india_friendly(loc_name):
             continue
 
         if target_keywords:
@@ -141,10 +173,18 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
         lists = job.get("lists", [])
         lists_text = ""
         for lst in lists:
-            lists_text += f"\n{lst.get('text', '')}\n"
-            lists_text += "\n".join([f"- {item.get('content', '')}" for item in lst.get('content', [])])
+            if not isinstance(lst, dict):
+                continue
+            hdr = lst.get('text', '')
+            if hdr:
+                lists_text += f"\n{hdr}\n"
+            content = lst.get('content', '')
+            if isinstance(content, list):
+                lists_text += "\n".join([f"- {clean_html(item.get('content', '')) if isinstance(item, dict) else clean_html(str(item))}" for item in content])
+            elif isinstance(content, str) and content:
+                lists_text += f"\n{clean_html(content)}\n"
             
-        full_jd = f"{title}\nLocation: {job.get('categories', {}).get('location', '')}\n\n{desc}\n{clean_html(lists_text)}"
+        full_jd = f"{title}\nLocation: {loc_name}\n\n{desc}\n{lists_text}".strip()
         
         jobs.append({
             "source_type": "lever",
@@ -154,25 +194,11 @@ def fetch_lever_jobs(board_token: str, target_keywords: list = None) -> list:
             "url": job.get("hostedUrl"),
             "official_apply_url": job.get("hostedUrl"),
             "external_job_id": job.get("id"),
-            "location": job.get("categories", {}).get("location", ""),
+            "location": loc_name,
             "raw_jd": full_jd
         })
         
     return jobs
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
-def _safe_post(url, **kwargs):
-    response = requests.post(url, **kwargs)
-    if response.status_code == 429 or response.status_code >= 500:
-        response.raise_for_status() # Trigger retry
-    return response
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), retry=retry_if_exception_type((requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.TooManyRedirects)))
-def _safe_get(url, **kwargs):
-    response = requests.get(url, **kwargs)
-    if response.status_code == 429 or response.status_code >= 500:
-        response.raise_for_status() # Trigger retry
-    return response
 
 def _fetch_single_workday_jd(job_stub: dict, headers: dict) -> dict:
     """Helper to fetch a single Workday JD concurrently"""
@@ -312,14 +338,23 @@ def fetch_workday_jobs(board_token: str, target_keywords: list = None) -> list:
     
     return final_jobs
 
-def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
-    if not target_keywords:
+def fetch_ashby_jobs(board_token: str, target_keywords: list = None, allow_all_locations: bool = False) -> list:
+    if "jobs.ashbyhq.com/" in board_token:
+        m = re.search(r"jobs\.ashbyhq\.com/([^/?#]+)", board_token)
+        if m:
+            board_token = m.group(1)
+    board_token = board_token.strip().split("?")[0].strip("/")
+    if "/" in board_token:
+        board_token = board_token.split("/")[-1]
+
+    if not target_keywords and not allow_all_locations:
         target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
     
     url = f"https://api.ashbyhq.com/posting-api/job-board/{board_token}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         validate_safe_url(url)
-        response = requests.get(url, timeout=10)
+        response = _safe_get(url, headers=headers, timeout=15)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -336,7 +371,7 @@ def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
         if not ok_t:
             continue
 
-        if not is_location_fresher_or_india_friendly(loc_name):
+        if not allow_all_locations and not is_location_fresher_or_india_friendly(loc_name):
             continue
 
         if target_keywords and not any(kw.lower() in title.lower() for kw in target_keywords):
@@ -358,14 +393,23 @@ def fetch_ashby_jobs(board_token: str, target_keywords: list = None) -> list:
         })
     return jobs
 
-def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -> list:
-    if not target_keywords:
+def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None, allow_all_locations: bool = False) -> list:
+    if "jobs.smartrecruiters.com/" in board_token:
+        m = re.search(r"jobs\.smartrecruiters\.com/([^/?#]+)", board_token)
+        if m:
+            board_token = m.group(1)
+    board_token = board_token.strip().split("?")[0].strip("/")
+    if "/" in board_token:
+        board_token = board_token.split("/")[-1]
+
+    if not target_keywords and not allow_all_locations:
         target_keywords = ["software", "engineer", "developer", "backend", "fullstack", "data"]
     
     url = f"https://api.smartrecruiters.com/v1/companies/{board_token}/postings"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         validate_safe_url(url)
-        response = requests.get(url, timeout=10)
+        response = _safe_get(url, headers=headers, timeout=15)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -382,7 +426,7 @@ def fetch_smartrecruiters_jobs(board_token: str, target_keywords: list = None) -
         if not ok_t:
             continue
 
-        if not is_location_fresher_or_india_friendly(loc_name):
+        if not allow_all_locations and not is_location_fresher_or_india_friendly(loc_name):
             continue
 
         if target_keywords and not any(kw.lower() in title.lower() for kw in target_keywords):
