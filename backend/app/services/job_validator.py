@@ -42,7 +42,13 @@ BLOCKED_ROLE_TITLES = {
     "netflix media center", "salaries", "salary", "company profile", "overview",
     "current openings", "careers", "career", "all jobs", "home", "search",
     "find a job", "login", "sign up", "signup", "about us", "contact us",
-    "leadership", "products", "services", "terms of use", "privacy policy"
+    "leadership", "products", "services", "terms of use", "privacy policy",
+    "you", "lateral", "candidate experience site", "campus application center",
+    "engineering talent community", "talent community", "talent network",
+    "professional services careers", "information technology & services careers",
+    "early careers talent community", "job search", "opportunities",
+    "back to job openings", "cloud technology jobs", "join our engineering talent community",
+    "ceo", "cto", "cfo", "coo", "chief executive officer", "president"
 }
 
 KNOWN_JOB_PORTALS = {
@@ -155,9 +161,18 @@ def validate_role_title(title: str, company_name: str = "") -> tuple[bool, str]:
             return False, "Title is identical to company name"
 
     # Block obvious navigational or web page labels
-    suspicious_starts = ["welcome to", "about us", "contact us", "overview of", "privacy policy", "terms and", "http", "www."]
+    suspicious_starts = ["welcome to", "about us", "contact us", "overview of", "privacy policy", "terms and", "http", "www.", "newsroom", "home \\", "home /", "company \\", "company /"]
     if any(title_lower.startswith(s) for s in suspicious_starts):
         return False, f"Navigational title: '{clean_title}'"
+
+    if any(term in title_lower for term in ["talent community", "talent pool", "job openings", "career opportunities"]):
+        return False, f"Talent community/listing title: '{clean_title}'"
+
+    # Block titles formatted as 'Section \ Company' (e.g. 'Newsroom \ Anthropic', 'Home \ Anthropic')
+    if "\\" in clean_title or "/" in clean_title:
+        parts = [p.strip().lower() for p in re.split(r'[\\/]', clean_title)]
+        if any(p in ["newsroom", "home", "company", "careers", "jobs", "overview"] for p in parts):
+            return False, f"Navigational breadcrumb title: '{clean_title}'"
 
     # Block JD body fragments parsed as titles (e.g. 'you will manage and grow the team...')
     if len(clean_title.split()) > 10:

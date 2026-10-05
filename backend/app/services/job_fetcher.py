@@ -25,24 +25,48 @@ def check_role_location_and_relocation(loc_str: str, raw_jd: str = "") -> dict:
     Evaluates whether a role is based in India / Remote, or is an abroad role
     that explicitly covers international relocation assistance / visa sponsorship for Indian candidates.
     """
-    loc = (loc_str or "").lower()
+    loc = (loc_str or "").lower().strip()
     jd = (raw_jd or "").lower()
     
-    indian_or_remote = [
+    indian_keywords = [
         "india", "bengaluru", "bangalore", "hyderabad", "mumbai", "pune", 
         "delhi", "noida", "gurgaon", "gurugram", "chennai", "kolkata", 
-        "remote", "anywhere", "global", "flexible", "apac", "work from home", "wfh"
+        "ahmedabad", "jaipur", "kochi", "cochin", "coimbatore", "chandigarh", "indore",
+        "dehradun", "lucknow", "mohali", "kanpur", "nagpur", "bhopal", "patna",
+        "vadodara", "surat", "visakhapatnam", "vizag", "bhubaneswar", "mysore", "mysuru",
+        "trivandrum", "thiruvananthapuram", "gandhinagar", "ghaziabad", "faridabad",
+        "karnataka", "telangana", "maharashtra", "haryana", "tamil nadu", "kerala",
+        "uttarakhand", "punjab", "gujarat", "uttar pradesh", "rajasthan", "west bengal"
     ]
-    is_india_or_remote = any(k in loc for k in indian_or_remote) or not loc
+    remote_keywords = ["remote", "anywhere", "work from home", "wfh"]
     
-    overseas_cities = [
+    is_india = any(re.search(r'\b' + re.escape(k) + r'\b', loc) for k in indian_keywords)
+    is_remote = any(re.search(r'\b' + re.escape(k) + r'\b', loc) for k in remote_keywords)
+    
+    # Explicit overseas identifiers
+    overseas_keywords = [
         "belgrade", "serbia", "tokyo", "japan", "london", "uk", "united kingdom", 
-        "berlin", "germany", "warsaw", "poland", "paris", "france", "sydney", 
-        "australia", "toronto", "canada", "amsterdam", "netherlands", "zurich", 
+        "berlin", "germany", "warsaw", "poland", "paris", "france", "sydney", "melbourne",
+        "australia", "toronto", "vancouver", "canada", "amsterdam", "netherlands", "zurich", 
         "switzerland", "new york", "san francisco", "austin", "seattle", "dublin", "ireland",
-        "united states", "usa", "us", "singapore", "boston", "chicago"
+        "united states", "usa", "us", "u.s.", "singapore", "boston", "chicago", "taiwan",
+        "taipei", "stockholm", "sweden", "sao paulo", "brazil", "americas", "madrid", "spain",
+        "mexico", "bogota", "colombia", "israel", "tel aviv", "seoul", "korea"
     ]
-    is_abroad = any(k in loc for k in overseas_cities) and not is_india_or_remote
+    
+    has_overseas = any(re.search(r'\b' + re.escape(k) + r'\b', loc) for k in overseas_keywords)
+    
+    # If explicitly overseas or if loc is given without any Indian/Remote indicators
+    if has_overseas and not is_india:
+        is_abroad = True
+        is_india_or_remote = is_remote
+    elif loc and not is_india and not is_remote:
+        # Has a specific location that is neither India nor Remote
+        is_abroad = True
+        is_india_or_remote = False
+    else:
+        is_abroad = False
+        is_india_or_remote = is_india or is_remote or (not loc)
     
     # Check for relocation coverage / visa sponsorship
     reloc_pos = bool(re.search(
