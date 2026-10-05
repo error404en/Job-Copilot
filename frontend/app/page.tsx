@@ -1413,9 +1413,9 @@ function DashboardContent() {
                       </button>
 
                       {/* Quick Apply Link */}
-                      {job.url && (
+                      {(job.official_apply_url || job.url) && (
                         <a 
-                          href={job.url} 
+                          href={job.official_apply_url || job.url} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-sm shadow-indigo-600/30 active:scale-95 shrink-0"

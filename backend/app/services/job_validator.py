@@ -25,10 +25,12 @@ BLOCKED_DOMAINS = {
     "forbes.com", "wsj.com", "bloomberg.com", "reuters.com", "cnbc.com", "bbc.com", "cnn.com",
     "yahoo.com", "msn.com", "storyboard18.com", "igotanoffer.com", "medium.com", "substack.com", 
     "techcrunch.com", "theverge.com",
-    # Low-Quality Aggregators, Exam Portals & SEO Spam
+    # Low-Quality Aggregators, Exam Portals, Scrapers & SEO Spam
+    "glassdoor.com", "glassdoor.co.in", "thejobcompany.co.in",
     "foundit.in", "ownyourcareer.in", "freshersworld.com", "fresherslive.com", "freshersnow.com",
     "sarkariresult.com", "placementindia.com", "shine.com", "jobseeker.com", "shiksha.com",
     "collegedunia.com", "way2fresher.com", "offcampusjobs4u.com", "tprassociation.org",
+    "quikr.com", "olx.in", "apna.co", "jooble.org", "talent.com",
     # Government & Parks / Public Services
     "nps.gov",
     # Unverified research brochures / PDF hosts
@@ -41,6 +43,8 @@ BLOCKED_ROLE_TITLES = {
     "senior & lead", "plastics product manufacturing", "netflix help center",
     "netflix media center", "salaries", "salary", "company profile", "overview",
     "current openings", "careers", "career", "all jobs", "home", "search",
+    "search jobs", "search our job opportunities", "search our job opportunities at barclays",
+    "search our job opportunities at google", "search results", "browse jobs",
     "find a job", "login", "sign up", "signup", "about us", "contact us",
     "leadership", "products", "services", "terms of use", "privacy policy",
     "you", "lateral", "candidate experience site", "campus application center",
@@ -123,8 +127,13 @@ def validate_job_url(url: str, company_name: str = "") -> tuple[bool, str]:
             return False, f"Not a direct Naukri job posting: {path}"
 
     if "glassdoor." in netloc_clean:
-        if not ("/job-listing/" in path or "/job/" in path or "/jobs/" in path):
-            return False, "Non-job Glassdoor link (reviews/salary page)"
+        return False, "Glassdoor aggregator links are blocked"
+
+    # Disallow search query directory URLs that don't point to an individual posting
+    if any(sp in path for sp in ["/results/", "/search-jobs/", "/job-search/", "/jobs/search-results/"]):
+        if any(qp in url.lower() for qp in ["?q=", "&q=", "?keywords=", "search-jobs/senior", "search-jobs/software"]):
+            if "job_id=" not in url.lower() and "/view/" not in path and not re.search(r'/\d{5,}', path):
+                return False, f"Search directory page instead of individual job posting: {path}"
 
     return True, "Valid URL"
 
@@ -149,6 +158,17 @@ def validate_role_title(title: str, company_name: str = "") -> tuple[bool, str]:
     # Check blocked titles
     if title_lower in BLOCKED_ROLE_TITLES:
         return False, f"Blocked placeholder title: '{clean_title}'"
+
+    # Block titles starting with Search or indicating search navigation
+    if re.search(r'^\s*search\s+(our\s+)?(jobs?|job\s+opportunities|all\s+jobs)\b', title_lower):
+        return False, f"Search navigation title: '{clean_title}'"
+
+    # Block titles indicating search results count (e.g. '547 anthropic jobs in India')
+    if re.search(r'^\s*\d+\+?\s+.*jobs\b', title_lower):
+        return False, f"Search result count title: '{clean_title}'"
+
+    if re.search(r'\bjobs\s+in\s+[a-zA-Z\s]+,\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})', title_lower):
+        return False, f"Directory aggregator title: '{clean_title}'"
 
     # Block titles containing non-Latin CJK / East Asian characters for India/Global roles
     if re.search(r'[\u4e00-\u9fff\u3040-\u309f\uac00-\ud7af]', clean_title):
@@ -198,13 +218,19 @@ def is_valid_job_posting(role_title: str, url: str, company_name: str = "", raw_
     if external_job_id and not url:
         pass
     else:
+        if not url or url.strip().lower() in ["none", "null", "undefined", "#"]:
+            return False, "Missing or empty URL"
         ok_url, url_reason = validate_job_url(url, company_name)
         if not ok_url:
             return False, url_reason
 
-    # If raw JD is provided, verify it's not a tiny error page or park snippet
+    # If raw JD is provided, verify it's not an aggregator directory or navigation shell
     if raw_jd:
         jd_lower = raw_jd.lower()
+        if re.search(r'^\s*\d+\s+[a-zA-Z0-9\s]+jobs\s+in\s+', jd_lower):
+            return False, "Aggregator search directory snippet in JD"
+        if "skip to main content" in jd_lower and "home my network jobs messaging" in jd_lower:
+            return False, "Scraped LinkedIn navigation shell instead of real JD"
         if "a park is an area of natural" in jd_lower or "halley park in bentleigh" in jd_lower:
             return False, "Wikipedia Park text in JD"
         if "netflix" in jd_lower and ("sign up" in jd_lower or "media center" in jd_lower) and "ultimate flexipack" in jd_lower:

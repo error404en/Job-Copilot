@@ -15,7 +15,7 @@ def fetch_all_jobs():
     start = 0
     while True:
         end = start + page_size - 1
-        res = supabase.table('jobs').select('id, company, role_title, location, seniority_required, raw_jd, url').range(start, end).execute()
+        res = supabase.table('jobs').select('id, company, role_title, location, seniority_required, raw_jd, url, official_apply_url').range(start, end).execute()
         rows = res.data or []
         all_jobs.extend(rows)
         if len(rows) < page_size:
@@ -39,18 +39,19 @@ def audit_jobs(dry_run: bool = True):
         title = j.get("role_title") or ""
         loc = j.get("location") or ""
         raw_jd = j.get("raw_jd") or ""
+        url = j.get("official_apply_url") or j.get("url") or ""
         title_lower = title.lower()
         sen_lower = (j.get("seniority_required") or "").lower()
         
         # 0. Check company name validity
-        if company.lower() in ["candidate experience site", "careers", "unknown role", "job search"]:
+        if company.lower() in ["candidate experience site", "careers", "unknown role", "job search", "unknown", "company"]:
             to_remove.append((j, f"Invalid company placeholder: '{company}'"))
             continue
 
-        # 1. Check title validity
-        valid_title, title_reason = validate_role_title(title, company)
-        if not valid_title:
-            to_remove.append((j, f"Invalid title: {title_reason}"))
+        # 1. Comprehensive Job & URL Posting Gate
+        valid_posting, post_reason = is_valid_job_posting(title, url, company, raw_jd)
+        if not valid_posting:
+            to_remove.append((j, f"Invalid posting: {post_reason} (URL: {url[:60]}...)"))
             continue
             
         # 2. Seniority Gate (User is a Fresher)

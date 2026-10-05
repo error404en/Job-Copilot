@@ -71,6 +71,31 @@ function formatDeadlineDate(dateStr?: string | null): string {
   }
 }
 
+function getApplySourceLabel(url?: string, sourceType?: string): { label: string; isOfficial: boolean } {
+  if (!url) return { label: 'Application Link', isOfficial: false }
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    if (['greenhouse.io', 'lever.co', 'ashbyhq.com', 'smartrecruiters.com', 'workdayjobs.com', 'myworkdayjobs.com', 'oraclecloud.com', 'taleo.net', 'icims.com'].some(ats => host.includes(ats))) {
+      return { label: 'Official ATS Portal', isOfficial: true }
+    }
+    if (sourceType === 'curated_official' || sourceType === 'official_portal') {
+      return { label: 'Official Careers Portal', isOfficial: true }
+    }
+    if (host.includes('linkedin.com')) {
+      return { label: 'LinkedIn Posting', isOfficial: false }
+    }
+    if (host.includes('wellfound.com') || host.includes('instahyre.com')) {
+      return { label: 'Direct Board Posting', isOfficial: false }
+    }
+    if (!['glassdoor', 'indeed', 'naukri', 'monster', 'shine'].some(agg => host.includes(agg))) {
+      return { label: 'Company Portal', isOfficial: true }
+    }
+    return { label: 'External Job Link', isOfficial: false }
+  } catch {
+    return { label: 'Application Portal', isOfficial: false }
+  }
+}
+
 function cleanTitle(title?: string): string {
   if (!title) return 'Job Opportunity'
   return title
@@ -418,6 +443,7 @@ export default function JobDetailPage() {
     : 'text-rose-400 from-rose-400 to-red-500'
 
   const applyUrl = job.official_apply_url || job.url
+  const applySource = getApplySourceLabel(applyUrl, job.source_type || job.source)
 
   return (
     <div className="space-y-6 pb-16 max-w-6xl mx-auto font-sans antialiased">
@@ -503,9 +529,13 @@ export default function JobDetailPage() {
                     href={applyUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition-colors"
+                    className={`text-xs flex items-center gap-1 font-medium transition-colors ${
+                      applySource.isOfficial
+                        ? 'text-emerald-400 hover:text-emerald-300'
+                        : 'text-indigo-400 hover:text-indigo-300'
+                    }`}
                   >
-                    <span>Official Portal</span>
+                    <span>{applySource.label}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
