@@ -70,8 +70,12 @@ def audit_jobs(dry_run: bool = True):
             
         # 3. Location Gate (Must be India, Remote, or abroad WITH relocation)
         title_overseas = re.search(r'[-–(]\s*(sweden|stockholm|london|netherlands|sao paulo|uk|japan|tokyo|germany|berlin|poland|warsaw|france|paris|australia|sydney|singapore|spain|madrid|amer|latam|emea|taiwan|taipei)\b', title_lower)
+        jd_loc_match = re.search(r'Location:\s*([^\n\r]+)', raw_jd, re.IGNORECASE)
+        
         if title_overseas and not any(k in title_lower for k in ["india", "bengaluru", "bangalore", "delhi", "pune", "hyderabad", "mumbai"]):
             effective_loc = title_overseas.group(1).strip()
+        elif jd_loc_match and not any(k in jd_loc_match.group(1).lower() for k in ["india", "bengaluru", "bangalore", "delhi", "pune", "hyderabad", "mumbai", "noida", "gurgaon", "remote"]):
+            effective_loc = jd_loc_match.group(1).strip()
         else:
             effective_loc = loc
             
@@ -81,8 +85,12 @@ def audit_jobs(dry_run: bool = True):
             continue
             
         # 4. Domain & Relevance Gate
-        # Filter non-tech roles
-        non_tech = ["tax", "accounting", "contact center", "qa analyst", "sales executive", "recruiter", "talent acquisition"]
+        # Filter non-tech, sales, banking ops, and consulting analyst roles
+        non_tech = [
+            "tax", "accounting", "contact center", "qa analyst", "sales executive", 
+            "recruiter", "talent acquisition", "business technology analyst", "tm analyst",
+            "sales engineer", "financial data analyst", "banking operations", "economic crime"
+        ]
         if any(nt in title_lower for nt in non_tech):
             to_remove.append((j, f"Non-tech / domain mismatch: '{title}'"))
             continue

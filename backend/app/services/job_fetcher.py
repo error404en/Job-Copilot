@@ -806,18 +806,6 @@ VERIFIED_COMPANY_ROLES = {
                 "required_skills": ["Python", "SQL", "AWS", "Data Structures", "Algorithms"],
                 "raw_jd": "Software Engineer at ZS Associates India. Responsible for building and maintaining enterprise applications and data pipelines. Strong understanding of Object-Oriented Programming (Python/Java), relational databases, and data structures.",
                 "source": "official_portal"
-            },
-            {
-                "role_title": "Business Technology Analyst",
-                "company": "ZS Associates",
-                "location": "Pune / New Delhi",
-                "url": "https://jobs.zs.com/jobs?keywords=Business%20Technology%20Analyst&location=India",
-                "experience_level": "0-2 Yrs (Analyst)",
-                "seniority_required": "0-2yr",
-                "compensation_range": "₹10.5L - ₹12.5L CTC",
-                "required_skills": ["SQL", "Data Analytics", "Python", "Problem Solving"],
-                "raw_jd": "Business Technology Analyst at ZS Associates India. Requires strong problem solving, SQL, and data analysis skills. Ideal for fresh graduates.",
-                "source": "official_portal"
             }
         ]
     },
