@@ -364,9 +364,9 @@ def _scrape_with_playwright_browser(url: str) -> Optional[ScrapedJobResult]:
     """
     Low-memory Chromium execution for heavy React/Vue SPAs or sites requiring dynamic JS.
     """
-    enable_playwright = os.getenv("ENABLE_PLAYWRIGHT", "true").lower() in ("true", "1", "yes")
+    enable_playwright = os.getenv("ENABLE_PLAYWRIGHT", "false").lower() in ("true", "1", "yes")
     if not enable_playwright:
-        logger.info(f"[ScraperEngine] Playwright disabled (ENABLE_PLAYWRIGHT=false), skipping browser launch for {url}")
+        logger.info(f"[ScraperEngine] Playwright disabled by default (ENABLE_PLAYWRIGHT=false), skipping browser launch for {url}")
         return None
 
     try:

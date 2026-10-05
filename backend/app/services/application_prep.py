@@ -27,3 +27,29 @@ def generate_cover_letter(raw_jd: str, resume_summary: str, use_groq: bool = Fal
         import traceback
         traceback.print_exc()
         return f"Error generating cover letter. Please try again. ({str(e)})"
+
+DM_PROMPT = """
+You are an expert at writing non-robotic, highly technical cold direct messages (DMs) to an engineer or founder.
+Your goal is to write a short, punchy DM (under 50 words).
+
+RULES (CRITICAL):
+1. THE BANNED WORD LIST: You MUST NOT use ANY of the following words or phrases: delve, thrilled, leverage, testament, seamless, foster, hone, eager, synergy, profound interest, navigate, pivotal, dynamic, landscape, robust.
+2. TONE: Engineer-to-engineer or builder-to-founder. No corporate fluff. 
+3. THE PROOF RULE: You MUST identify the single MOST RELEVANT project from the candidate's resume for the given job description. 
+4. THE FORMAT (approximate): 
+Hi [Name],
+Saw [Company] is hiring for [Role] / building [Tech/Problem]. I recently built [Project Name] (🔗 [Project Link]) where I [1-line result/metric]. 
+Would love to chat about your engineering roadmap if you're open to it. 
+Best,
+[Candidate Name]
+5. Only return the raw text of the message. Do NOT include preambles. Extract a real project link from the candidate's resume summary.
+"""
+
+def generate_founder_dm(raw_jd: str, resume_summary: str, use_groq: bool = False) -> str:
+    prompt = f"{DM_PROMPT}\n\nJOB DESCRIPTION:\n{raw_jd}\n\nCANDIDATE RESUME:\n{resume_summary}\n\nOutput only the raw DM."
+    try:
+        response_text = get_completion(prompt, use_groq=use_groq)
+        return response_text.strip()
+    except Exception as e:
+        return f"Error generating DM: {str(e)}"
+

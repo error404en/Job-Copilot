@@ -179,6 +179,25 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
         seniority_fit = "stretch"
         score -= 15
 
+    # Startup & Freshness Preferences
+    # Prefer < 200 people
+    c_size = (parsed_job.company_size or "").lower()
+    if c_size:
+        # Penalize large companies/enterprises if inferred
+        if any(x in c_size for x in ["500", "1000", "10,000", "5000"]):
+            score -= 10
+        elif any(x in c_size for x in ["1-10", "11-50", "51-200"]):
+            score += 10
+            
+    # Prefer < 48 hours
+    h_posted = parsed_job.hours_since_posted
+    if h_posted is not None:
+        if h_posted <= 48:
+            score += 10
+        elif h_posted > 168: # older than a week
+            score -= 10
+
+
     # Relocation analysis
     loc_lower = (parsed_job.location or "").lower()
     is_remote = parsed_job.remote_type == "remote" or "remote" in loc_lower

@@ -273,14 +273,14 @@ def start_scheduler():
         print("[Scheduler] Background scheduler disabled via ENABLE_BACKGROUND_SCHEDULER=false")
         return
 
-    enable_scraping = os.getenv("ENABLE_BACKGROUND_SCRAPING", "true").lower() in ("true", "1", "yes")
+    enable_scraping = os.getenv("ENABLE_BACKGROUND_SCRAPING", "false").lower() in ("true", "1", "yes")
 
     # Run every 4 hours for continuous automated job discovery if scraping enabled
     if enable_scraping:
         scheduler.add_job(fetch_latest_jobs_task, 'interval', hours=4)
         scheduler.add_job(fetch_dream_company_jobs_task, 'interval', hours=4)
     else:
-        print("[Scheduler] Automated 4-hour background web scraping disabled (ENABLE_BACKGROUND_SCRAPING=false) to conserve container RAM.")
+        print("[Scheduler] Automated 4-hour background web scraping disabled by default (ENABLE_BACKGROUND_SCRAPING=false) to keep container RAM <250MB.")
 
     # Run every 5 minutes
     scheduler.add_job(process_pending_analyses_task, 'interval', minutes=5)

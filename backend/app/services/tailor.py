@@ -201,7 +201,7 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
     - Do NOT invent, infer, or fill missing values. If a field is missing, use null or an empty list.
     - Do NOT extract or include any phone numbers.
     - Explicitly prioritize extracting links for GitHub, LinkedIn, and any personal portfolio website.
-    - For projects: "name" is the project name (e.g. "LitLens AI"), "tech" is the project repo link or key stack (e.g. "github.com/error404en/LitLensAI").
+    - For projects: "name" is the project name (e.g. "LitLens AI"), "tech" is the key stack, "link" is the direct URL to the repo/live site (e.g. "github.com/error404en/LitLensAI"), and "one_line_result" is a synthesized punchy 1-line summary of the core outcome or metric.
     - For "bullets" under experience/projects: copy the existing bullet points verbatim.
     - For "skills", split skills into:
       "languages": languages + core CS fundamentals (e.g. "Python, C++, JavaScript/TypeScript, SQL, DSA, OOP, DBMS, OS, Computer Networks, System Design")
@@ -230,6 +230,8 @@ def generate_tailored_resume_json(raw_content: str, jd_text: str, missing_keywor
         {{
           "name": "string",
           "tech": "string",
+          "link": "string or null",
+          "one_line_result": "string or null",
           "bullets": ["string"]
         }}
       ],

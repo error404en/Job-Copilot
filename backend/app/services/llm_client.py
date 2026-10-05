@@ -70,22 +70,22 @@ def _is_rate_limit_error(e: Exception) -> bool:
 # ---------------------------------------------------------------------------
 
 GEMINI_TEXT_MODELS = [
-    GEMINI_MODEL,              # gemini-3.5-flash
-    "gemini-3.5-flash-lite",   # high-speed, lightweight
-    "gemini-3.1-flash-lite",   # fast reliable fallback
-    "gemma-4-26b-a4b-it",      # open weights instruction model
-    "gemini-2.5-flash",        # standard flash
+    GEMINI_MODEL,              # gemini-2.5-flash
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
 ]
 
 GEMINI_JSON_MODELS = [
-    GEMINI_MODEL,              # gemini-3.5-flash
-    "gemini-3.5-flash-lite",   # verified JSON mode
-    "gemini-3.1-flash-lite",   # verified JSON mode
-    "gemini-2.5-flash",        # standard flash
+    GEMINI_MODEL,              # gemini-2.5-flash
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
 ]
 
 GEMINI_VISION_MODELS = [
-    GEMINI_VISION_MODEL,       # gemini-3.5-flash
+    GEMINI_VISION_MODEL,       # gemini-2.5-flash
+    "gemini-2.5-flash",
     "gemini-3.5-flash-lite",
 ]
 

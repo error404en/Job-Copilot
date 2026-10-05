@@ -53,7 +53,8 @@ def health_check():
         max_rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         max_rss_mb = round(max_rss_kb / 1024, 2)
         mem_info["max_rss_mb"] = max_rss_mb
-        if max_rss_mb > 350:
+        # Proactively collect garbage if memory approaches 280MB
+        if max_rss_mb > 280:
             gc.collect()
     except Exception:
         pass

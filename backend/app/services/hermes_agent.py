@@ -22,6 +22,15 @@ async def run_hermes_apply(url: str, job_id: str):
     Spins up a headless browser, navigates to the job URL, and attempts to fill out 
     common ATS forms (like Greenhouse/Lever) with user profile data.
     """
+    import os
+    enable_playwright = os.getenv("ENABLE_PLAYWRIGHT", "false").lower() in ("true", "1", "yes")
+    if not enable_playwright:
+        logger.info("[Hermes] Playwright disabled (ENABLE_PLAYWRIGHT=false) to protect 512MB RAM server.")
+        return {
+            "status": "error",
+            "message": "Headless browser auto-apply is disabled on 512MB memory servers to prevent container crashes. Use the JobCopilot Chrome Extension for zero-server-RAM instant autofill directly in your browser."
+        }
+
     logger.info(f"Hermes Agent starting auto-apply for job {job_id} at {url}")
     browser = None
     context = None

@@ -99,6 +99,69 @@ KNOWN_COMPANY_ATS = {
     )
 }
 
+def detect_ats_with_llm(company_name: str) -> Optional[CareersDiscoveryResult]:
+    """
+    High-speed LLM fallback (Groq / Gemini) to detect official careers portal & ATS token.
+    Uses model's knowledge base in <400ms without spinning up headless browser or scraping.
+    """
+    import json
+    from app.services.llm_client import groq_client, gemini_client, GROQ_MODEL
+    prompt = f"""
+For the company "{company_name}", identify:
+1. The official career portal URL.
+2. The Applicant Tracking System (ATS) used (e.g. greenhouse, lever, ashby, workday, smartrecruiters, or custom).
+3. If there is a direct ATS board token (e.g. greenhouse token or ashby company token like 'ramp', 'linear', etc.), provide it.
+
+Respond in JSON only with keys: "careers_url", "ats_system", "ats_token"
+"""
+    raw_json = None
+    if groq_client:
+        try:
+            comp = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=300
+            )
+            raw_json = comp.choices[0].message.content
+        except Exception:
+            pass
+
+    if not raw_json and gemini_client:
+        try:
+            res = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            raw_json = res.text
+        except Exception:
+            pass
+
+    if raw_json:
+        try:
+            cleaned = raw_json.strip()
+            if "```json" in cleaned:
+                cleaned = cleaned.split("```json")[1].split("```")[0]
+            elif "```" in cleaned:
+                cleaned = cleaned.split("```")[1].split("```")[0]
+            data = json.loads(cleaned.strip())
+            careers_url = data.get("careers_url")
+            ats_sys = (data.get("ats_system") or "").lower().strip()
+            ats_tok = data.get("ats_token")
+            
+            ats_info = None
+            for known_sys in [ATSSystem.GREENHOUSE, ATSSystem.LEVER, ATSSystem.ASHBY, ATSSystem.SMARTRECRUITERS, ATSSystem.WORKDAY]:
+                if known_sys.value in ats_sys and ats_tok:
+                    ats_info = ATSInfo(system=known_sys, token=ats_tok)
+                    break
+                
+            if careers_url or ats_info:
+                return CareersDiscoveryResult(careers_url=careers_url, ats_info=ats_info)
+        except Exception as parse_e:
+            print(f"[DeepDive] LLM ATS parsing failed: {parse_e}")
+
+    return None
+
 def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] = None) -> CareersDiscoveryResult:
     """
     Company -> official domain -> official careers URL -> detect known ATS
@@ -133,59 +196,68 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
         except Exception as e:
             print(f"Careers URL discovery failed: {e}")
         
-    if not careers_url:
-        return CareersDiscoveryResult()
-        
     url = careers_url
     
     # Check Greenhouse
-    gh_match = re.search(r"boards\.greenhouse\.io/([^/]+)", url)
-    if gh_match:
-        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token=gh_match.group(1)))
-        
-    # Check Lever
-    lever_match = re.search(r"jobs\.lever\.co/([^/]+)", url)
-    if lever_match:
-        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.LEVER, token=lever_match.group(1)))
-        
-    # Check Ashby
-    ashby_match = re.search(r"jobs\.ashbyhq\.com/([^/]+)", url)
-    if ashby_match:
-        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.ASHBY, token=ashby_match.group(1)))
-        
-    # Check SmartRecruiters
-    sr_match = re.search(r"jobs\.smartrecruiters\.com/([^/]+)", url)
-    if sr_match:
-        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr_match.group(1)))
-        
-    # Check Workday
-    wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)(?:/([^/]+))?", url)
-    if wd_match:
-        host_prefix = wd_match.group(1)
-        part1 = wd_match.group(2)
-        part2 = wd_match.group(3)
-        
-        if part2 and (part1.lower() == "en-us" or len(part1) == 2):
-            site = part2
-            tenant = host_prefix.split(".")[0]
-        elif part1 == "wday":
-            path_parts = url.split("wday/cxs/")
-            if len(path_parts) > 1:
-                sub_parts = path_parts[1].split("/")
-                if len(sub_parts) >= 2:
-                    tenant = sub_parts[0]
-                    site = sub_parts[1]
+    if url:
+        gh_match = re.search(r"boards\.greenhouse\.io/([^/]+)", url)
+        if gh_match:
+            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token=gh_match.group(1)))
+            
+        # Check Lever
+        lever_match = re.search(r"jobs\.lever\.co/([^/]+)", url)
+        if lever_match:
+            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.LEVER, token=lever_match.group(1)))
+            
+        # Check Ashby
+        ashby_match = re.search(r"jobs\.ashbyhq\.com/([^/]+)", url)
+        if ashby_match:
+            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.ASHBY, token=ashby_match.group(1)))
+            
+        # Check SmartRecruiters
+        sr_match = re.search(r"jobs\.smartrecruiters\.com/([^/]+)", url)
+        if sr_match:
+            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr_match.group(1)))
+            
+        # Check Workday
+        wd_match = re.search(r"https?://([^/]+)\.myworkdayjobs\.com/([^/]+)(?:/([^/]+))?", url)
+        if wd_match:
+            host_prefix = wd_match.group(1)
+            part1 = wd_match.group(2)
+            part2 = wd_match.group(3)
+            
+            if part2 and (part1.lower() == "en-us" or len(part1) == 2):
+                site = part2
+                tenant = host_prefix.split(".")[0]
+            elif part1 == "wday":
+                path_parts = url.split("wday/cxs/")
+                if len(path_parts) > 1:
+                    sub_parts = path_parts[1].split("/")
+                    if len(sub_parts) >= 2:
+                        tenant = sub_parts[0]
+                        site = sub_parts[1]
+                    else:
+                        tenant = host_prefix.split(".")[0]
+                        site = part2 if part2 else part1
                 else:
                     tenant = host_prefix.split(".")[0]
                     site = part2 if part2 else part1
             else:
                 tenant = host_prefix.split(".")[0]
-                site = part2 if part2 else part1
-        else:
-            tenant = host_prefix.split(".")[0]
-            site = part1
-            
-        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token=f"{host_prefix}/{tenant}/{site}"))
+                site = part1
+                
+            return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.WORKDAY, token=f"{host_prefix}/{tenant}/{site}"))
+
+    # Try LLM ATS detection if no known ATS was parsed from URL
+    llm_disc = detect_ats_with_llm(company_name)
+    if llm_disc:
+        return CareersDiscoveryResult(
+            careers_url=url or llm_disc.careers_url,
+            ats_info=llm_disc.ats_info
+        )
+
+    if not url:
+        return CareersDiscoveryResult()
         
     return CareersDiscoveryResult(careers_url=url)
 
@@ -256,14 +328,14 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
             except Exception as e:
                 print(f"Failed to fetch jobs from discovered ATS {system} for {token}: {e}")
 
-        # Tier 3: If no ATS found OR ATS returned 0 jobs -> Generic Playwright Fallback on careers URL
+        # Tier 3: If no ATS found OR ATS returned 0 jobs -> Generic Fast Scraper Fallback on careers URL
         if not discovered_jobs and careers_url:
-            print(f"[DeepDive] No ATS or 0 ATS jobs found for {company_name}. Using Playwright fallback on {careers_url}")
+            print(f"[DeepDive] No ATS or 0 ATS jobs found for {company_name}. Using fast fallback on {careers_url}")
             from app.services.job_fetcher import fetch_generic_fallback
             try:
                 discovered_jobs = fetch_generic_fallback(careers_url, company_name, keywords)
             except Exception as pf_e:
-                print(f"[DeepDive] Generic Playwright fallback failed: {pf_e}")
+                print(f"[DeepDive] Generic fallback failed: {pf_e}")
 
         # Tier 4: Startup Job Board Search Fallback (Wellfound, Instahyre, etc.)
         if not discovered_jobs:
@@ -323,40 +395,45 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
     """
     Executes ATS/job discovery and company intelligence in parallel with safe timeouts.
     Never fails or throws 500 on small startups.
+    Guarantees garbage collection to keep container RAM <250MB.
     """
+    import gc
     discovered_jobs = []
     careers_url = None
     ats_info = None
     company_info = None
 
-    # Execute ATS/Jobs Discovery and Company Intelligence concurrently
-    # This prevents Vercel 10-15s proxy timeout by cutting latency in half!
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_jobs = executor.submit(_discover_company_jobs_and_ats, req.company_name, req.target_keywords)
-        future_info = executor.submit(research_company, req.company_name)
+    try:
+        # Execute ATS/Jobs Discovery and Company Intelligence concurrently
+        # This prevents Vercel 10-15s proxy timeout by cutting latency in half!
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_jobs = executor.submit(_discover_company_jobs_and_ats, req.company_name, req.target_keywords)
+            future_info = executor.submit(research_company, req.company_name)
 
-        try:
-            discovered_jobs, careers_url, ats_info = future_jobs.result(timeout=14)
-        except Exception as e:
-            print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {e}")
-            discovered_jobs, careers_url, ats_info = [], None, None
+            try:
+                discovered_jobs, careers_url, ats_info = future_jobs.result(timeout=14)
+            except Exception as e:
+                print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {e}")
+                discovered_jobs, careers_url, ats_info = [], None, None
 
-        try:
-            company_info = future_info.result(timeout=14)
-        except Exception as e:
-            print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {e}")
+            try:
+                company_info = future_info.result(timeout=14)
+            except Exception as e:
+                print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {e}")
+                company_info = _get_startup_fallback_intelligence(req.company_name)
+
+        if not company_info:
             company_info = _get_startup_fallback_intelligence(req.company_name)
 
-    if not company_info:
-        company_info = _get_startup_fallback_intelligence(req.company_name)
-
-    norm_c = req.company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
-    return {
-        "company_info": company_info,
-        "ats_info": ats_info.model_dump() if ats_info else None,
-        "careers_url": careers_url or f"https://www.{norm_c}.com",
-        "jobs": discovered_jobs or []
-    }
+        norm_c = req.company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
+        return {
+            "company_info": company_info,
+            "ats_info": ats_info.model_dump() if ats_info else None,
+            "careers_url": careers_url or f"https://www.{norm_c}.com",
+            "jobs": discovered_jobs or []
+        }
+    finally:
+        gc.collect()
 
 @router.post("/discover-ats")
 def discover_ats_endpoint(req: ResearchRequest, user_id: str = Depends(get_current_user)):

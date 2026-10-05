@@ -13,6 +13,8 @@ class ParsedJob(BaseModel):
     posting_date: Optional[str] = Field(default=None, description="The date the job was posted, in YYYY-MM-DD format if explicitly stated. Null if not mentioned.")
     region_wise_salary: Optional[str] = Field(default=None, description="Detailed text of region-wise or location-based salary tiers if mentioned (e.g. 'SF: 150k, Remote: 120k'). Null if not mentioned.")
     deadline_date: Optional[str] = Field(default=None, description="The deadline for applications, in YYYY-MM-DD format if explicitly stated. Null if not mentioned.")
+    company_size: Optional[str] = Field(default=None, description="Extracted company headcount or size (e.g. '50-200', '10000+'). Null if unspecified.")
+    hours_since_posted: Optional[int] = Field(default=None, description="Number of hours since the job was posted (e.g. '2 hours ago' = 2, '2 days ago' = 48). Null if unknown.")
     is_rolling_deadline: bool = Field(default=False, description="True if the job mentions rolling applications or applying ASAP.")
     seniority_required: str = Field(default="0-2yr", description="'fresher', '0-2yr', '2-5yr', 'senior', or 'unclear'")
     min_years_experience: Optional[int] = Field(default=None, description="Minimum explicit years of experience required (e.g. 5, 8, 2, 0)")

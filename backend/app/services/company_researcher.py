@@ -224,30 +224,35 @@ def research_company(company_name: str) -> dict:
         for r in results:
             raw_context += f"- {r.get('title')}: {r.get('body')}\n"
 
-        # If zero public review snippets exist (common for small startups):
-        if not raw_context.strip():
-            print(f"[Research] No public Glassdoor/reviews found for {company_name}. Using startup intelligence profile.")
-            result = _get_startup_fallback_intelligence(company_name)
-            _RESEARCH_CACHE[norm_name] = (time.time(), result)
-            return result
-
         # 4. Use resilient structured LLM (Gemini primary, Groq fallback)
-        prompt = f"""
-        You are an expert tech career advisor. I have collected web search snippets about a company named '{company_name}'.
-        Review the raw search snippets below and extract the key information into the requested JSON schema.
-        If a specific field lacks enough information, synthesize a constructive summary based on company context.
-        Be highly concise, focusing on red flags, exact numbers, and direct quotes from employees where possible.
-        
-        Raw Search Snippets:
-        {raw_context[:3000]}
-        """
+        if raw_context.strip():
+            prompt = f"""
+            You are an expert tech career advisor. I have collected web search snippets about a company named '{company_name}'.
+            Review the raw search snippets below and extract the key information into the requested JSON schema.
+            If a specific field lacks enough information, synthesize a constructive summary based on company context.
+            Be highly concise, focusing on red flags, exact numbers, and direct quotes from employees where possible.
+            
+            Raw Search Snippets:
+            {raw_context[:3000]}
+            """
+        else:
+            prompt = f"""
+            You are an expert tech career advisor. Analyze and synthesize accurate workplace intelligence for the company '{company_name}'.
+            Include work culture, work-life balance, perks, compensation estimates (e.g. entry-level and mid-level total comp / base pay in INR or USD), salary levels, and employment bonds/contracts.
+            Synthesize a realistic profile based on known industry data for {company_name}.
+            """
 
         try:
             intelligence = generate_structured(prompt, CompanyIntelligence, use_groq=False)
             result = intelligence.model_dump()
         except Exception as llm_err:
-            print(f"[Research] LLM analysis failed for {company_name} ({llm_err}). Falling back to startup intelligence profile.")
-            result = _get_startup_fallback_intelligence(company_name)
+            print(f"[Research] Primary LLM failed for {company_name} ({llm_err}). Trying Groq fallback...")
+            try:
+                intelligence = generate_structured(prompt, CompanyIntelligence, use_groq=True)
+                result = intelligence.model_dump()
+            except Exception as groq_err:
+                print(f"[Research] Groq LLM failed for {company_name} ({groq_err}). Using startup intelligence profile.")
+                result = _get_startup_fallback_intelligence(company_name)
 
         # Store in cache
         _RESEARCH_CACHE[norm_name] = (time.time(), result)

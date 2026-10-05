@@ -100,9 +100,9 @@ def scrape_dynamic_page(url: str) -> str:
             return fast_text
 
     # STAGE 2: Gatekeeper for Playwright Headless Browser
-    enable_playwright = os.getenv("ENABLE_PLAYWRIGHT", "true").lower() in ("true", "1", "yes")
+    enable_playwright = os.getenv("ENABLE_PLAYWRIGHT", "false").lower() in ("true", "1", "yes")
     if not enable_playwright:
-        print(f"[Scraper] Playwright browser disabled (ENABLE_PLAYWRIGHT=false). Returning fast HTTP fallback for {url}")
+        print(f"[Scraper] Playwright browser disabled by default (ENABLE_PLAYWRIGHT=false) to keep RAM <250MB. Returning fast HTTP fallback for {url}")
         return fast_text
 
     # STAGE 3: Low-Memory Chromium Execution

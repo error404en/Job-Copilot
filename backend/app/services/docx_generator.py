@@ -148,11 +148,27 @@ def generate_docx_from_structured_resume(resume_data: dict) -> bytes:
             _set_font(proj_name_run, size=10, bold=True)
             
             # Repo link or tech label beside name
-            tech = (proj.get("tech") or proj.get("link") or "").strip()
+            tech = (proj.get("tech") or "").strip()
             if tech and tech.lower() not in ("none", "null"):
                 tech_run = proj_para.add_run(f" | {tech}")
                 _set_font(tech_run, size=9, color=RGBColor(0x55, 0x55, 0x55))
                 
+            # Add link and one-line result directly under the project name
+            link = (proj.get("link") or "").strip()
+            one_line = (proj.get("one_line_result") or "").strip()
+            if (link and link.lower() not in ("none", "null")) or (one_line and one_line.lower() not in ("none", "null")):
+                meta_para = doc.add_paragraph()
+                meta_para.paragraph_format.space_before = Pt(0)
+                meta_para.paragraph_format.space_after = Pt(1.5)
+                parts = []
+                if link and link.lower() not in ("none", "null"):
+                    parts.append(f"🔗 {link}")
+                if one_line and one_line.lower() not in ("none", "null"):
+                    parts.append(one_line)
+                meta_run = meta_para.add_run(" | ".join(parts))
+                _set_font(meta_run, size=9, color=RGBColor(0x00, 0x00, 0xEE), bold=False)
+                
+
             for bullet in proj.get("bullets", []):
                 if bullet and bullet.strip():
                     _add_bullet(doc, bullet.strip())
