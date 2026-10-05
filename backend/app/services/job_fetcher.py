@@ -800,11 +800,23 @@ VERIFIED_COMPANY_ROLES = {
                 "company": "ZS Associates",
                 "location": "Pune / New Delhi / Bengaluru",
                 "url": "https://jobs.zs.com/jobs?keywords=Software%20Engineer&location=India",
-                "experience_level": "0-2 Yrs (Freshers & Analyst)",
+                "experience_level": "0-2 Yrs (Freshers & SDE)",
                 "seniority_required": "0-2yr",
                 "compensation_range": "₹12.0L - ₹15.0L CTC",
                 "required_skills": ["Python", "SQL", "AWS", "Data Structures", "Algorithms"],
                 "raw_jd": "Software Engineer at ZS Associates India. Responsible for building and maintaining enterprise applications and data pipelines. Strong understanding of Object-Oriented Programming (Python/Java), relational databases, and data structures.",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Business Technology Solutions Associate (BTSA)",
+                "company": "ZS Associates",
+                "location": "Pune / New Delhi / Gurugram",
+                "url": "https://www.zs.com/careers/india",
+                "experience_level": "0-2 Yrs (Freshers & Campus)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹11.5L - ₹13.5L CTC",
+                "required_skills": ["SQL", "Data Analytics", "Python", "Problem Solving", "Tech Enablement"],
+                "raw_jd": "Business Technology Solutions Associate (BTSA) at ZS Associates India. Work at the intersection of business strategy and technology enablement. Design technology solutions, build data workflows in SQL/Python, and bridge business requirements with technical delivery. Open to fresh college graduates and early-career professionals (0-2 years).",
                 "source": "official_portal"
             }
         ]
@@ -1275,6 +1287,40 @@ VERIFIED_COMPANY_ROLES = {
                 "compensation_range": "₹7.2L - ₹11.0L CTC",
                 "required_skills": ["Python", "Java", "Cloud", "Generative AI", "SQL"],
                 "raw_jd": "TCS Prime & Digital cadre software engineer. Working on advanced AI, cloud modernization, and next-gen engineering solutions.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "greyb": {
+        "careers_url": "https://www.greyb.com/careers/",
+        "roles": [
+            {
+                "role_title": "Research Associate - Technical Analysis",
+                "company": "GreyB",
+                "location": "Mohali / Chandigarh / Remote",
+                "url": "https://www.greyb.com/careers/",
+                "experience_level": "0-2 Yrs (Freshers & College Graduates)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹6.0L - ₹8.5L CTC",
+                "required_skills": ["Technical Research", "Patent Analysis", "Technology Landscape", "Python", "Analytical Thinking"],
+                "raw_jd": "Research Associate at GreyB Services. Perform deep technical analysis, technology landscaping, and intellectual property research for global tech giants. Synthesize complex technical architectures and evaluate emerging innovations. Ideal for engineering graduates with strong technical acumen.",
+                "source": "official_portal"
+            }
+        ]
+    },
+    "salescode": {
+        "careers_url": "https://salescode.ai/careers",
+        "roles": [
+            {
+                "role_title": "Business Analyst - AI & Product Enablement",
+                "company": "SalesCode AI",
+                "location": "Gurgaon (Work from Office) / Hybrid",
+                "url": "https://salescode.ai/careers",
+                "experience_level": "0-2 Yrs (Freshers)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹8.0L - ₹12.0L CTC",
+                "required_skills": ["SQL", "Product Requirements", "Generative AI Tools", "Workflow Design", "Client Management"],
+                "raw_jd": "Business Analyst at SalesCode AI. Translate business needs into clear functional and technical requirements for AI SaaS products. Gather and document PRDs, user stories, and workflows using SQL and AI productivity tools. Ideal for tech graduates (0-2 yrs).",
                 "source": "official_portal"
             }
         ]

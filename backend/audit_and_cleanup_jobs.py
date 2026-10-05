@@ -85,10 +85,10 @@ def audit_jobs(dry_run: bool = True):
             continue
             
         # 4. Domain & Relevance Gate
-        # Filter non-tech, sales, banking ops, and consulting analyst roles
+        # Filter pure non-tech, cold sales, banking ops, and non-tech compliance roles
         non_tech = [
             "tax", "accounting", "contact center", "qa analyst", "sales executive", 
-            "recruiter", "talent acquisition", "business technology analyst", "tm analyst",
+            "recruiter", "talent acquisition", "tm analyst",
             "sales engineer", "financial data analyst", "banking operations", "economic crime"
         ]
         if any(nt in title_lower for nt in non_tech):
