@@ -34,6 +34,8 @@ ATS_HOSTS = {
     "smartrecruiters.com", "icims.com", "breezy.hr", "workable.com", "recruitee.com",
     "jobvite.com", "pinpointhq.com", "keka.com", "oraclecloud.com", "successfactors.com",
     "taleo.net", "eightfold.ai", "phenompeople.com", "rippling-ats.com",
+    "yello.co", "mynexthire.com", "joinsuperset.com", "gem.com",
+    "zohorecruit.com", "zohorecruit.in", "darwinbox.in", "freshteam.com",
 }
 
 # Never an official careers portal: job boards, salary / review sites, social, shorteners,
@@ -109,6 +111,8 @@ _BRAND_DOMAIN_ALIASES = {
     "ey": {"ernstandyoung"},
     "ernstandyoung": {"ey"},
     "jpmc": {"jpmorgan", "jpmorganchase"},
+    "amber": {"amberstudent"},
+    "amberstudent": {"amber"},
 }
 
 

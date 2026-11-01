@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form
 from app.middleware.auth import get_current_user
-from app.models.inbox import UploadInboxRequest, SourceType, InboxSourceStatus, InboxOpportunityStatus
+from app.models.inbox import UploadInboxRequest, SourceType, InboxSourceStatus, InboxOpportunityStatus, VerificationStatus
 from app.services.job_pipeline import ParseRequest, process_and_store_job
 from pydantic import BaseModel
 from typing import Literal
@@ -140,7 +140,8 @@ def update_opportunity(opportunity_id: str, req: OpportunityActionRequest, user_
     if not source_res.data:
         raise HTTPException(status_code=404, detail="Inbox source not found")
 
-    raw_jd = source_res.data[0].get("raw_content")
+    meta = opportunity.get("extraction_metadata") or {}
+    raw_jd = meta.get("extracted_jd") or meta.get("source_text") or source_res.data[0].get("raw_content")
     import tempfile
     temp_dir = tempfile.gettempdir()
     if not raw_jd or not raw_jd.strip() or raw_jd.startswith("/tmp/") or raw_jd.startswith(temp_dir) or os.path.exists(raw_jd.strip() if len(raw_jd) < 250 else ""):
@@ -158,6 +159,7 @@ def update_opportunity(opportunity_id: str, req: OpportunityActionRequest, user_
         url=job_url,
         official_apply_url=opportunity.get("verified_official_url"),
         company_name=opportunity["company"],
+        role_title=opportunity["role_title"],
     ), user_id=user_id, skip_analysis=True)
     job_id = pipeline_result.get("job_id")
     if not job_id:

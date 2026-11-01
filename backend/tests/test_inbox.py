@@ -206,3 +206,224 @@ def test_duplicate_opportunity_is_not_reinserted():
         results = asyncio.run(process_inbox_source("source-1", "lead", SourceType.TEXT, "user-a"))
 
     assert results == []
+
+
+COMMUNITY_18_LEADS_MESSAGE = """*📌18 Great Opportunities open for freshers & experienced candidates.*
+
+*📌Don't have Resume try our Resume Builder -*
+https://atsresumebuilder.in/
+
+*📌 Don't forget to track your job application easily with our new Job Application Tracker - https://atsresumebuilder.in/public/job_tracker/tracker_dashboard*
+
+🔗Company : Amber
+Role : Intern - Data Analyst
+Qualification : Degree in Business Analytics, Data Science, Economics, Engineering
+Passing Year : 2027 | 2026
+Location : Pune, India
+Salary : 25,000/month (Stipend)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6562
+
+🔗Company : HackerRank
+Role : Software Development Engineer Intern
+Qualification : Bachelor's degree
+Passing Year : 2028 | 2027
+Location : Bengaluru, India
+Salary : 50,000 - 70,000/Month(Stipend) [Expected]
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6561
+
+🔗Company : PwC
+Role : Technology Consulting – Intern
+Qualification : Bachelor's or Master's degree
+Passing Year : 2027 | 2026
+Location : Bengaluru, Hyderabad
+Salary : 40,000-50,000/ Month (Stipend)[Expected]
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6560
+
+🔗Company : Paytm
+Role : Intern - Talent Acquisition
+Qualification : Bachelor’s or Master’s degree (MBA/PGDM in Human Resources)
+Passing Year : 2027 | 2026
+Location : Gurgaon, Noida
+Salary : 20,000/month [Stipend] (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6559
+
+🔗Company : Nasdaq
+Role : Campus Program 2027
+Qualification : BE/B-Tech/ME/M-Tech/BCA/BSc
+Passing Year : 2028 | 2027 | 2026 | 2025
+Location : Pan India
+Salary : 35,000 - 50,000/ Month (Stipend) [Expected]
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6558
+
+🔗Company : Scopely
+Role : Intern - QA Engineer
+Qualification : BE/B-Tech/ME/M-Tech
+Passing Year : 2027 | 2026
+Location : Bengaluru, India
+Salary : 6 – 9 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6557
+
+🔗Company : Sigmoid
+Role : Resource Management Analyst Intern
+Qualification : Bachelor's degree in Human Resources, Business Administration
+Passing Year : 2027 | 2026 | 2025
+Location : Bengaluru, India
+Salary : 20,000 - 25,000/month [Stipend]
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6556
+
+🔗Company : Medpace
+Role : Junior Data Engineer
+Qualification : Bachelor's Degree in Computer Science, Data Science
+Passing Year : 2027 | 2026 | 2025 | 2024
+Location : Navi Mumbai
+Salary : 5 – 10 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6555
+
+🔗Company : Spektra Systems
+Role : AI-Native Software Engineer – Trainee
+Qualification : Any body with skills
+Passing Year : Freshers/Experienced
+Location : Work-from-home/Remote
+Salary : 5 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6554
+
+🔗Company : EY
+Role : Deployment Specialist-Intern
+Qualification : Any Graduate
+Passing Year : 2027 | 2026
+Location : Bengaluru, India
+Salary : 30,000/ Month [Stipend] (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6553
+
+🔗Company : ShareChat
+Role : Marketing Intern
+Qualification : Any body with skills
+Passing Year : 2027 | 2026 | 2025
+Location : Bengaluru, India
+Salary : 30,000/ Month [Stipend] (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6552
+
+🔗Company : Volvo Group
+Role : Graduate Apprentice Trainee - Recruiter
+Qualification : Any Graduate
+Passing Year : 2026 | 2025
+Location : Bengaluru, India
+Salary : 25,000/month (Stipend) [Expected]
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6551
+
+🔗Company : Virtusa
+Role : Software Testing Engineer
+Qualification : Bachelor's degree in Computer Science, Information Technology
+Passing Year : 2027 | 2026 | 2025 | 2024
+Location : Hyderabad, India
+Salary : 5-7 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6550
+
+🔗Company : EY
+Role : Associate Analyst
+Qualification : Any Graduate
+Passing Year : Freshers/Experienced
+Location : India - Local Office
+Salary : 4 - 5 LPA(Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6549
+
+🔗Company : HSBC
+Role : Analyst
+Qualification : Graduate in Commerce, Finance or Equivalent
+Passing Year : 2026 | 2025
+Location : Bengaluru, India
+Salary : 8 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6548
+
+🔗Company : Cisco
+Role : Software Engineer Trainee_Technical Graduate Apprentice
+Qualification : Bachelor's degree
+Passing Year : 2026 | 2025
+Location : Bengaluru, India
+Salary : 4 - 6 LPA(Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6547
+
+🔗Company : Cognizant (Mass-Hiring Update)
+Role : Digital Workplace Practice (Service Desk)
+Qualification : BCA, BSc, BA, BBA, B.Voc, BMS, BCom, etc
+Passing Year : 2026 | 2025 | 2024
+Location : Pan India
+Salary : 3 - 4 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6546
+
+🔗Company : Primetrace Technologies
+Role : Android - SDE 1
+Qualification : Any body with skills
+Passing Year : Experience(1-3 yrs)
+Location : Bengaluru, India
+Salary : 12 - 20 LPA (Expected)
+📌Link : https://thejobcompany.co.in/frontend/job_details?job_id=6545"""
+
+
+def test_structured_broadcast_extracts_all_18_leads_and_ignores_promo_headers():
+    from app.services.inbox_extractor import extract_opportunities_from_text
+    from app.services.lead_resolver import lead_gate
+
+    leads = extract_opportunities_from_text(COMMUNITY_18_LEADS_MESSAGE)
+    assert len(leads) == 18
+
+    companies = [l["company"] for l in leads]
+    assert companies[0] == "Amber"
+    assert companies[2] == "PwC"
+    assert companies[15] == "Cisco"
+    assert companies[16] == "Cognizant"  # "(Mass-Hiring Update)" stripped
+    assert companies[17] == "Primetrace Technologies"
+
+    # Promo links like atsresumebuilder.in must never be extracted
+    for l in leads:
+        assert "atsresumebuilder.in" not in (l.get("submitted_url") or "")
+        assert "atsresumebuilder.in" not in (l.get("source_text") or "")
+        ok, reason = lead_gate(l["company"], l["role_title"], l["location"], l["source_text"])
+        assert ok is True, f"Lead {l['company']} - {l['role_title']} failed lead_gate: {reason}"
+
+
+def test_community_wrapper_unwrapping_and_resolution_for_18_leads():
+    from app.services.inbox_extractor import extract_opportunities_from_text
+    from app.services.lead_resolver import resolve_lead
+
+    unwrapped_map = {
+        "6562": "https://amberstudent.keka.com/careers/jobdetails/146146",
+        "6561": "https://hackerrank.com/careers/job?id=8229735",
+        "6560": "https://jobs-ta.pwc.com/global/en/job/758969WD/Technology-Consulting-Intern-2027",
+        "6559": "https://jobs.lever.co/paytm/426a6834-1397-4e65-94af-69874c790805",
+        "6558": "https://gem.com/form?formID=522541ff-73ff-4d77-b51a-2664a79f8c34",
+        "6557": "https://job-boards.greenhouse.io/scopely/jobs/5448999008?gh_jid=5448999008",
+        "6556": "https://job-boards.greenhouse.io/sigmoid/jobs/8921297002?gh_src=1ozsd7zx2us",
+        "6555": "https://careers.medpace.com/jobs/11932",
+        "6554": "https://careers.spektrasystems.com/jobs/careers/627374000027511357/AI-Native-Web-Developer---Trainee?",
+        "6553": "https://eyglobal.yello.co/jobs/5hVK1BeChlbcjalJ1R_3iw?job_board_id=c1riT--B2O-KySgYWsZO1Q",
+        "6552": "https://sharechat.mynexthire.com/employer/jobs?src=careers",
+        "6551": "https://jobs.volvogroup.com/job/Bangalore-Graduate-Apprentice-Trainee-Recruiter-562122/1374672255/",
+        "6550": "https://virtusa.com/careers/job-search/global/en/job/CREQ261742/Associate",
+        "6549": "https://eyglobal.yello.co/jobs/yZimmWg4kDLz6r3kMgWfWw?job_board_id=c1riT--B2O-KySgYWsZO1Q",
+        "6548": "https://portal.careers.hsbc.com/careers/job/563774612468498",
+        "6547": "https://careers.cisco.com/global/en/job/CISCISGLOBAL2014481EXTERNALENGLOBAL/Software-Engineer-Trainee",
+        "6546": "https://app.joinsuperset.com/join/#/signup/student/jobprofiles/a8af19f3-444e-43bd-8828-e8656f637a17",
+        "6545": "https://primetrace.keka.com/careers/jobdetails/54884",
+    }
+
+    def fake_resolve_redirects(url):
+        jid = url.split("job_id=")[-1]
+        return {
+            "final_url": unwrapped_map[jid],
+            "is_promo": False,
+            "extracted_jd": f"Job Description for job {jid} with SQL, Python, Cloud engineering.",
+        }
+
+    leads = extract_opportunities_from_text(COMMUNITY_18_LEADS_MESSAGE)
+    with patch("app.services.link_checker.resolve_redirects_and_detect_promo", side_effect=fake_resolve_redirects), \
+         patch("app.api.research.requests.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.text = "<html></html>"
+        for l in leads:
+            res = resolve_lead(l["company"], l["role_title"], l["location"], l["submitted_url"], l["source_text"])
+            assert res["status"] == InboxOpportunityStatus.VERIFIED, f"Expected VERIFIED for {l['company']}, got {res}"
+            assert res["verification_status"] == VerificationStatus.VERIFIED
+            assert "thejobcompany.co.in" not in res["verified_url"]
+            assert res["extracted_jd"] is not None
+

@@ -37,12 +37,13 @@ export default function InboxPage() {
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return
     fetchOpportunities()
+    const pollMs = progressSourceId ? 2500 : 5000
     const interval = setInterval(() => {
       fetchOpportunities()
       if (progressSourceId) {
         checkProgress(progressSourceId)
       }
-    }, 5000)
+    }, pollMs)
     return () => clearInterval(interval)
   }, [isLoaded, isSignedIn, progressSourceId])
 
@@ -95,6 +96,11 @@ export default function InboxPage() {
         body: JSON.stringify({ content: textInput, source_type: "text" })
       })
       if (!res.ok) throw new Error(await responseError(res, "Failed to extract opportunities"))
+      const data = await res.json()
+      if (data.source_id) {
+        setProgressSourceId(data.source_id)
+        setProgressData({ status: "processing", extracted_total: 0 })
+      }
       setTextInput("")
       await fetchOpportunities()
     } catch (e) {
@@ -330,36 +336,36 @@ export default function InboxPage() {
                     </>
                   )}
                 </button>
-                
-                {progressData && (
-                  <div className="bg-zinc-900/80 rounded-xl border border-indigo-500/30 p-4 space-y-3 mt-4 text-xs shadow-inner">
-                    <div className="flex justify-between items-center text-zinc-300 font-semibold mb-1">
-                      <span className="flex items-center gap-2">
-                        {progressData.status === 'processing' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
-                        Batch Processing Progress
-                      </span>
-                      <span className="text-indigo-300">{progressData.extracted_total} Extracted</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
-                         <span className="text-emerald-400 font-bold">{progressData.verified || 0}</span>
-                         <span className="text-zinc-500 text-[10px] uppercase">Verified</span>
-                       </div>
-                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
-                         <span className="text-amber-400 font-bold">{progressData.needs_check || 0}</span>
-                         <span className="text-zinc-500 text-[10px] uppercase">Needs Check</span>
-                       </div>
-                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
-                         <span className="text-rose-400 font-bold">{progressData.rejected || 0}</span>
-                         <span className="text-zinc-500 text-[10px] uppercase">Rejected</span>
-                       </div>
-                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
-                         <span className="text-zinc-300 font-bold">{progressData.pending || 0}</span>
-                         <span className="text-zinc-500 text-[10px] uppercase">Pending Resolvers</span>
-                       </div>
-                    </div>
-                  </div>
-                )}
+              </div>
+            )}
+
+            {progressData && (
+              <div className="bg-zinc-900/80 rounded-xl border border-indigo-500/30 p-4 space-y-3 mt-4 text-xs shadow-inner">
+                <div className="flex justify-between items-center text-zinc-300 font-semibold mb-1">
+                  <span className="flex items-center gap-2">
+                    {progressData.status === 'processing' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                    Batch Processing Progress
+                  </span>
+                  <span className="text-indigo-300">{progressData.extracted_total} Extracted</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                   <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                     <span className="text-emerald-400 font-bold">{progressData.verified || 0}</span>
+                     <span className="text-zinc-500 text-[10px] uppercase">Verified</span>
+                   </div>
+                   <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                     <span className="text-amber-400 font-bold">{progressData.needs_check || 0}</span>
+                     <span className="text-zinc-500 text-[10px] uppercase">Needs Check</span>
+                   </div>
+                   <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                     <span className="text-rose-400 font-bold">{progressData.rejected || 0}</span>
+                     <span className="text-zinc-500 text-[10px] uppercase">Rejected</span>
+                   </div>
+                   <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                     <span className="text-zinc-300 font-bold">{progressData.pending || 0}</span>
+                     <span className="text-zinc-500 text-[10px] uppercase">Pending Resolvers</span>
+                   </div>
+                </div>
               </div>
             )}
           </div>
@@ -446,9 +452,21 @@ export default function InboxPage() {
 
                     {/* Metadata & Skills */}
                     <div className="space-y-2 pt-1">
-                      {opp.extraction_metadata?.experience_req && (
-                        <p className="text-xs text-zinc-400">
-                          Seniority / Experience: <strong className="text-zinc-200">{opp.extraction_metadata.experience_req}</strong>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
+                        {opp.extraction_metadata?.experience_req && (
+                          <span>
+                            Batch / Exp: <strong className="text-zinc-200">{opp.extraction_metadata.experience_req}</strong>
+                          </span>
+                        )}
+                        {opp.extraction_metadata?.salary && (
+                          <span>
+                            Comp: <strong className="text-emerald-300">{opp.extraction_metadata.salary}</strong>
+                          </span>
+                        )}
+                      </div>
+                      {opp.extraction_metadata?.qualification && (
+                        <p className="text-[11px] text-zinc-400">
+                          Eligibility: <span className="text-zinc-300">{opp.extraction_metadata.qualification}</span>
                         </p>
                       )}
 

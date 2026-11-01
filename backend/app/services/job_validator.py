@@ -26,7 +26,7 @@ BLOCKED_DOMAINS = {
     "yahoo.com", "msn.com", "storyboard18.com", "igotanoffer.com", "medium.com", "substack.com", 
     "techcrunch.com", "theverge.com",
     # Low-Quality Aggregators, Exam Portals, Scrapers & SEO Spam
-    "glassdoor.com", "glassdoor.co.in", "thejobcompany.co.in",
+    "glassdoor.com", "glassdoor.co.in", "thejobcompany.co.in", "atsresumebuilder.in",
     "foundit.in", "ownyourcareer.in", "freshersworld.com", "fresherslive.com", "freshersnow.com",
     "sarkariresult.com", "placementindia.com", "shine.com", "jobseeker.com", "shiksha.com",
     "collegedunia.com", "way2fresher.com", "offcampusjobs4u.com", "tprassociation.org",
@@ -60,6 +60,8 @@ KNOWN_JOB_PORTALS = {
     "smartrecruiters.com", "icims.com", "breezy.hr", "workable.com", "recruitee.com",
     "rippling-ats.com", "jobvite.com", "pinpointhq.com", "keka.com", "oraclecloud.com",
     "successfactors.com", "taleo.net", "eightfold.ai", "phenompeople.com",
+    "yello.co", "mynexthire.com", "joinsuperset.com", "gem.com",
+    "zohorecruit.com", "zohorecruit.in", "darwinbox.in", "freshteam.com",
     "wellfound.com", "instahyre.com", "himalayas.app", "remote.co", "weworkremotely.com",
     "builtin.com", "otta.com", "ycombinator.com"
 }

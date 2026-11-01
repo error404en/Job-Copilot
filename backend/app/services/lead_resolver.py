@@ -16,6 +16,7 @@ _SENIOR_TITLE = re.compile(
     r"\b(senior|sr\.?|staff|principal|lead|architect|manager|director|head of|vp|chief)\b", re.I
 )
 _SENIOR_YOE = re.compile(r"\b([3-9]|1\d)\s*\+?\s*(?:-\s*\d+\s*)?(?:years?|yrs?)\b", re.I)
+_JUNIOR_YOE_RANGE = re.compile(r"\b[0-2]\s*(?:[-–]|to)\s*[1-3]\s*(?:years?|yrs?)\b", re.I)
 
 
 def _tokens(text: str) -> set:
@@ -51,7 +52,7 @@ def lead_gate(company: str, role_title: str, location: str, text: str) -> Tuple[
         return False, reason
     if _SENIOR_TITLE.search(role_title or ""):
         return False, f"Senior role not suitable for fresher: '{role_title}'"
-    if _SENIOR_YOE.search(text or "") and not re.search(r"\b0\s*-\s*[1-2]\s*(?:years?|yrs?)\b", text or "", re.I):
+    if _SENIOR_YOE.search(text or "") and not _JUNIOR_YOE_RANGE.search(text or ""):
         return False, "Requires 3+ years of experience"
     info = check_role_location_and_relocation(location or "", text or "")
     if info["is_abroad"] and not info["covers_relocation"]:
@@ -67,6 +68,7 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
     from app.services.link_checker import resolve_redirects_and_detect_promo
     from app.api.research import discover_careers_url_and_ats
     from app.services.job_validator import is_valid_job_posting
+    from app.services.careers_resolver import classify_careers_url
     
     # 1. Base eligibility check
     if not company or not role_title:
@@ -77,7 +79,8 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
             "relevance_explanation": "Missing company or role title",
             "confidence": 0.0,
             "best_job": None,
-            "final_submitted_url": submitted_url
+            "final_submitted_url": submitted_url,
+            "extracted_jd": None,
         }
 
     ok, reason = lead_gate(company, role_title, location, source_text)
@@ -89,16 +92,19 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
             "relevance_explanation": reason,
             "confidence": 0.0,
             "best_job": None,
-            "final_submitted_url": submitted_url
+            "final_submitted_url": submitted_url,
+            "extracted_jd": None,
         }
 
-    # 2. Link checking and Promo detection
+    # 2. Link checking, Community Wrapper Unwrapping, and Promo detection
     final_url = submitted_url
     is_promo = False
+    extracted_jd = None
     if submitted_url:
         resolution = resolve_redirects_and_detect_promo(submitted_url)
         final_url = resolution.get("final_url", submitted_url)
         is_promo = resolution.get("is_promo", False)
+        extracted_jd = resolution.get("extracted_jd")
 
     if is_promo:
         return {
@@ -108,7 +114,8 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
             "relevance_explanation": "Link appears to be a promotional funnel",
             "confidence": 0.2,
             "best_job": None,
-            "final_submitted_url": final_url
+            "final_submitted_url": final_url,
+            "extracted_jd": extracted_jd,
         }
 
     # 3. Validation
@@ -122,7 +129,8 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
                 "relevance_explanation": f"Invalid job posting: {valid_reason}",
                 "confidence": 0.1,
                 "best_job": None,
-                "final_submitted_url": final_url
+                "final_submitted_url": final_url,
+                "extracted_jd": extracted_jd,
             }
 
     # 4. ATS Discovery & Verification
@@ -135,12 +143,14 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
     verification_status = None
     confidence = 0.4
     
-    if ats_info and official_url and final_url and official_url.split('/')[2] in final_url:
+    is_official_or_ats, url_kind = classify_careers_url(final_url, company) if final_url else (False, "")
+
+    if (ats_info and official_url and final_url and official_url.split('/')[2] in final_url) or is_official_or_ats:
         verification_status = VerificationStatus.VERIFIED
         status = InboxOpportunityStatus.VERIFIED
         verified_url = final_url
-        confidence = 0.9
-        explanation = "Verified via official ATS link"
+        confidence = 0.9 if (ats_info or url_kind == "ats") else 0.85
+        explanation = "Verified via official ATS link" if (ats_info or url_kind == "ats") else "Verified official company careers portal"
     elif final_url:
         verification_status = VerificationStatus.UNVERIFIED_THIRD_PARTY
         status = InboxOpportunityStatus.UNVERIFIED
@@ -160,5 +170,6 @@ def resolve_lead(company: str, role_title: str, location: str, submitted_url: st
         "best_job": None,  # Will be populated by caller if fetch is needed
         "final_submitted_url": final_url,
         "ats_info": ats_info,
-        "official_url": official_url
+        "official_url": official_url,
+        "extracted_jd": extracted_jd,
     }

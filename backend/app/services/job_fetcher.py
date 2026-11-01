@@ -38,7 +38,7 @@ def check_role_location_and_relocation(loc_str: str, raw_jd: str = "") -> dict:
         "karnataka", "telangana", "maharashtra", "haryana", "tamil nadu", "kerala",
         "uttarakhand", "punjab", "gujarat", "uttar pradesh", "rajasthan", "west bengal"
     ]
-    remote_keywords = ["remote", "anywhere", "work from home", "wfh"]
+    remote_keywords = ["remote", "anywhere", "work from home", "work-from-home", "wfh"]
     
     is_india = any(re.search(r'\b' + re.escape(k) + r'\b', loc) for k in indian_keywords)
     is_remote = any(re.search(r'\b' + re.escape(k) + r'\b', loc) for k in remote_keywords)

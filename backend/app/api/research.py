@@ -235,7 +235,7 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
     c_lower = c_raw.lower()
 
     # 0a. Check if company_name itself is an ATS URL or domain URL
-    if not careers_url and any(ats_domain in c_lower for ats_domain in ["jobs.lever.co", "boards.greenhouse.io", "jobs.ashbyhq.com", "jobs.smartrecruiters.com", "myworkdayjobs.com"]):
+    if not careers_url and any(ats_domain in c_lower for ats_domain in ["jobs.lever.co", "boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.ashbyhq.com", "jobs.smartrecruiters.com", "myworkdayjobs.com"]):
         careers_url = c_raw if c_raw.startswith("http") else f"https://{c_raw}"
 
     supplied = bool(careers_url)
@@ -261,7 +261,7 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
     
     # Check Greenhouse
     if url:
-        gh_match = re.search(r"boards\.greenhouse\.io/([^/?#]+)", url)
+        gh_match = re.search(r"(?:job-)?boards\.greenhouse\.io/([^/?#]+)", url)
         if gh_match:
             ats_found = ATSInfo(system=ATSSystem.GREENHOUSE, token=gh_match.group(1))
             
@@ -317,21 +317,21 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
         return CareersDiscoveryResult(careers_url=url, ats_info=ats_found)
 
     # A non-ATS URL is only ever surfaced if it is on the company's own domain and not promotional.
-    official_ok = bool(url) and classify_careers_url(url, company_name)[0]
+    official_ok, url_kind = classify_careers_url(url, company_name) if url else (False, "")
     if url and not official_ok:
         print(f"[DeepDive] Ignoring non-official/promotional URL for {company_name}: {url}")
         url = None
 
-    # If careers_url is a custom (official) domain, inspect page HTML for embedded Lever / Greenhouse / Ashby / SmartRecruiters links
-    if url:
+    # If careers_url is a custom (official) domain (not already a known ATS host), inspect page HTML for embedded Lever / Greenhouse / Ashby / SmartRecruiters links
+    if url and url_kind != "ats":
         try:
             validate_safe_url(url)
-            resp = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            resp = requests.get(url, timeout=4, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             if resp.status_code == 200:
                 html_chunk = resp.text[:100000]
                 for sys_enum, pattern in (
                     (ATSSystem.LEVER, r"https?://jobs\.lever\.co/([a-zA-Z0-9_\-]+)"),
-                    (ATSSystem.GREENHOUSE, r"https?://boards\.greenhouse\.io/([a-zA-Z0-9_\-]+)"),
+                    (ATSSystem.GREENHOUSE, r"https?://(?:job-)?boards\.greenhouse\.io/([a-zA-Z0-9_\-]+)"),
                     (ATSSystem.ASHBY, r"https?://jobs\.ashbyhq\.com/([a-zA-Z0-9_\-]+)"),
                     (ATSSystem.SMARTRECRUITERS, r"https?://jobs\.smartrecruiters\.com/([a-zA-Z0-9_\-]+)"),
                 ):

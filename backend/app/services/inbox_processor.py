@@ -62,23 +62,32 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
         extracted = extract_opportunities_from_text(content)
     
     results = []
-    for opp_data in extracted:
+    is_multi_batch = len(extracted) > 1
+    sem = asyncio.Semaphore(4)
+
+    async def _process_one(opp_data: dict) -> Optional[dict]:
         company = opp_data.get("company")
         role_title = opp_data.get("role_title")
         location = opp_data.get("location")
         submitted_url = opp_data.get("submitted_url")
-        meta = opp_data.get("extraction_metadata", {})
-        
-        # Preserve WhatsApp source data if present
+        meta = dict(opp_data.get("extraction_metadata") or {})
+
+        # Preserve per-lead source snippet if present
         source_text = opp_data.get("source_text") or content
+        if opp_data.get("source_text"):
+            meta["source_text"] = opp_data["source_text"]
         if opp_data.get("source_timestamp"):
             meta["source_timestamp"] = opp_data.get("source_timestamp")
         if opp_data.get("source_sender"):
             meta["source_sender"] = opp_data.get("source_sender")
 
         # 3. Resolve Lead and apply Trust Gates
-        resolution = resolve_lead(company, role_title, location, submitted_url, source_text)
-        
+        if is_multi_batch:
+            async with sem:
+                resolution = await asyncio.to_thread(resolve_lead, company, role_title, location, submitted_url, source_text)
+        else:
+            resolution = resolve_lead(company, role_title, location, submitted_url, source_text)
+
         status = resolution["status"]
         verification_status = resolution["verification_status"]
         verified_url = resolution["verified_url"]
@@ -87,53 +96,84 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
         ats_info = resolution.get("ats_info")
         official_url = resolution.get("official_url")
         final_submitted_url = resolution.get("final_submitted_url")
-        
+        extracted_jd = resolution.get("extracted_jd")
+
         meta["resolver_confidence"] = confidence
-        
+        if extracted_jd:
+            meta["extracted_jd"] = extracted_jd[:3000]
+
         linked_job_id = None
-        
+
         # 4. Shared Job Discovery V2 Pipeline Handoff (Only if eligible)
         if status != InboxOpportunityStatus.INELIGIBLE and company:
             try:
-                jobs_found = []
-                if ats_info:
-                    jobs_found = await fetch_discovered_ats_jobs(ats_info, role_title)
+                best_job = None
+                if extracted_jd and verification_status == VerificationStatus.VERIFIED:
+                    best_job = {
+                        "role_title": role_title,
+                        "raw_jd": extracted_jd,
+                        "source_type": ats_info.system.value if ats_info else source_type.value,
+                        "source_confidence": confidence,
+                        "url": verified_url or final_submitted_url,
+                        "official_apply_url": verified_url or official_url,
+                        "external_job_id": None,
+                    }
+                else:
+                    jobs_found = []
+                    if ats_info and not is_multi_batch:
+                        jobs_found = await fetch_discovered_ats_jobs(ats_info, role_title)
 
-                if not jobs_found:
-                    # Generic fallback
-                    fallback_url = official_url or final_submitted_url
-                    if fallback_url:
-                        jobs_found = await asyncio.to_thread(fetch_generic_fallback, fallback_url, company, target_keywords=[role_title])
-                
-                if jobs_found:
-                    # Use match_best_job instead of blindly taking [0]
-                    best_job = match_best_job(jobs_found, role_title)
-                    if best_job:
-                        # ONLY auto-save and link if the lead is VERIFIED. Never auto-save unverified leads.
-                        if verification_status == VerificationStatus.VERIFIED:
-                            from app.services.job_pipeline import ParseRequest, process_and_store_job
-                            req = ParseRequest(
-                                raw_jd=best_job["raw_jd"],
-                                source="inbox",
-                                source_type=best_job.get("source_type") or source_type.value,
-                                source_confidence=best_job.get("source_confidence", confidence),
-                                url=best_job.get("url") or final_submitted_url,
-                                official_apply_url=best_job.get("official_apply_url") or official_url,
-                                external_job_id=best_job.get("external_job_id"),
-                                company_name=company
-                            )
-                            pipeline_res = process_and_store_job(req, user_id=user_id)
-                            linked_job_id = pipeline_res.get("job_id")
-                            status = InboxOpportunityStatus.RELEVANT # Mark as processed/relevant
+                    if not jobs_found and not is_multi_batch:
+                        # Generic fallback
+                        fallback_url = official_url or final_submitted_url
+                        if fallback_url:
+                            jobs_found = await asyncio.to_thread(fetch_generic_fallback, fallback_url, company, target_keywords=[role_title])
+
+                    if jobs_found:
+                        # Use match_best_job instead of blindly taking [0]
+                        best_job = match_best_job(jobs_found, role_title)
+                    elif is_multi_batch and verification_status == VerificationStatus.VERIFIED and (verified_url or final_submitted_url):
+                        best_job = {
+                            "role_title": role_title,
+                            "raw_jd": extracted_jd or source_text,
+                            "source_type": ats_info.system.value if ats_info else source_type.value,
+                            "source_confidence": confidence,
+                            "url": verified_url or final_submitted_url,
+                            "official_apply_url": verified_url or official_url,
+                            "external_job_id": None,
+                        }
+
+                if best_job:
+                    # ONLY auto-save and link if the lead is VERIFIED. Never auto-save unverified leads.
+                    if verification_status == VerificationStatus.VERIFIED:
+                        from app.services.job_pipeline import ParseRequest, process_and_store_job
+                        req = ParseRequest(
+                            raw_jd=best_job["raw_jd"],
+                            source="inbox",
+                            source_type=best_job.get("source_type") or source_type.value,
+                            source_confidence=best_job.get("source_confidence", confidence),
+                            url=best_job.get("url") or final_submitted_url,
+                            official_apply_url=best_job.get("official_apply_url") or official_url,
+                            external_job_id=best_job.get("external_job_id"),
+                            company_name=company,
+                            role_title=role_title,
+                        )
+                        if is_multi_batch:
+                            pipeline_res = process_and_store_job(req, user_id=user_id, skip_analysis=True)
                         else:
-                            # Keep it in inbox, needs check.
-                            meta["best_job_match"] = {
-                                "title": best_job.get("role_title"),
-                                "url": best_job.get("url")
-                            }
+                            pipeline_res = process_and_store_job(req, user_id=user_id)
+                        linked_job_id = pipeline_res.get("job_id")
+                        if linked_job_id:
+                            status = InboxOpportunityStatus.RELEVANT  # Mark as processed/relevant
+                    else:
+                        # Keep it in inbox, needs check.
+                        meta["best_job_match"] = {
+                            "title": best_job.get("role_title"),
+                            "url": best_job.get("url")
+                        }
             except Exception as e:
                 print(f"V2 Handoff failed for {company} - {role_title}: {e}")
-                
+
         opp_id = str(uuid.uuid4())
         record = {
             "id": opp_id,
@@ -150,13 +190,23 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
             "extraction_metadata": meta,
             "relevance_explanation": relevance_explanation
         }
-        
+
         try:
             supabase.table("inbox_opportunities").insert(record).execute()
-            results.append(record)
+            return record
         except Exception as e:
             # Handle unique constraint violations
             print(f"Skipping duplicate or failed opportunity insertion: {e}")
+            return None
+
+    if is_multi_batch:
+        batch_records = await asyncio.gather(*(_process_one(opp) for opp in extracted))
+        results = [r for r in batch_records if r is not None]
+    else:
+        for opp_data in extracted:
+            rec = await _process_one(opp_data)
+            if rec is not None:
+                results.append(rec)
             
     # Mark source as completed - ALWAYS explicitly scope by user_id for security
     supabase.table("inbox_sources").update({"status": "completed"}).eq("id", source_id).eq("user_id", user_id).execute()
