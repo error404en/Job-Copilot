@@ -31,13 +31,38 @@ export default function InboxPage() {
   const [textInput, setTextInput] = useState("")
   const [fileInput, setFileInput] = useState<File | null>(null)
   const [activeTab, setActiveTab] = useState<"text" | "file">("text")
+  const [progressSourceId, setProgressSourceId] = useState<string | null>(null)
+  const [progressData, setProgressData] = useState<any>(null)
   
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return
     fetchOpportunities()
-    const interval = setInterval(fetchOpportunities, 5000)
+    const interval = setInterval(() => {
+      fetchOpportunities()
+      if (progressSourceId) {
+        checkProgress(progressSourceId)
+      }
+    }, 5000)
     return () => clearInterval(interval)
-  }, [isLoaded, isSignedIn])
+  }, [isLoaded, isSignedIn, progressSourceId])
+
+  const checkProgress = async (sourceId: string) => {
+    try {
+      const res = await apiFetch(`/api/inbox/sources/${sourceId}/progress`)
+      if (res.ok) {
+        const data = await res.json()
+        setProgressData(data)
+        if (data.status === 'completed' || data.status === 'failed') {
+          setProgressSourceId(null)
+          if (data.status === 'failed') {
+            setError("Batch parsing failed.")
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   const responseError = async (res: Response, fallback: string) => {
     try {
@@ -87,14 +112,22 @@ export default function InboxPage() {
       const formData = new FormData()
       formData.append("file", fileInput)
       const ext = fileInput.name.split('.').pop()?.toLowerCase()
-      const sType = ['pdf', 'docx', 'xlsx', 'csv'].includes(ext!) ? ext : 'image'
-      formData.append("source_type", sType!)
+      let sType = 'image'
+      if (['pdf', 'docx', 'xlsx', 'csv'].includes(ext!)) sType = ext!
+      if (['txt', 'zip'].includes(ext!)) sType = 'whatsapp_export'
+      formData.append("source_type", sType)
       
       const res = await apiFetch("/api/inbox/upload", {
         method: "POST",
         body: formData
       })
       if (!res.ok) throw new Error(await responseError(res, "Failed to upload opportunities"))
+      
+      const data = await res.json()
+      if (sType === 'whatsapp_export' && data.source_id) {
+         setProgressSourceId(data.source_id)
+         setProgressData({ status: 'processing', extracted_total: 0 })
+      }
       setFileInput(null)
       await fetchOpportunities()
     } catch (e) {
@@ -104,16 +137,26 @@ export default function InboxPage() {
     }
   }
 
-  const handleOpportunityAction = async (opportunityId: string, action: "reject" | "save") => {
+  const handleOpportunityAction = async (opportunityId: string, action: "reject" | "save" | "save_later") => {
     setActioningId(opportunityId)
     setError(null)
     try {
+      const apiAction = action === "save_later" ? "save" : action
       const res = await apiFetch(`/api/inbox/opportunities/${opportunityId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action })
+        body: JSON.stringify({ action: apiAction })
       })
       if (!res.ok) throw new Error(await responseError(res, `Failed to ${action} opportunity`))
+      
+      const data = await res.json()
+      if (action === "save_later" && data.job_id && !data.is_duplicate) {
+         await apiFetch("/api/applications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_id: data.job_id, status: "saved" })
+         })
+      }
       await fetchOpportunities()
     } catch (e) {
       setError(e instanceof Error ? e.message : `Failed to ${action} opportunity`)
@@ -250,7 +293,7 @@ export default function InboxPage() {
                 <div className="relative border-2 border-dashed border-zinc-800 hover:border-indigo-500/60 rounded-2xl p-8 transition-all text-center group bg-zinc-950/40">
                   <input
                     type="file"
-                    accept=".pdf,.docx,.xlsx,.csv,image/*"
+                    accept=".pdf,.docx,.xlsx,.csv,.txt,.zip,image/*"
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                     onChange={(e) => setFileInput(e.target.files?.[0] || null)}
                   />
@@ -260,10 +303,10 @@ export default function InboxPage() {
                     </div>
                     <div>
                       <p className="text-xs sm:text-sm font-semibold text-zinc-200">
-                        {fileInput ? fileInput.name : 'Drop file or screenshot here'}
+                        {fileInput ? fileInput.name : 'Drop file, screenshot, or WhatsApp .zip here'}
                       </p>
                       <p className="text-[11px] text-zinc-500 mt-0.5">
-                        Supports PDF, DOCX, XLSX, CSV, and PNG/JPEG screenshots
+                        Supports PDF, DOCX, XLSX, CSV, WhatsApp Export (.zip/.txt), and images
                       </p>
                     </div>
                   </div>
@@ -287,6 +330,36 @@ export default function InboxPage() {
                     </>
                   )}
                 </button>
+                
+                {progressData && (
+                  <div className="bg-zinc-900/80 rounded-xl border border-indigo-500/30 p-4 space-y-3 mt-4 text-xs shadow-inner">
+                    <div className="flex justify-between items-center text-zinc-300 font-semibold mb-1">
+                      <span className="flex items-center gap-2">
+                        {progressData.status === 'processing' ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                        Batch Processing Progress
+                      </span>
+                      <span className="text-indigo-300">{progressData.extracted_total} Extracted</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                         <span className="text-emerald-400 font-bold">{progressData.verified || 0}</span>
+                         <span className="text-zinc-500 text-[10px] uppercase">Verified</span>
+                       </div>
+                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                         <span className="text-amber-400 font-bold">{progressData.needs_check || 0}</span>
+                         <span className="text-zinc-500 text-[10px] uppercase">Needs Check</span>
+                       </div>
+                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                         <span className="text-rose-400 font-bold">{progressData.rejected || 0}</span>
+                         <span className="text-zinc-500 text-[10px] uppercase">Rejected</span>
+                       </div>
+                       <div className="bg-zinc-800/60 p-2 rounded-lg border border-zinc-700/50 flex flex-col">
+                         <span className="text-zinc-300 font-bold">{progressData.pending || 0}</span>
+                         <span className="text-zinc-500 text-[10px] uppercase">Pending Resolvers</span>
+                       </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -388,6 +461,12 @@ export default function InboxPage() {
                           ))}
                         </div>
                       )}
+                      
+                      {opp.relevance_explanation && (
+                        <p className="text-[11px] text-zinc-500 italic">
+                          💡 {opp.relevance_explanation}
+                        </p>
+                      )}
                     </div>
 
                     {/* Bottom Action Footer */}
@@ -443,6 +522,16 @@ export default function InboxPage() {
                             
                             <button
                               type="button"
+                              onClick={() => handleOpportunityAction(opp.id, "save_later")}
+                              disabled={isActioning || opp.status === "ineligible"}
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5 active:scale-95"
+                            >
+                              <BookmarkCheck className="w-3.5 h-3.5" />
+                              <span>Save for Later</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => handleOpportunityAction(opp.id, "save")}
                               disabled={isActioning || opp.status === "ineligible"}
                               className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all disabled:opacity-50 flex items-center gap-1.5 active:scale-95"
@@ -450,9 +539,9 @@ export default function InboxPage() {
                               {isActioning ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
-                                <BookmarkCheck className="w-3.5 h-3.5" />
+                                <Sparkles className="w-3.5 h-3.5" />
                               )}
-                              <span>Promote to Jobs</span>
+                              <span>Apply Now</span>
                             </button>
                           </>
                         )}

@@ -1,6 +1,7 @@
 import re
 import urllib.parse
 import concurrent.futures
+import requests
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
@@ -9,6 +10,17 @@ from app.services.company_researcher import research_company, _get_startup_fallb
 from app.services.job_fetcher import fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, scrape_careers_page
 from app.middleware.auth import get_current_user
 from app.models.discovery import ATSInfo, ATSSystem, CareersDiscoveryResult
+from app.services.careers_resolver import (
+    classify_careers_url,
+    company_slug,
+    find_official_careers_url,
+    match_registry_key,
+    token_matches_company,
+    trust_urls,
+    verify_ats_token,
+    verify_careers_url,
+)
+from app.utils.security import validate_safe_url
 
 router = APIRouter()
 
@@ -96,7 +108,26 @@ KNOWN_COMPANY_ATS = {
     "zsassociates": CareersDiscoveryResult(
         careers_url="https://jobs.zs.com/",
         ats_info=None
+    ),
+    "americanexpress": CareersDiscoveryResult(
+        careers_url="https://careers.americanexpress.com/en/sites/CX_1",
+        ats_info=None
     )
+}
+
+# Hand-curated portals are trusted for their own company (e.g. search.jobs.barclays, higher.gs.com)
+trust_urls({k: v.careers_url for k, v in KNOWN_COMPANY_ATS.items() if v.careers_url})
+try:
+    from app.services.job_fetcher import VERIFIED_COMPANY_ROLES as _VCR
+    trust_urls({k: v["careers_url"] for k, v in _VCR.items() if v.get("careers_url")})
+except Exception as _e:  # pragma: no cover
+    print(f"[Research] Could not register curated careers hosts: {_e}")
+
+_ATS_BOARD_URL = {
+    ATSSystem.GREENHOUSE: "https://boards.greenhouse.io/{t}",
+    ATSSystem.LEVER: "https://jobs.lever.co/{t}",
+    ATSSystem.ASHBY: "https://jobs.ashbyhq.com/{t}",
+    ATSSystem.SMARTRECRUITERS: "https://jobs.smartrecruiters.com/{t}",
 }
 
 def detect_ats_with_llm(company_name: str) -> Optional[CareersDiscoveryResult]:
@@ -176,7 +207,19 @@ Respond in JSON only with keys: "careers_url", "ats_system", "ats_token"
                 if known_sys.value in ats_sys and ats_tok:
                     ats_info = ATSInfo(system=known_sys, token=ats_tok)
                     break
-                
+
+            # LLM output is a HINT, never a fact: verify before trusting.
+            if ats_info and ats_info.system != ATSSystem.WORKDAY:
+                if not token_matches_company(ats_info.token, company_name) or not verify_ats_token(ats_info.system, ats_info.token):
+                    print(f"[DeepDive] Discarded unverified LLM ATS guess {ats_info.system.value}:{ats_info.token} for {company_name}")
+                    ats_info = None
+            if ats_info and ats_info.system == ATSSystem.WORKDAY:
+                ats_info = None  # Workday tokens can't be guessed; only trusted when parsed from a real URL
+
+            careers_url = verify_careers_url(careers_url, company_name)
+            if not careers_url and ats_info:
+                careers_url = _ATS_BOARD_URL.get(ats_info.system, "").format(t=ats_info.token) or None
+
             if careers_url or ats_info:
                 return CareersDiscoveryResult(careers_url=careers_url, ats_info=ats_info)
         except Exception as parse_e:
@@ -195,36 +238,24 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
     if not careers_url and any(ats_domain in c_lower for ats_domain in ["jobs.lever.co", "boards.greenhouse.io", "jobs.ashbyhq.com", "jobs.smartrecruiters.com", "myworkdayjobs.com"]):
         careers_url = c_raw if c_raw.startswith("http") else f"https://{c_raw}"
 
-    norm = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
-    
-    # 0b. Check curated high-priority registry first (instant 0ms resolution)
-    if not careers_url:
-        for k, res in KNOWN_COMPANY_ATS.items():
-            if k in norm or norm in k:
-                return res
+    supplied = bool(careers_url)
 
-    query = f"{company_name} official careers portal"
-    
+    # 0b. Check curated high-priority registry first (instant 0ms resolution).
+    # Strict matching: 'Google India' -> google, but 'Stripes Foods' does NOT match 'stripe'.
+    if not careers_url:
+        key = match_registry_key(company_name, KNOWN_COMPANY_ATS.keys())
+        if key:
+            return KNOWN_COMPANY_ATS[key]
+
+    # 0c. Search the web, but accept ONLY a verified official-domain / ATS careers URL.
+    # Aggregators (Indeed/Naukri/LinkedIn/...), promo/blog/pricing pages and LLM-invented
+    # links are rejected inside find_official_careers_url.
     if not careers_url:
         try:
-            results = perform_resilient_search(query, max_results=3)
-            for r in results:
-                href = r.get("href", "")
-                if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work"]):
-                    careers_url = href
-                    break
-            # Fallback for startups whose root domain was returned (e.g. https://aggroso.com)
-            if not careers_url and results:
-                for r in results:
-                    href = r.get("href", "")
-                    if href and not any(bad in href for bad in ["linkedin.", "facebook.", "twitter.", "wikipedia.", "instagram.", "crunchbase.", "glassdoor."]):
-                        p = urllib.parse.urlparse(href)
-                        if p.netloc:
-                            careers_url = f"{p.scheme}://{p.netloc}/careers"
-                            break
+            careers_url = find_official_careers_url(company_name, search_fn=perform_resilient_search)
         except Exception as e:
             print(f"Careers URL discovery failed: {e}")
-        
+
     url = careers_url
     ats_found = None
     
@@ -285,51 +316,56 @@ def discover_careers_url_and_ats(company_name: str, careers_url: Optional[str] =
     if ats_found:
         return CareersDiscoveryResult(careers_url=url, ats_info=ats_found)
 
-    # If careers_url is a custom domain, inspect page HTML for embedded Lever / Greenhouse / Ashby / SmartRecruiters links
-    if url and not ats_found:
+    # A non-ATS URL is only ever surfaced if it is on the company's own domain and not promotional.
+    official_ok = bool(url) and classify_careers_url(url, company_name)[0]
+    if url and not official_ok:
+        print(f"[DeepDive] Ignoring non-official/promotional URL for {company_name}: {url}")
+        url = None
+
+    # If careers_url is a custom (official) domain, inspect page HTML for embedded Lever / Greenhouse / Ashby / SmartRecruiters links
+    if url:
         try:
+            validate_safe_url(url)
             resp = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
             if resp.status_code == 200:
                 html_chunk = resp.text[:100000]
-                lev = re.search(r"https?://jobs\.lever\.co/([a-zA-Z0-9_\-]+)", html_chunk)
-                if lev:
-                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.LEVER, token=lev.group(1)))
-                gh = re.search(r"https?://boards\.greenhouse\.io/([a-zA-Z0-9_\-]+)", html_chunk)
-                if gh:
-                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.GREENHOUSE, token=gh.group(1)))
-                ash = re.search(r"https?://jobs\.ashbyhq\.com/([a-zA-Z0-9_\-]+)", html_chunk)
-                if ash:
-                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.ASHBY, token=ash.group(1)))
-                sr = re.search(r"https?://jobs\.smartrecruiters\.com/([a-zA-Z0-9_\-]+)", html_chunk)
-                if sr:
-                    return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=ATSSystem.SMARTRECRUITERS, token=sr.group(1)))
+                for sys_enum, pattern in (
+                    (ATSSystem.LEVER, r"https?://jobs\.lever\.co/([a-zA-Z0-9_\-]+)"),
+                    (ATSSystem.GREENHOUSE, r"https?://boards\.greenhouse\.io/([a-zA-Z0-9_\-]+)"),
+                    (ATSSystem.ASHBY, r"https?://jobs\.ashbyhq\.com/([a-zA-Z0-9_\-]+)"),
+                    (ATSSystem.SMARTRECRUITERS, r"https?://jobs\.smartrecruiters\.com/([a-zA-Z0-9_\-]+)"),
+                ):
+                    m = re.search(pattern, html_chunk)
+                    if m and verify_ats_token(sys_enum, m.group(1)):
+                        return CareersDiscoveryResult(careers_url=url, ats_info=ATSInfo(system=sys_enum, token=m.group(1)))
         except Exception as html_e:
             print(f"[DeepDive] Career page HTML inspection skipped: {html_e}")
 
-    # Try LLM ATS detection if no known ATS was parsed from URL or HTML
-    llm_disc = detect_ats_with_llm(company_name)
-    if llm_disc:
-        return CareersDiscoveryResult(
-            careers_url=url or llm_disc.careers_url,
-            ats_info=llm_disc.ats_info
-        )
+    # Try LLM ATS detection (verified inside) only when WE are discovering. For caller-supplied
+    # URLs (e.g. social leads) an LLM guess must never 'verify' an unrelated third-party link.
+    if not supplied:
+        llm_disc = detect_ats_with_llm(company_name)
+        if llm_disc:
+            return CareersDiscoveryResult(
+                careers_url=url or llm_disc.careers_url,
+                ats_info=llm_disc.ats_info
+            )
 
     if not url:
         return CareersDiscoveryResult()
-        
+
     return CareersDiscoveryResult(careers_url=url)
 
-def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[str]) -> tuple:
+def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[str], progress: Optional[dict] = None) -> tuple:
     """
     Subroutine for job and ATS discovery. Designed to run concurrently with company research.
     """
     from app.services.job_fetcher import VERIFIED_COMPANY_ROLES, parse_experience_requirements
 
-    norm = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
     keywords = [k.strip() for k in target_keywords.split(",")] if target_keywords else None
 
-    # 1. Check if curated company — instant response
-    is_curated = any(key in norm or norm in key for key in VERIFIED_COMPANY_ROLES.keys())
+    # 1. Check if curated company — instant response (strict match, no loose substrings)
+    is_curated = match_registry_key(company_name, VERIFIED_COMPANY_ROLES.keys()) is not None
     
     discovered_jobs = []
     careers_url = None
@@ -343,26 +379,33 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
         known = discover_careers_url_and_ats(company_name)
         if known and known.ats_info:
             ats_info = known.ats_info
+        if not careers_url and known:
+            careers_url = known.careers_url
+        if progress is not None:
+            progress["careers_url"], progress["ats_info"] = careers_url, ats_info
     else:
         # 1. Discover Official Careers URL and ATS
         discovery = discover_careers_url_and_ats(company_name)
         careers_url = discovery.careers_url
         ats_info = discovery.ats_info
+        # Publish partial results immediately so a timeout never throws away what we already verified
+        if progress is not None:
+            progress["careers_url"], progress["ats_info"] = careers_url, ats_info
         print(f"[DeepDive] Detected ATS: {ats_info.system.value if ats_info else None}, token: {ats_info.token if ats_info else None}")
         
         if not ats_info:
             try:
-                norm_c = re.sub(r'[^a-zA-Z0-9]', '', company_name.lower())
                 query = f"{company_name} greenhouse lever ashby smartrecruiters workday jobs"
                 results = perform_resilient_search(query, max_results=4)
                 for r in results:
                     u = r.get("href", "")
                     cand_disc = discover_careers_url_and_ats(company_name, u)
                     if cand_disc.ats_info:
-                        cand_tok = re.sub(r'[^a-zA-Z0-9]', '', cand_disc.ats_info.token.lower())
-                        if norm_c in cand_tok or cand_tok in norm_c:
+                        if token_matches_company(cand_disc.ats_info.token, company_name) and verify_ats_token(cand_disc.ats_info.system, cand_disc.ats_info.token):
                             ats_info = cand_disc.ats_info
                             careers_url = u
+                            if progress is not None:
+                                progress["careers_url"], progress["ats_info"] = careers_url, ats_info
                             print(f"[DeepDive] Validated ATS match: {ats_info.system.value} ({ats_info.token}) for {company_name}")
                             break
             except Exception as e:
@@ -396,14 +439,24 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
                 print(f"[DeepDive] Generic fallback failed: {pf_e}")
 
         # Tier 4: Startup Job Board Search Fallback (Wellfound, Instahyre, etc.)
+        # Only real postings that are actually about this company are kept - no generic
+        # directory/company-overview pages and no unrelated promotional results.
         if not discovered_jobs:
             try:
                 startup_board_query = f'site:wellfound.com OR site:instahyre.com "{company_name}" ("Software" OR "Engineer" OR "Developer" OR "Intern")'
                 board_results = perform_resilient_search(startup_board_query, max_results=3)
+                brand_toks = [t for t in re.findall(r"[a-z0-9]+", company_name.lower()) if len(t) >= 3]
                 for br in board_results:
                     b_title = br.get("title", "")
                     b_href = br.get("href", "")
                     b_body = br.get("body", "")
+                    b_host = (urllib.parse.urlparse(b_href).hostname or "").lower()
+                    if not any(b_host == d or b_host.endswith("." + d) for d in ("wellfound.com", "instahyre.com")):
+                        print(f"[DeepDive] Discarded non-board result for {company_name}: {b_href}")
+                        continue
+                    if brand_toks and not any(t in f"{b_title} {b_body} {b_href}".lower() for t in brand_toks):
+                        print(f"[DeepDive] Discarded off-topic board result for {company_name}: {b_href}")
+                        continue
                     if b_href and b_title:
                         cleaned_title = b_title.split(" - ")[0].split(" | ")[0].split(" at ")[0].strip()
                         if len(cleaned_title) > 65:
@@ -485,41 +538,56 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
     Guarantees garbage collection to keep container RAM <250MB.
     """
     import gc
+    import time
     discovered_jobs = []
     careers_url = None
     ats_info = None
     company_info = None
+    progress: dict = {}  # filled by the worker as soon as it has verified something
 
+    # NOTE: no `with ThreadPoolExecutor` - its __exit__ blocks until the threads finish, which
+    # defeated the timeout. We shut down without waiting so the response returns on time.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
     try:
         # Execute ATS/Jobs Discovery and Company Intelligence concurrently
         # This prevents Vercel 10-15s proxy timeout by cutting latency in half!
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_jobs = executor.submit(_discover_company_jobs_and_ats, req.company_name, req.target_keywords)
-            future_info = executor.submit(research_company, req.company_name)
+        started = time.time()
+        future_jobs = executor.submit(_discover_company_jobs_and_ats, req.company_name, req.target_keywords, progress)
+        future_info = executor.submit(research_company, req.company_name)
 
-            try:
-                discovered_jobs, careers_url, ats_info = future_jobs.result(timeout=14)
-            except Exception as e:
-                print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {e}")
-                discovered_jobs, careers_url, ats_info = [], None, None
+        try:
+            discovered_jobs, careers_url, ats_info = future_jobs.result(timeout=14)
+        except Exception as e:
+            print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {e}")
+            # Keep whatever was already verified instead of discarding it
+            discovered_jobs = []
+            careers_url = progress.get("careers_url")
+            ats_info = progress.get("ats_info")
 
-            try:
-                company_info = future_info.result(timeout=14)
-            except Exception as e:
-                print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {e}")
-                company_info = _get_startup_fallback_intelligence(req.company_name)
+        try:
+            company_info = future_info.result(timeout=max(1.0, 14 - (time.time() - started)))
+        except Exception as e:
+            print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {e}")
+            company_info = _get_startup_fallback_intelligence(req.company_name)
 
         if not company_info:
             company_info = _get_startup_fallback_intelligence(req.company_name)
 
-        norm_c = req.company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
+        # Never surface an unverified / promotional / aggregator URL as the "official" careers page.
+        # We no longer fabricate https://www.<name>.com - if nothing is verified, return None.
+        if careers_url and not classify_careers_url(careers_url, req.company_name)[0]:
+            print(f"[DeepDive] Dropping non-official careers_url for {req.company_name}: {careers_url}")
+            careers_url = None
+
         return {
             "company_info": company_info,
             "ats_info": ats_info.model_dump() if ats_info else None,
-            "careers_url": careers_url or f"https://www.{norm_c}.com",
+            "careers_url": careers_url,
+            "careers_url_verified": bool(careers_url),
             "jobs": discovered_jobs or []
         }
     finally:
+        executor.shutdown(wait=False)
         gc.collect()
 
 @router.post("/discover-ats")

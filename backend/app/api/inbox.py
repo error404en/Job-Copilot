@@ -37,6 +37,11 @@ async def upload_inbox_text(req: UploadInboxRequest, background_tasks: Backgroun
 async def upload_inbox_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), source_type: str = Form(...), user_id: str = Depends(get_current_user)):
     source_id = str(uuid.uuid4())
     
+    if source_type == 'video':
+        import shutil
+        if not shutil.which("ffmpeg"):
+            raise HTTPException(status_code=501, detail="Video processing requires ffmpeg which is not installed in the environment.")
+            
     # Save file temporarily using cross-platform temp directory
     import tempfile
     file_ext = os.path.splitext(file.filename)[1]
@@ -63,6 +68,44 @@ async def upload_inbox_file(background_tasks: BackgroundTasks, file: UploadFile 
     background_tasks.add_task(process_inbox_source, source_id, file_path, s_type, user_id)
     
     return {"status": "processing", "source_id": source_id}
+
+@router.get("/sources/{source_id}/progress")
+def get_source_progress(source_id: str, user_id: str = Depends(get_current_user)):
+    source_res = supabase.table("inbox_sources").select("status").eq("id", source_id).eq("user_id", user_id).execute()
+    if not source_res.data:
+        raise HTTPException(status_code=404, detail="Source not found")
+        
+    status = source_res.data[0]["status"]
+    
+    # Get stats of extracted opportunities
+    opps_res = supabase.table("inbox_opportunities").select("status, verification_status").eq("source_id", source_id).eq("user_id", user_id).execute()
+    
+    verified = 0
+    needs_check = 0
+    rejected = 0
+    pending = 0
+    
+    for opp in opps_res.data:
+        v_stat = opp.get("verification_status")
+        o_stat = opp.get("status")
+        
+        if o_stat == InboxOpportunityStatus.PENDING.value:
+            pending += 1
+        elif o_stat == InboxOpportunityStatus.INELIGIBLE.value:
+            rejected += 1
+        elif v_stat == VerificationStatus.VERIFIED.value:
+            verified += 1
+        else:
+            needs_check += 1
+            
+    return {
+        "status": status,
+        "extracted_total": len(opps_res.data),
+        "verified": verified,
+        "needs_check": needs_check,
+        "rejected": rejected,
+        "pending": pending
+    }
 
 @router.get("/opportunities")
 def list_opportunities(user_id: str = Depends(get_current_user)):

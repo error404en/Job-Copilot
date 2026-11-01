@@ -12,6 +12,7 @@ class SourceType(str, Enum):
     XLSX = "xlsx"
     CSV = "csv"
     URL = "url"
+    WHATSAPP_EXPORT = "whatsapp_export"
 
 class InboxSourceStatus(str, Enum):
     PENDING = "pending"

@@ -1131,7 +1131,7 @@ export default function AddJobPage() {
                       <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                         <span>🎯</span> Open Roles Discovered ({filteredDeepDiveJobs.length})
                       </h2>
-                      {researchData.careers_url && (
+                      {researchData.careers_url ? (
                         <a 
                           href={researchData.careers_url} 
                           target="_blank" 
@@ -1140,6 +1140,10 @@ export default function AddJobPage() {
                         >
                           Official Careers Portal: {researchData.careers_url} ↗
                         </a>
+                      ) : (
+                        <p className="text-xs text-zinc-500 mt-1">
+                          No verified official careers page found for this company — we only show links on the company&apos;s own domain or its ATS.
+                        </p>
                       )}
                     </div>
 

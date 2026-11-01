@@ -90,24 +90,120 @@ Return ONLY valid JSON. No markdown fences, no explanations.
 
     return []
 
+def google_search_grounding(query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    """
+    Executes live Google Search using Gemini 2.5 Google Search Grounding.
+    Queries the live Google web index and extracts authentic, direct destination URLs.
+    """
+    from app.services.llm_client import gemini_client
+    if not gemini_client:
+        return []
+
+    prompt = f"""Use Google Search to find top results for: "{query}"
+Return ONLY a valid JSON list of up to {max_results} search results.
+Each result object must have:
+- "title": page title
+- "href": direct authentic destination URL (e.g. https://domain.com/path), do NOT use google redirect URLs
+- "body": concise snippet or summary of the page
+
+Return ONLY the JSON array without markdown formatting."""
+
+    try:
+        chat = gemini_client.chats.create(
+            model="gemini-2.5-flash",
+            config={"tools": [{"google_search": {}}]}
+        )
+        response = chat.send_message(prompt)
+        raw = (getattr(response, "text", "") or "").strip()
+        data = _parse_json_results(raw)
+
+        # If any href returned is a vertex redirect URL, resolve it to the authentic destination
+        valid_results = []
+        for item in data:
+            href = item.get("href", "")
+            if "vertexaisearch.cloud.google.com" in href:
+                try:
+                    import requests
+                    r = requests.get(href, allow_redirects=True, timeout=3)
+                    if r.url and "vertexaisearch" not in r.url:
+                        item["href"] = r.url
+                    else:
+                        continue
+                except Exception:
+                    continue
+            valid_results.append(item)
+            if len(valid_results) >= max_results:
+                break
+
+        # If JSON parsing was empty or incomplete, extract directly from grounding_metadata chunks
+        if not valid_results and hasattr(response, "candidates") and response.candidates:
+            cand = response.candidates[0]
+            g_meta = getattr(cand, "grounding_metadata", None)
+            chunks = getattr(g_meta, "grounding_chunks", None) or []
+            import requests
+            seen_urls = set()
+            for chunk in chunks:
+                web = getattr(chunk, "web", None)
+                if not web:
+                    continue
+                uri = getattr(web, "uri", "") or ""
+                title = getattr(web, "title", "") or ""
+                if not uri:
+                    continue
+                dest_url = uri
+                if "vertexaisearch.cloud.google.com" in uri:
+                    try:
+                        r = requests.get(uri, allow_redirects=True, timeout=3)
+                        if r.url and "vertexaisearch" not in r.url:
+                            dest_url = r.url
+                        else:
+                            continue
+                    except Exception:
+                        continue
+                if dest_url and dest_url not in seen_urls:
+                    seen_urls.add(dest_url)
+                    valid_results.append({
+                        "title": title or "Official Page",
+                        "href": dest_url,
+                        "body": title
+                    })
+                if len(valid_results) >= max_results:
+                    break
+
+        if valid_results:
+            print(f"[SearchManager] Google Search Grounding succeeded for query: {query}")
+            return valid_results
+    except Exception as e:
+        print(f"[SearchManager] Google Search Grounding error: {e}")
+
+    return []
+
 # Backwards compatibility alias
 gemini_web_search = llm_web_search
 
 def perform_resilient_search(query: str, max_results: int = 3) -> List[Dict[str, str]]:
     """
-    Tries DDGS first with relaxed query format. If it fails, is rate-limited, or returns empty,
-    falls back to high-reliability LLM web intelligence.
+    Resilient multi-tier search engine:
+    1. Primary: Google Search Grounding (Live Google index, covers any company)
+    2. Secondary: DuckDuckGo (DDGS)
+    3. Fallback: LLM knowledge synthesis (Groq / Gemini memory)
     """
-    results = []
+    # 1. Primary: Google Search Grounding
+    results = google_search_grounding(query, max_results=max_results)
+    if results:
+        return results
+
+    # 2. Secondary: DuckDuckGo
     if DDGS:
         try:
             with DDGS(timeout=4) as ddgs:
-                results = list(ddgs.text(query, max_results=max_results))
-                if results:
+                ddg_results = list(ddgs.text(query, max_results=max_results))
+                if ddg_results:
                     print(f"[SearchManager] DDGS succeeded for query: {query}")
-                    return results
+                    return ddg_results
         except Exception as e:
             print(f"[SearchManager] DDGS search failed or blocked for query '{query}': {e}")
 
-    print(f"[SearchManager] DDGS returned empty or failed. Falling back to LLM for: {query}")
+    # 3. Fallback: LLM knowledge base
+    print(f"[SearchManager] Falling back to LLM knowledge synthesis for: {query}")
     return llm_web_search(query, max_results=max_results)

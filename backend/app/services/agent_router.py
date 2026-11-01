@@ -18,7 +18,9 @@ def perform_search_web(query: str) -> str:
     """Uses robust resilient search (DDGS + Gemini) to search the web and returns a summary of top results."""
     try:
         from app.services.search_manager import perform_resilient_search
-        results = perform_resilient_search(query, max_results=3)
+        from app.services.careers_resolver import filter_search_results
+        # Over-fetch, then drop aggregator / promotional / spam hosts before presenting results
+        results = filter_search_results(perform_resilient_search(query, max_results=6))[:3]
         formatted = []
         for r in results:
             formatted.append(f"Title: {r.get('title')}\nURL: {r.get('href')}\nSnippet: {r.get('body')}\n")

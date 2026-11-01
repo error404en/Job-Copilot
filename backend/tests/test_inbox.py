@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from app.api.inbox import OpportunityActionRequest, update_opportunity
 from app.api.research import discover_careers_url_and_ats
 from app.models.discovery import ATSInfo, ATSSystem, CareersDiscoveryResult
-from app.models.inbox import SourceType
+from app.models.inbox import SourceType, InboxOpportunityStatus, VerificationStatus
 from app.services.inbox_processor import ATS_FETCHERS, fetch_discovered_ats_jobs, process_inbox_source
 
 
@@ -99,6 +99,7 @@ def test_all_supported_ats_systems_use_the_canonical_adapter(system):
 def test_generic_fallback_hands_off_to_the_shared_v2_pipeline():
     discovery = CareersDiscoveryResult(careers_url="https://careers.acme.test")
     generic_job = {
+        "role_title": "Backend Engineer",
         "raw_jd": "Backend Engineer\nPython",
         "source_type": "generic_playwright",
         "url": "https://careers.acme.test/jobs/1",
@@ -106,9 +107,16 @@ def test_generic_fallback_hands_off_to_the_shared_v2_pipeline():
     }
     with patch("app.services.inbox_processor.extract_opportunities_from_text", return_value=[{
         "company": "Acme", "role_title": "Backend Engineer", "submitted_url": "https://careers.acme.test"
-    }]), patch("app.services.inbox_processor.resolve_redirects_and_detect_promo", return_value={
-        "final_url": "https://careers.acme.test", "is_promo": False
-    }), patch("app.services.inbox_processor.discover_careers_url_and_ats", return_value=discovery), patch(
+    }]), patch("app.services.inbox_processor.resolve_lead", return_value={
+        "status": InboxOpportunityStatus.VERIFIED,
+        "verification_status": VerificationStatus.VERIFIED,
+        "verified_url": "https://careers.acme.test/jobs/1",
+        "relevance_explanation": "Verified",
+        "confidence": 0.9,
+        "ats_info": None,
+        "official_url": "https://careers.acme.test",
+        "final_submitted_url": "https://careers.acme.test"
+    }), patch(
         "app.services.inbox_processor.fetch_generic_fallback", return_value=[generic_job]
     ) as generic_fetch, patch("app.services.job_pipeline.process_and_store_job", return_value={
         "job_id": "job-1", "is_duplicate": False
@@ -182,7 +190,16 @@ def test_duplicate_v2_job_is_linked_to_the_users_opportunity():
 def test_duplicate_opportunity_is_not_reinserted():
     with patch("app.services.inbox_processor.extract_opportunities_from_text", return_value=[{
         "company": "Acme", "role_title": "Backend Engineer", "submitted_url": None
-    }]), patch("app.services.inbox_processor.discover_careers_url_and_ats", return_value=CareersDiscoveryResult()), patch(
+    }]), patch("app.services.inbox_processor.resolve_lead", return_value={
+        "status": InboxOpportunityStatus.UNVERIFIED,
+        "verification_status": VerificationStatus.UNVERIFIED_THIRD_PARTY,
+        "verified_url": None,
+        "relevance_explanation": "No link",
+        "confidence": 0.5,
+        "ats_info": None,
+        "official_url": None,
+        "final_submitted_url": None
+    }), patch(
         "app.services.inbox_processor.supabase"
     ) as database:
         database.table.return_value.insert.return_value.execute.side_effect = Exception("duplicate key")

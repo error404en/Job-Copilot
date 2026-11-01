@@ -198,12 +198,13 @@ def research_company(company_name: str) -> dict:
     print(f"[Research] Researching company: {company_name}")
     norm_name = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
 
-    # 1. Check verified benchmarks (always instant, highest priority)
-    for key, data in VERIFIED_COMPANY_BENCHMARKS.items():
-        if key in norm_name or norm_name in key:
-            print(f"[Research] Found verified benchmark for {company_name} ({key})")
-            ci = CompanyIntelligence(**data)
-            return ci.model_dump()
+    # 1. Check verified benchmarks (always instant, highest priority) - strict name match
+    from app.services.careers_resolver import match_registry_key
+    bench_key = match_registry_key(company_name, VERIFIED_COMPANY_BENCHMARKS.keys())
+    if bench_key:
+        print(f"[Research] Found verified benchmark for {company_name} ({bench_key})")
+        ci = CompanyIntelligence(**VERIFIED_COMPANY_BENCHMARKS[bench_key])
+        return ci.model_dump()
 
     # 2. Check in-memory cache
     cached = _RESEARCH_CACHE.get(norm_name)

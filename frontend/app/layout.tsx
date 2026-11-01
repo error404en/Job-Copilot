@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 import { Navigation } from "@/components/ui/Navigation";
+import { SWRegister } from "@/components/SWRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "JobCopilot — AI Job Analysis & Application Engine",
   description: "Analyze job descriptions, score your fit, and generate human-sounding cover letters — all locally.",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
@@ -34,6 +36,7 @@ export default function RootLayout({
           <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 mt-2 animate-in fade-in duration-500 w-full">
           {children}
           </main>
+          <SWRegister />
           </Providers>
         </ClerkProvider>
       </body>

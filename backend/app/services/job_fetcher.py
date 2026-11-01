@@ -1488,32 +1488,29 @@ def scrape_careers_page(company_name: str, target_keywords: list = None) -> dict
     """
     from app.services.llm_client import extract_jobs_from_page
 
-    norm = company_name.lower().replace(" ", "").replace(".", "").replace("-", "")
-    
-    # 1. Check curated database for instant 0ms response
-    for key, data in VERIFIED_COMPANY_ROLES.items():
-        if key in norm or norm in key:
-            print(f"[scrape_careers_page] Matched curated roles for {company_name} ({key})")
-            roles = list(data["roles"])
-            if target_keywords:
-                kw_lower = [k.lower() for k in target_keywords]
-                filtered = [r for r in roles if any(kw in r["role_title"].lower() or any(kw in sk.lower() for sk in r.get("required_skills", [])) for kw in kw_lower)]
-                if filtered:
-                    roles = filtered
-            return {"careers_url": data["careers_url"], "jobs": roles}
+    from app.services.careers_resolver import match_registry_key, find_official_careers_url
+
+    # 1. Check curated database for instant 0ms response (strict match - no loose substrings)
+    key = match_registry_key(company_name, VERIFIED_COMPANY_ROLES.keys())
+    if key:
+        data = VERIFIED_COMPANY_ROLES[key]
+        print(f"[scrape_careers_page] Matched curated roles for {company_name} ({key})")
+        roles = list(data["roles"])
+        if target_keywords:
+            kw_lower = [k.lower() for k in target_keywords]
+            filtered = [r for r in roles if any(kw in r["role_title"].lower() or any(kw in sk.lower() for sk in r.get("required_skills", [])) for kw in kw_lower)]
+            if filtered:
+                roles = filtered
+        return {"careers_url": data["careers_url"], "jobs": roles}
 
     # 2. Dynamic Discovery for non-curated companies
     careers_url = None
     jobs = []
 
-    # Step A: Quick search for official careers portal URL
+    # Step A: Find the OFFICIAL careers portal. Only a verified official-domain / ATS URL is
+    # accepted - never an aggregator, promo page or LLM-invented link.
     try:
-        results = perform_resilient_search(f"{company_name} official careers portal India", max_results=3)
-        for r in results:
-            href = r.get("href", "")
-            if any(kw in href.lower() for kw in ["career", "job", "join", "hiring", "work", "myworkdayjobs", "successfactors"]):
-                careers_url = href
-                break
+        careers_url = find_official_careers_url(company_name, search_fn=perform_resilient_search)
     except Exception as e:
         print(f"[scrape_careers_page] Careers URL search skipped: {e}")
 
