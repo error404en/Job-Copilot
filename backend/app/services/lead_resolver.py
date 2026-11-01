@@ -60,6 +60,88 @@ def lead_gate(company: str, role_title: str, location: str, text: str) -> Tuple[
     return True, "eligible"
 
 
+def evaluate_lead_copilot_fit(company: str, role_title: str, qualification: str = "", source_text: str = "") -> Dict[str, Any]:
+    """
+    Copilot Triage Classifier: evaluates whether a lead matches Software / AI / Data / Tech Consulting
+    career targets ('high_fit' | 'stretch' | 'off_target') and assigns a deterministic fit score.
+    """
+    r_low = (role_title or "").lower()
+    q_low = (qualification or "").lower()
+    t_low = (source_text or "").lower()
+    if not q_low and "qualification" in t_low:
+        for line in t_low.splitlines():
+            if "qualification" in line:
+                q_low = line
+                break
+
+    # 1. Off-Target Non-Tech Domains (HR, Recruiting, Marketing, Pure Commerce, Non-Engineering Service Desk)
+    non_tech_roles = (
+        "talent acquisition", "recruiter", "human resources", "hr intern",
+        "resource management", "marketing intern", "social media", "copywriter",
+        "service desk", "voice process", "telecaller", "sales executive",
+    )
+    if any(nt in r_low for nt in non_tech_roles):
+        return {
+            "copilot_fit": "off_target",
+            "copilot_score": 22,
+            "copilot_reason": f"Off-Target Domain: '{role_title}' is an HR, Recruiting, Marketing, or IT Support role outside Software/AI/Data/Consulting.",
+        }
+
+    # Check if qualification is strictly non-engineering (e.g. Commerce/Finance only or BCA/BCom/BA service desk)
+    if ("commerce" in q_low or "finance" in q_low or "mba/pgdm in human resources" in q_low) and not any(
+        eng in q_low for eng in ("engineering", "b.tech", "b-tech", "computer", "data science", "any graduate")
+    ):
+        return {
+            "copilot_fit": "off_target",
+            "copilot_score": 26,
+            "copilot_reason": f"Degree Mismatch: Requires Commerce/Finance/HR degree rather than Computer Science / Engineering.",
+        }
+
+    if "bca" in q_low and "bcom" in q_low and "ba" in q_low and not ("b.tech" in q_low or "b-tech" in q_low or "engineering" in q_low):
+        return {
+            "copilot_fit": "off_target",
+            "copilot_score": 28,
+            "copilot_reason": "Off-Target Role: Non-engineering mass support track (BCA/BCom/BA).",
+        }
+
+    # 2. High-Fit Core Target Roles (Software, SDE, AI/ML, Data Science/Engineering/Analytics, Tech Consulting, QA)
+    core_high_fit = (
+        "software development engineer", "software engineer", "sde", "ai-native",
+        "artificial intelligence", "machine learning", "genai", "data scientist",
+        "data engineer", "data analyst", "technology consulting", "business technology",
+        "btsa", "backend", "full stack", "fullstack", "frontend", "android",
+        "qa engineer", "software testing", "test engineer", "sdet", "automation engineer",
+        "cloud engineer", "devops",
+    )
+    if any(kw in r_low for kw in core_high_fit):
+        score = 88
+        if any(top in r_low for top in ("software development engineer", "ai-native", "technology consulting", "data engineer", "software engineer")):
+            score = 91
+        elif "qa" in r_low or "testing" in r_low:
+            score = 80
+        return {
+            "copilot_fit": "high_fit",
+            "copilot_score": score,
+            "copilot_reason": f"High-Fit Target Role: Directly matches your Software, AI, Data & Tech Consulting profile ({score}% affinity).",
+        }
+
+    # 3. Stretch / Secondary Technical-Adjacent Roles (Campus Program, Deployment, Software Testing, Associate Analyst)
+    stretch_keywords = ("testing", "campus program", "deployment", "associate analyst", "analyst", "trainee", "graduate")
+    if any(sk in r_low for sk in stretch_keywords) or "engineering" in q_low or "b-tech" in q_low or "computer science" in q_low:
+        score = 76 if "testing" in r_low or "campus program" in r_low else 68
+        return {
+            "copilot_fit": "stretch",
+            "copilot_score": score,
+            "copilot_reason": f"Stretch / General Tech Role: Eligible graduate track ({score}% affinity) — review JD specialization.",
+        }
+
+    return {
+        "copilot_fit": "stretch",
+        "copilot_score": 62,
+        "copilot_reason": "General community lead — verify role specialization before applying.",
+    }
+
+
 def resolve_lead(company: str, role_title: str, location: str, submitted_url: str, source_text: str) -> Dict[str, Any]:
     """
     Full resolution pipeline for a single lead.

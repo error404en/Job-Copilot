@@ -143,6 +143,62 @@ def _run_analysis(job_id: str, user_id: str, parsed_job, raw_jd: str, use_groq: 
             pass
 
 
+def run_instant_deterministic_analysis(job_id: str, user_id: str, parsed_job, raw_jd: str, user_profile: dict = None, resumes: list = None):
+    """
+    Runs sub-millisecond deterministic match scoring (0 LLM tokens) and persists a job_analyses row
+    so promoted leads and synced jobs never sit unscored ('--') on the Dashboard.
+    """
+    from app.services.match_scorer import score_match_deterministic
+    try:
+        if not job_id:
+            return None
+        # Check if analysis already exists for this job
+        existing = supabase.table("job_analyses").select("id, match_score, verdict").eq("job_id", job_id).limit(1).execute()
+        if existing.data:
+            return existing.data[0]
+
+        if user_profile is None:
+            user_profile = get_or_create_user_profile(user_id)
+        if resumes is None:
+            resumes_resp = supabase.table("resume_versions") \
+                .select("id, title, target_type, skills_summary, raw_content") \
+                .eq("user_id", user_id).order("created_at", desc=True).limit(15).execute()
+            resumes = resumes_resp.data or []
+
+        req_skills = getattr(parsed_job, "required_skills", []) or []
+        best_resume_id, _ = _pick_best_resume(resumes, parsed_job.role_title, req_skills, raw_jd)
+
+        if resumes:
+            resume_summary = "\n".join(
+                [f"[{r.get('target_type', 'general')}]: {r.get('skills_summary', '')}"
+                 for r in resumes if r.get("skills_summary")]
+            )
+        else:
+            resume_summary = "Software Engineering Candidate. Experience with Python, JavaScript/React, SQL, REST APIs, Git."
+
+        fit_report = score_match_deterministic(parsed_job, user_profile, resume_summary)
+        analysis_insert = {
+            "job_id": job_id,
+            "match_score": fit_report.match_score,
+            "verdict": fit_report.verdict,
+            "seniority_fit": fit_report.seniority_fit,
+            "pay_floor_pass": fit_report.pay_floor_pass,
+            "relocation_required": fit_report.relocation_required,
+            "matched_keywords": fit_report.matched_keywords,
+            "missing_keywords": fit_report.missing_keywords,
+            "reasoning": fit_report.reasoning,
+            "company_info": fit_report.culture_assessment,
+            "recommended_resume_version_id": best_resume_id,
+            "user_id": user_id,
+        }
+        supabase.table("job_analyses").insert(analysis_insert).execute()
+        supabase.table("jobs").update({"analysis_status": "complete"}).eq("id", job_id).execute()
+        return analysis_insert
+    except Exception as e:
+        print(f"[Pipeline] Instant deterministic analysis skipped for {job_id}: {e}")
+        return None
+
+
 def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: BackgroundTasks = None, skip_analysis: bool = False):
     """
     Shared business logic for parsing and persisting jobs.

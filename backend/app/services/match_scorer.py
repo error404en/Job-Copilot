@@ -126,6 +126,31 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
             culture_assessment=f"Engineering group at {parsed_job.company}."
         )
 
+    # Check non-tech HR / Recruiting / Marketing / Non-Tech Service Desk roles
+    non_tech_title_patterns = (
+        "talent acquisition", "recruiter", "human resources", "hr intern",
+        "resource management", "marketing intern", "social media intern",
+        "service desk", "voice process", "telecaller", "copywriter"
+    )
+    wants_non_tech = any(any(nt in tr for nt in ("hr", "recruiter", "marketing")) for tr in target_roles)
+    if not wants_non_tech and any(nt in role_title_lower for nt in non_tech_title_patterns):
+        return FitReport(
+            match_score=22,
+            matched_keywords=[],
+            missing_keywords=["Non-Technical Domain (HR / Marketing / Support)"],
+            pay_floor_pass=True,
+            relocation_required=False,
+            seniority_fit="good_fit",
+            goal_alignment_note="Non-technical HR, Recruiting, Marketing, or Service Desk role outside Software/AI/Data/Consulting target.",
+            verdict="skip",
+            disqualification_reason="domain_mismatch",
+            reasoning=(
+                f"Off-Target Role Family: '{parsed_job.role_title}' is a non-technical HR, Recruiting, Marketing, or Support role "
+                "outside your Software Engineering, Applied AI, Data Science, and Technology Consulting career targets."
+            ),
+            culture_assessment=f"Business operations team at {parsed_job.company}."
+        )
+
     # -------------------------------------------------------------------------
     # HARD GATE 4: Pay Floor Check
     # -------------------------------------------------------------------------

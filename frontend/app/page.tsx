@@ -133,6 +133,7 @@ function DashboardContent() {
   const [sortBy, setSortBy] = useState<'score' | 'newest' | 'oldest' | 'deadline' | 'salary'>(
     ['score', 'newest', 'oldest', 'deadline', 'salary'].includes(initialSort) ? initialSort : 'score'
   )
+  const [sourceChannelFilter, setSourceChannelFilter] = useState<'all' | 'ats' | 'leads'>('all')
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
 
   const isHydratedRef = useRef(false)
@@ -240,6 +241,26 @@ function DashboardContent() {
     onError: (err: any) => {
       setSyncMessage(`Sync failed: ${err.message || 'Please try again'}`)
       setTimeout(() => setSyncMessage(null), 4000)
+    }
+  })
+
+  const copilotOptimizeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch('/api/jobs/copilot-optimize', {
+        method: 'POST'
+      })
+      if (!res.ok) throw new Error('Failed to optimize feed')
+      return res.json()
+    },
+    onSuccess: (data: any) => {
+      refetchJobs()
+      const msg = data?.message || 'Copilot optimized your feed!'
+      setSyncMessage(msg)
+      setTimeout(() => setSyncMessage(null), 6500)
+    },
+    onError: (err: any) => {
+      setSyncMessage(`Copilot optimization failed: ${err.message || 'Please try again'}`)
+      setTimeout(() => setSyncMessage(null), 4500)
     }
   })
 
@@ -355,6 +376,13 @@ function DashboardContent() {
       list = list.filter(isJobInternship)
     }
 
+    // 1b. Source Channel filter (Official ATS Fleet vs Promoted Community Leads)
+    if (sourceChannelFilter === 'ats') {
+      list = list.filter((job: any) => job.source !== 'inbox')
+    } else if (sourceChannelFilter === 'leads') {
+      list = list.filter((job: any) => job.source === 'inbox')
+    }
+
     // 2. Role Type filter (All vs Internships vs Full-time)
     if (roleTypeFilter === 'internship') {
       list = list.filter(isJobInternship)
@@ -461,12 +489,13 @@ function DashboardContent() {
     })
 
     return list
-  }, [jobs, filter, roleTypeFilter, cgpaFilter, searchQuery, locationFilter, verdictFilter, dateFilter, sortBy])
+  }, [jobs, filter, sourceChannelFilter, roleTypeFilter, cgpaFilter, searchQuery, locationFilter, verdictFilter, dateFilter, sortBy])
 
   const hasActiveFilters = searchQuery !== '' || 
     locationFilter !== 'all' || 
     verdictFilter !== 'all' || 
     filter !== 'all' || 
+    sourceChannelFilter !== 'all' ||
     dateFilter !== 'all' || 
     roleTypeFilter !== 'all' || 
     cgpaFilter !== 'all'
@@ -477,6 +506,7 @@ function DashboardContent() {
     setVerdictFilter('all')
     setDateFilter('all')
     setFilter('all')
+    setSourceChannelFilter('all')
     setRoleTypeFilter('all')
     setCgpaFilter('all')
     setSortBy('score')
@@ -490,12 +520,14 @@ function DashboardContent() {
 
   // Filter counts
   const stats = useMemo(() => {
-    if (!jobs) return { total: 0, applies: 0, bookmarked: 0, internships: 0 }
+    if (!jobs) return { total: 0, applies: 0, bookmarked: 0, internships: 0, atsCount: 0, leadsCount: 0 }
     return {
       total: jobs.length,
       applies: jobs.filter((j: any) => j.job_analyses?.[0]?.verdict === 'apply').length,
       bookmarked: jobs.filter((j: any) => j.is_bookmarked).length,
-      internships: jobs.filter(isJobInternship).length
+      internships: jobs.filter(isJobInternship).length,
+      atsCount: jobs.filter((j: any) => j.source !== 'inbox').length,
+      leadsCount: jobs.filter((j: any) => j.source === 'inbox').length,
     }
   }, [jobs])
 
@@ -738,6 +770,24 @@ function DashboardContent() {
         badgeColor="indigo"
         actions={
           <>
+            <button
+              onClick={() => copilotOptimizeMutation.mutate()}
+              disabled={copilotOptimizeMutation.isPending}
+              className="bg-violet-500/15 border border-violet-500/35 text-violet-300 hover:bg-violet-500/25 hover:text-violet-200 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              title="Copilot Auto-Cleaner: Instantly score all '--' jobs, remove off-target HR/Marketing noise, and deduplicate feed"
+            >
+              {copilotOptimizeMutation.isPending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-300" />
+                  <span>Optimizing...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-violet-300" />
+                  <span>✨ Copilot Optimize Feed</span>
+                </>
+              )}
+            </button>
             <button
               onClick={() => syncJobsMutation.mutate()}
               disabled={syncJobsMutation.isPending}
@@ -994,6 +1044,52 @@ function DashboardContent() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Row 1b: Source Channel Separation Switcher (Official ATS Fleet vs Promoted Community Leads) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/60">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 mr-1">Source Channel:</span>
+            <button
+              type="button"
+              onClick={() => setSourceChannelFilter('all')}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                sourceChannelFilter === 'all'
+                  ? 'bg-zinc-800 text-white border border-zinc-700'
+                  : 'text-zinc-400 hover:text-zinc-200 border border-transparent'
+              }`}
+            >
+              All Sources ({stats.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceChannelFilter('ats')}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                sourceChannelFilter === 'ats'
+                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-bold'
+                  : 'text-zinc-400 hover:text-indigo-300 border border-transparent'
+              }`}
+            >
+              <span>⚡ Official ATS Fleet ({stats.atsCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceChannelFilter('leads')}
+              className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                sourceChannelFilter === 'leads'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold'
+                  : 'text-zinc-400 hover:text-rose-300 border border-transparent'
+              }`}
+            >
+              <span>📬 Promoted Community Leads ({stats.leadsCount})</span>
+            </button>
+          </div>
+          <Link
+            href="/inbox"
+            className="text-[11px] font-semibold text-rose-300 hover:text-rose-200 flex items-center gap-1"
+          >
+            <span>Manage Lead Triage Queue →</span>
+          </Link>
         </div>
 
         {/* Row 2: Location, Employment Type, CGPA Cutoff, Verdict, and Sort Selectors */}
@@ -1345,10 +1441,14 @@ function DashboardContent() {
                         )
                       })()}
 
-                      {/* Source ATS Badge */}
-                      {job.source_type && job.source_type !== 'manual' && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold tracking-wider uppercase shrink-0">
-                          {job.source_type}
+                      {/* Source Provenance Badge (Official ATS vs Promoted Community Lead) */}
+                      {job.source === 'inbox' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px] font-bold tracking-wider uppercase shrink-0" title="Promoted from Lead Ingestion Studio">
+                          📬 Community Lead
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold tracking-wider uppercase shrink-0" title="Fetched from Official ATS / Career Board">
+                          ⚡ {job.source_type && job.source_type !== 'manual' ? job.source_type : 'Official ATS'}
                         </span>
                       )}
                       

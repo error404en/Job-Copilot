@@ -1,5 +1,5 @@
 from app.services.inbox_extractor import extract_opportunities_from_text, extract_text_from_file, extract_batch_opportunities
-from app.services.lead_resolver import resolve_lead, match_best_job
+from app.services.lead_resolver import resolve_lead, match_best_job, evaluate_lead_copilot_fit
 from app.services.job_fetcher import fetch_workday_jobs, fetch_greenhouse_jobs, fetch_lever_jobs, fetch_ashby_jobs, fetch_smartrecruiters_jobs, fetch_generic_fallback
 from app.models.inbox import InboxOpportunity, InboxOpportunityStatus, VerificationStatus, SourceType
 from app.models.discovery import ATSInfo, ATSSystem
@@ -102,10 +102,27 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
         if extracted_jd:
             meta["extracted_jd"] = extracted_jd[:3000]
 
+        copilot_eval = evaluate_lead_copilot_fit(
+            company or "",
+            role_title or "",
+            meta.get("qualification") or "",
+            source_text or "",
+        )
+        meta["copilot_fit"] = copilot_eval["copilot_fit"]
+        meta["copilot_score"] = copilot_eval["copilot_score"]
+        meta["copilot_reason"] = copilot_eval["copilot_reason"]
+
+        if copilot_eval["copilot_fit"] == "off_target":
+            relevance_explanation = copilot_eval["copilot_reason"]
+
         linked_job_id = None
 
-        # 4. Shared Job Discovery V2 Pipeline Handoff (Only if eligible)
-        if status != InboxOpportunityStatus.INELIGIBLE and company:
+        # 4. Shared Job Discovery V2 Pipeline Handoff (Only if eligible and not off-target in multi-batch)
+        should_promote = status != InboxOpportunityStatus.INELIGIBLE and bool(company)
+        if is_multi_batch and copilot_eval["copilot_fit"] != "high_fit":
+            should_promote = False
+
+        if should_promote:
             try:
                 best_job = None
                 if extracted_jd and verification_status == VerificationStatus.VERIFIED:
@@ -146,7 +163,8 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
                 if best_job:
                     # ONLY auto-save and link if the lead is VERIFIED. Never auto-save unverified leads.
                     if verification_status == VerificationStatus.VERIFIED:
-                        from app.services.job_pipeline import ParseRequest, process_and_store_job
+                        from app.services.job_pipeline import ParseRequest, process_and_store_job, run_instant_deterministic_analysis
+                        from app.services.jd_parser import parse_job_description
                         req = ParseRequest(
                             raw_jd=best_job["raw_jd"],
                             source="inbox",
@@ -160,9 +178,18 @@ async def process_inbox_source(source_id: str, content: str, source_type: Source
                         )
                         if is_multi_batch:
                             pipeline_res = process_and_store_job(req, user_id=user_id, skip_analysis=True)
+                            linked_job_id = pipeline_res.get("job_id")
+                            if linked_job_id:
+                                try:
+                                    p_job = parse_job_description(req.raw_jd, use_groq=False, deterministic_only=True)
+                                    p_job.company = company
+                                    p_job.role_title = role_title
+                                    run_instant_deterministic_analysis(linked_job_id, user_id, p_job, req.raw_jd)
+                                except Exception:
+                                    pass
                         else:
                             pipeline_res = process_and_store_job(req, user_id=user_id)
-                        linked_job_id = pipeline_res.get("job_id")
+                            linked_job_id = pipeline_res.get("job_id")
                         if linked_job_id:
                             status = InboxOpportunityStatus.RELEVANT  # Mark as processed/relevant
                     else:

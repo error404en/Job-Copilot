@@ -427,3 +427,56 @@ def test_community_wrapper_unwrapping_and_resolution_for_18_leads():
             assert "thejobcompany.co.in" not in res["verified_url"]
             assert res["extracted_jd"] is not None
 
+
+def test_copilot_fit_triage_separates_high_fit_stretch_and_off_target_in_18_leads():
+    from app.services.inbox_extractor import extract_opportunities_from_text
+    from app.services.lead_resolver import evaluate_lead_copilot_fit
+
+    leads = extract_opportunities_from_text(COMMUNITY_18_LEADS_MESSAGE)
+    assert len(leads) == 18
+
+    high_fit = []
+    stretch = []
+    off_target = []
+
+    for l in leads:
+        c = evaluate_lead_copilot_fit(
+            company=l["company"],
+            role_title=l["role_title"],
+            qualification=l.get("qualification") or "",
+            source_text=l.get("source_text") or "",
+        )
+        if c["copilot_fit"] == "high_fit":
+            high_fit.append(l["company"])
+        elif c["copilot_fit"] == "stretch":
+            stretch.append(l["company"])
+        else:
+            off_target.append(l["company"])
+
+    # 9 technical / consulting roles should be high_fit
+    assert len(high_fit) == 9
+    assert "Amber" in high_fit
+    assert "HackerRank" in high_fit
+    assert "PwC" in high_fit
+    assert "Scopely" in high_fit
+    assert "Medpace" in high_fit
+    assert "Spektra Systems" in high_fit
+    assert "Virtusa" in high_fit
+    assert "Cisco" in high_fit
+    assert "Primetrace Technologies" in high_fit
+
+    # 6 HR / Marketing / Commerce / Service Desk roles should be off_target
+    assert len(off_target) == 6
+    assert "Paytm" in off_target
+    assert "Sigmoid" in off_target
+    assert "ShareChat" in off_target
+    assert "Volvo Group" in off_target
+    assert "HSBC" in off_target
+    assert "Cognizant" in off_target
+
+    # 3 general campus / analyst roles should be stretch
+    assert len(stretch) == 3
+    assert "Nasdaq" in stretch
+    assert stretch.count("EY") == 2
+
+

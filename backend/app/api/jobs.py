@@ -402,6 +402,140 @@ def scrape_job_url(url: str, user_id: str = Depends(get_current_user)):
         logger.exception("scrape_job_url failed for %s", url)
         raise HTTPException(status_code=400, detail=f"Failed to scrape URL {url}. Error: {str(e)}")
 
+@router.post("/copilot-optimize")
+def copilot_optimize_jobs_feed(user_id: str = Depends(get_current_user)):
+    """
+    AI Copilot Feed Optimizer & Auto-Cleaner for the Dashboard:
+    1. Deterministically scores all unscored (`--`) jobs so every job card displays a real Match Score & Verdict.
+    2. Purges off-target noise (HR, Talent Acquisition, Recruiting, Marketing, BCA/BCom Service Desk, or invalid listings)
+       that aren't bookmarked or tracked in Applications.
+    3. Deduplicates repeated `(company, role_title)` rows so the feed stays crisp.
+    """
+    from app.services.lead_resolver import evaluate_lead_copilot_fit
+    from app.services.job_validator import is_valid_job_posting
+    from app.services.job_pipeline import run_instant_deterministic_analysis
+
+    jobs_res = supabase.table("jobs").select("*, job_analyses(*)").eq("user_id", user_id).order("fetched_at", desc=True).execute()
+    all_jobs = jobs_res.data or []
+    if not all_jobs:
+        return {
+            "status": "success",
+            "scored_count": 0,
+            "cleaned_count": 0,
+            "deduplicated_count": 0,
+            "high_fit_count": 0,
+            "message": "Feed is empty. Click '1-Click Live Jobs Sync' to pull verified openings."
+        }
+
+    # Check tracked application job_ids so we never delete a job the user actively tracked
+    apps_res = supabase.table("applications").select("job_id").eq("user_id", user_id).execute()
+    tracked_job_ids = {row["job_id"] for row in (apps_res.data or []) if row.get("job_id")}
+
+    user_profile = get_or_create_user_profile(user_id)
+    resumes_resp = supabase.table("resume_versions").select("*").eq("user_id", user_id).execute()
+    resumes = resumes_resp.data or []
+
+    scored_count = 0
+    cleaned_count = 0
+    deduplicated_count = 0
+    high_fit_count = 0
+    seen_keys = set()
+
+    # Sort so bookmarked/tracked/analyzed rows come first when deduplicating
+    sorted_jobs = sorted(
+        all_jobs,
+        key=lambda j: (
+            j.get("id") in tracked_job_ids,
+            bool(j.get("is_bookmarked")),
+            bool(j.get("job_analyses")),
+            j.get("fetched_at") or "",
+        ),
+        reverse=True,
+    )
+
+    for job in sorted_jobs:
+        jid = job["id"]
+        company = (job.get("company") or "").strip()
+        role_title = (job.get("role_title") or "").strip()
+        raw_jd = (job.get("raw_jd") or "").strip()
+        is_protected = (jid in tracked_job_ids) or bool(job.get("is_bookmarked"))
+
+        # 1. Check if role is invalid garbage or off-target non-tech role (HR/Marketing/BCom Service Desk)
+        copilot_eval = evaluate_lead_copilot_fit(
+            company=company,
+            role_title=role_title,
+            qualification="",
+            source_text=raw_jd,
+        )
+        is_valid, _ = is_valid_job_posting(role_title, job.get("url") or "", company)
+        if not is_protected and (not is_valid or copilot_eval["copilot_fit"] == "off_target"):
+            try:
+                supabase.table("inbox_opportunities").update({
+                    "job_id": None,
+                    "status": "ineligible",
+                }).eq("job_id", jid).eq("user_id", user_id).execute()
+            except Exception:
+                pass
+            try:
+                supabase.table("jobs").delete().eq("id", jid).eq("user_id", user_id).execute()
+                cleaned_count += 1
+                continue
+            except Exception:
+                pass
+
+        # 2. Deduplicate identical (company, role_title) rows
+        dedup_key = f"{company.lower()}::{role_title.lower()}"
+        if company and role_title and dedup_key in seen_keys and not is_protected:
+            try:
+                supabase.table("inbox_opportunities").update({"job_id": None}).eq("job_id", jid).eq("user_id", user_id).execute()
+            except Exception:
+                pass
+            try:
+                supabase.table("jobs").delete().eq("id", jid).eq("user_id", user_id).execute()
+                deduplicated_count += 1
+                continue
+            except Exception:
+                pass
+        if company and role_title:
+            seen_keys.add(dedup_key)
+
+        # 3. Deterministically score any unscored job (`--`)
+        analyses = job.get("job_analyses") or []
+        if not analyses:
+            try:
+                p_job = parse_job_description(raw_jd or f"{role_title} at {company}")
+                p_job.company = company or p_job.company
+                p_job.role_title = role_title or p_job.role_title
+                p_job.location = job.get("location") or p_job.location
+                p_job.apply_link = job.get("url")
+                analysis_row = run_instant_deterministic_analysis(
+                    job_id=jid,
+                    user_id=user_id,
+                    parsed_job=p_job,
+                    raw_jd=raw_jd or f"{role_title} at {company}",
+                    user_profile=user_profile,
+                    resumes=resumes,
+                )
+                if analysis_row:
+                    scored_count += 1
+                    if analysis_row.get("verdict") == "apply" or (analysis_row.get("match_score") or 0) >= 65:
+                        high_fit_count += 1
+            except Exception as e:
+                logger.warning("Copilot instant score failed for job %s: %s", jid, e)
+        else:
+            top_a = analyses[0]
+            if top_a.get("verdict") == "apply" or (top_a.get("match_score") or 0) >= 65:
+                high_fit_count += 1
+
+    return {
+        "status": "success",
+        "scored_count": scored_count,
+        "cleaned_count": cleaned_count,
+        "deduplicated_count": deduplicated_count,
+        "high_fit_count": high_fit_count,
+        "message": f"Copilot optimized your feed: {scored_count} unscored roles instantly analyzed, {cleaned_count} off-target/noise roles removed, {deduplicated_count} duplicates merged ({high_fit_count} High-Fit matches ready)."
+    }
+
 @router.get("/{id}")
 def get_job(id: str, user_id: str = Depends(get_current_user)):
     # Fetch job joined with analyses and drafts
