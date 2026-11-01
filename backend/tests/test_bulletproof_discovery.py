@@ -24,8 +24,8 @@ def test_known_company_ats_registry():
     assert gs_disc.careers_url == "https://higher.gs.com/results?JOB_FUNCTION=Software%20Engineering"
 
 def test_company_research_verified_benchmarks():
-    """Verify instant verified benchmarks for Qualcomm, Stripe, Eternal, Goldman Sachs."""
-    for comp in ["qualcomm", "stripe", "eternal", "goldmansachs"]:
+    """Verify instant verified benchmarks for Qualcomm, Stripe, Eternal, Goldman Sachs, PwC."""
+    for comp in ["qualcomm", "stripe", "eternal", "goldmansachs", "pwc"]:
         info = research_company(comp)
         assert "work_culture" in info
         assert "compensation_estimates" in info
@@ -34,7 +34,7 @@ def test_company_research_verified_benchmarks():
 
 def test_deep_dive_instant_curated_roles():
     """Verify deep dive returns valid roles and careers URLs without timing out."""
-    for comp in ["qualcomm", "stripe", "eternal", "goldmansachs"]:
+    for comp in ["qualcomm", "stripe", "eternal", "goldmansachs", "pwc"]:
         req = ResearchRequest(company_name=comp)
         res = deep_dive_company(req, user_id="test_user")
         assert len(res["jobs"]) > 0
@@ -111,5 +111,39 @@ def test_extract_direct_html_jobs_and_filtering():
         intern_titles = [j["role_title"] for j in intern_jobs]
         assert "Full Stack Intern" in intern_titles
         assert "Business Development Intern" in intern_titles
+
+
+def test_curated_official_role_does_not_overwrite_title_with_search_page():
+    """Verify Barclays curated roles are not clobbered by search page auto-fetch and are not rejected."""
+    from unittest.mock import patch, MagicMock
+    from app.services.job_pipeline import ParseRequest, process_and_store_job
+    from app.services.job_fetcher import VERIFIED_COMPANY_ROLES
+
+    barclays_role = VERIFIED_COMPANY_ROLES["barclays"]["roles"][2]  # Senior Software Associate (602)
+    req = ParseRequest(
+        raw_jd=barclays_role["raw_jd"],
+        source="verified_curated",
+        source_type="curated_official",
+        source_confidence=1.0,
+        url=barclays_role["url"],
+        official_apply_url=barclays_role["url"],
+        company_name=barclays_role["company"],
+        role_title=barclays_role["role_title"],
+        use_groq=False,
+    )
+
+    mock_sb = MagicMock()
+    mock_sb.table.return_value.insert.return_value.execute.return_value.data = [{"id": "job-barclays-1"}]
+
+    with patch("app.services.job_pipeline.supabase", mock_sb), \
+         patch("app.api.jobs.scrape_job_url") as mock_scrape:
+        res = process_and_store_job(req, user_id="u1", skip_analysis=True)
+        assert res.get("is_rejected") is not True
+        assert res.get("job_id") == "job-barclays-1"
+        mock_scrape.assert_not_called()
+        inserted = mock_sb.table.return_value.insert.call_args.args[0]
+        assert inserted["role_title"] == "Senior Software Associate (602)"
+        assert inserted["company"] == "Barclays"
+
 
 

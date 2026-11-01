@@ -44,6 +44,10 @@ app.include_router(research.router, prefix="/api/research", tags=["Research"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(inbox.router, prefix="/api/inbox", tags=["Inbox"])
 
+@app.api_route("/", methods=["GET", "HEAD"])
+def root():
+    return {"status": "ok", "service": "JobCopilot API", "version": "1.0.0"}
+
 @app.get("/health")
 def health_check():
     import gc

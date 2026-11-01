@@ -300,6 +300,8 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
 
     # 5. Insert backing job and analysis into DB (with bulletproof duplicate recovery)
     job_id = None
+    clean_seniority = req.seniority_required or parsed_job.seniority_required or "0-2yr"
+    skills = req.required_skills or parsed_job.required_skills or []
     try:
         job_insert = {
             "source": "deep_dive_role",
@@ -563,22 +565,36 @@ def sync_live_jobs(background_tasks: BackgroundTasks, user_id: str = Depends(get
     # 1. Ingest verified roles from enterprise companies (Qualcomm, Goldman Sachs, etc.)
     from app.services.job_fetcher import VERIFIED_COMPANY_ROLES, fetch_greenhouse_jobs, fetch_smartrecruiters_jobs, fetch_lever_jobs, fetch_ashby_jobs
     from app.api.research import discover_careers_url_and_ats
+
+    # Pre-fetch existing URLs for this user to avoid firing redundant 409 Conflict inserts on every sync
+    existing_urls = set()
+    try:
+        ex_res = supabase.table("jobs").select("url").eq("user_id", user_id).execute()
+        existing_urls = {row["url"] for row in (ex_res.data or []) if row.get("url")}
+    except Exception:
+        pass
     
     curated_synced = 0
     for comp_key, comp_data in VERIFIED_COMPANY_ROLES.items():
         for role in comp_data.get("roles", []):
             try:
+                role_url = role.get("url") or comp_data.get("careers_url")
+                if role_url and role_url in existing_urls:
+                    continue
                 p_req = ParseRequest(
                     raw_jd=role.get("raw_jd", ""),
                     source="verified_curated",
                     source_type="curated_official",
                     source_confidence=1.0,
-                    url=role.get("url") or comp_data.get("careers_url"),
-                    official_apply_url=role.get("url") or comp_data.get("careers_url"),
+                    url=role_url,
+                    official_apply_url=role_url,
                     company_name=role.get("company", comp_key),
+                    role_title=role.get("role_title"),
                     use_groq=False
                 )
                 res = process_and_store_job(p_req, user_id=user_id, background_tasks=background_tasks, skip_analysis=True)
+                if role_url:
+                    existing_urls.add(role_url)
                 if not res.get("is_duplicate") and not res.get("is_rejected"):
                     curated_synced += 1
             except Exception as e:
@@ -615,18 +631,24 @@ def sync_live_jobs(background_tasks: BackgroundTasks, user_id: str = Depends(get
                     jobs_found = fetch_ashby_jobs(token, candidate_keywords)
                     
                 for job_data in jobs_found[:8]:
+                    j_url = job_data.get("url")
+                    if j_url and j_url in existing_urls:
+                        continue
                     p_req = ParseRequest(
                         raw_jd=job_data.get("raw_jd", ""),
                         source="dream_company_sync",
                         source_type=job_data.get("source_type", sys_name),
                         source_confidence=1.0,
-                        url=job_data.get("url"),
+                        url=j_url,
                         official_apply_url=job_data.get("official_apply_url"),
                         external_job_id=job_data.get("external_job_id"),
                         company_name=dream_comp,
+                        role_title=job_data.get("role_title"),
                         use_groq=False
                     )
                     res = process_and_store_job(p_req, user_id=user_id, background_tasks=background_tasks, skip_analysis=True)
+                    if j_url:
+                        existing_urls.add(j_url)
                     if not res.get("is_duplicate") and not res.get("is_rejected"):
                         dream_synced += 1
         except Exception as e:
@@ -659,18 +681,24 @@ def sync_live_jobs(background_tasks: BackgroundTasks, user_id: str = Depends(get
             
         for job_data in jobs_to_process[:3]: # Cap to top 3 per ATS company to maintain high company diversity
             try:
+                j_url = job_data.get("url")
+                if j_url and j_url in existing_urls:
+                    continue
                 p_req = ParseRequest(
                     raw_jd=job_data.get("raw_jd", ""),
                     source="ats_sync",
                     source_type=job_data.get("source_type", source),
                     source_confidence=1.0,
-                    url=job_data.get("url"),
+                    url=j_url,
                     official_apply_url=job_data.get("official_apply_url"),
                     external_job_id=job_data.get("external_job_id"),
                     company_name=job_data.get("company") or token,
+                    role_title=job_data.get("role_title"),
                     use_groq=False
                 )
                 res = process_and_store_job(p_req, user_id=user_id, background_tasks=background_tasks, skip_analysis=True)
+                if j_url:
+                    existing_urls.add(j_url)
                 if not res.get("is_duplicate") and not res.get("is_rejected"):
                     ats_synced += 1
             except Exception as e:

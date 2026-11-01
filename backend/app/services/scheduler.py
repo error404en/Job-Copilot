@@ -69,18 +69,24 @@ def fetch_latest_jobs_task():
             new_count = 0
             for job_data in jobs_to_process[:3]: # Cap to top 3 per ATS company to prevent 1 company flooding the pipeline
                 try:
+                    j_url = job_data.get("url")
+                    if j_url and j_url in existing_urls:
+                        continue
                     p_req = ParseRequest(
                         raw_jd=job_data["raw_jd"],
                         source="ats_subscription",
                         source_type=job_data["source_type"],
                         source_confidence=job_data.get("source_confidence", 1.0),
-                        url=job_data["url"],
+                        url=j_url,
                         official_apply_url=job_data.get("official_apply_url"),
                         external_job_id=job_data.get("external_job_id"),
                         company_name=company,
+                        role_title=job_data.get("role_title"),
                         use_groq=False
                     )
                     res = process_and_store_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
+                    if j_url:
+                        existing_urls.add(j_url)
                     if not res.get("is_duplicate"):
                         new_count += 1
                 except Exception as e:
@@ -130,18 +136,24 @@ def fetch_dream_company_jobs_task():
                     new_count = 0
                     for job_data in jobs_to_process:
                         try:
+                            j_url = job_data.get("url")
+                            if j_url and j_url in existing_urls:
+                                continue
                             p_req = ParseRequest(
                                 raw_jd=job_data["raw_jd"],
                                 source="dream_company",
-                                source_type=job_data["source_type"],
+                                source_type=job_data.get("source_type", "curated_official"),
                                 source_confidence=job_data.get("source_confidence", 0.8),
-                                url=job_data["url"],
+                                url=j_url,
                                 official_apply_url=job_data.get("official_apply_url"),
                                 external_job_id=job_data.get("external_job_id"),
                                 company_name=company,
+                                role_title=job_data.get("role_title"),
                                 use_groq=False
                             )
                             res = process_and_store_job(p_req, user_id=user_id, background_tasks=None, skip_analysis=True)
+                            if j_url:
+                                existing_urls.add(j_url)
                             if not res.get("is_duplicate") and not res.get("is_rejected"):
                                 new_count += 1
                         except Exception as e:

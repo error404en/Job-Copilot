@@ -151,14 +151,22 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
     """
     target_url = req.url.strip() if req.url else None
 
-    # Auto-fetch full JD if raw_jd is just a placeholder/stub and a real HTTP URL is provided
-    if (not req.raw_jd or len(req.raw_jd.strip()) < 350 or "[Extracted via" in req.raw_jd) and target_url and target_url.startswith("http"):
+    # Auto-fetch full JD if raw_jd is just a placeholder/stub and a real HTTP URL is provided.
+    # Skip auto-fetch for curated_official roles (which already carry verified JDs and often link to career portals).
+    is_curated = req.source_type == "curated_official" or req.source == "verified_curated"
+    if not is_curated and (not req.raw_jd or len(req.raw_jd.strip()) < 350 or "[Extracted via" in req.raw_jd) and target_url and target_url.startswith("http"):
         try:
             from app.api.jobs import scrape_job_url
+            from app.services.job_validator import validate_role_title
             scraped = scrape_job_url(target_url, user_id=user_id)
             if scraped and scraped.get("raw_jd") and len(scraped["raw_jd"]) > len(req.raw_jd or ""):
-                req.raw_jd = scraped["raw_jd"]
-                print(f"[Pipeline] Auto-fetched full JD from {target_url} ({len(req.raw_jd)} chars)")
+                scraped_text = scraped["raw_jd"]
+                first_line = scraped_text.strip().splitlines()[0].strip() if scraped_text.strip() else ""
+                scraped_title = scraped.get("role_title") or first_line
+                # Do not overwrite a valid stub JD with a generic search-portal shell (e.g. 'Search our Job Opportunities at Barclays')
+                if not scraped_title or validate_role_title(scraped_title, req.company_name or "")[0] or not req.raw_jd:
+                    req.raw_jd = scraped_text
+                    print(f"[Pipeline] Auto-fetched full JD from {target_url} ({len(req.raw_jd)} chars)")
         except Exception as se:
             print(f"[Pipeline] Could not auto-fetch full JD from URL {target_url}: {se}")
 
@@ -184,14 +192,17 @@ def process_and_store_job(req: ParseRequest, user_id: str, background_tasks: Bac
 
     # 2. Validate job before storing
     resolved_url = target_url or parsed_job.apply_link or ""
-    from app.services.job_validator import is_valid_job_posting
-    is_valid, reason = is_valid_job_posting(
-        role_title=parsed_job.role_title,
-        url=resolved_url,
-        company_name=parsed_job.company,
-        raw_jd=req.raw_jd or "",
-        external_job_id=req.external_job_id
-    )
+    from app.services.job_validator import is_valid_job_posting, validate_role_title
+    if is_curated:
+        is_valid, reason = validate_role_title(parsed_job.role_title, parsed_job.company)
+    else:
+        is_valid, reason = is_valid_job_posting(
+            role_title=parsed_job.role_title,
+            url=resolved_url,
+            company_name=parsed_job.company,
+            raw_jd=req.raw_jd or "",
+            external_job_id=req.external_job_id
+        )
     if not is_valid:
         print(f"[Pipeline] Rejected invalid job '{parsed_job.role_title}' at '{resolved_url}': {reason}")
         return {"job_id": None, "is_duplicate": False, "is_rejected": True, "rejection_reason": reason}

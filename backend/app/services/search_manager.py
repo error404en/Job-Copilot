@@ -1,9 +1,16 @@
 import json
+import logging
+import time
 import warnings
 from typing import List, Dict, Optional
 
-# Suppress the ddgs rename warning from duckduckgo_search
+# Suppress the ddgs rename warning and noisy timeout tracebacks from duckduckgo_search / ddgs
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*duckduckgo_search.*renamed to.*ddgs.*")
+logging.getLogger("ddgs").setLevel(logging.CRITICAL)
+logging.getLogger("duckduckgo_search").setLevel(logging.CRITICAL)
+logging.getLogger("primp").setLevel(logging.CRITICAL)
+
+_DDGS_COOLDOWN_UNTIL: float = 0.0
 
 try:
     from ddgs import DDGS
@@ -124,11 +131,11 @@ Return ONLY the JSON array without markdown formatting."""
             if "vertexaisearch.cloud.google.com" in href:
                 try:
                     import requests
-                    r = requests.get(href, allow_redirects=True, timeout=3)
-                    if r.url and "vertexaisearch" not in r.url:
-                        item["href"] = r.url
-                    else:
-                        continue
+                    with requests.get(href, allow_redirects=True, timeout=2, stream=True) as r:
+                        if r.url and "vertexaisearch" not in r.url:
+                            item["href"] = r.url
+                        else:
+                            continue
                 except Exception:
                     continue
             valid_results.append(item)
@@ -142,7 +149,7 @@ Return ONLY the JSON array without markdown formatting."""
             chunks = getattr(g_meta, "grounding_chunks", None) or []
             import requests
             seen_urls = set()
-            for chunk in chunks:
+            for chunk in chunks[:max_results + 2]:
                 web = getattr(chunk, "web", None)
                 if not web:
                     continue
@@ -153,11 +160,11 @@ Return ONLY the JSON array without markdown formatting."""
                 dest_url = uri
                 if "vertexaisearch.cloud.google.com" in uri:
                     try:
-                        r = requests.get(uri, allow_redirects=True, timeout=3)
-                        if r.url and "vertexaisearch" not in r.url:
-                            dest_url = r.url
-                        else:
-                            continue
+                        with requests.get(uri, allow_redirects=True, timeout=2, stream=True) as r:
+                            if r.url and "vertexaisearch" not in r.url:
+                                dest_url = r.url
+                            else:
+                                continue
                     except Exception:
                         continue
                 if dest_url and dest_url not in seen_urls:
@@ -185,24 +192,29 @@ def perform_resilient_search(query: str, max_results: int = 3) -> List[Dict[str,
     """
     Resilient multi-tier search engine:
     1. Primary: Google Search Grounding (Live Google index, covers any company)
-    2. Secondary: DuckDuckGo (DDGS)
+    2. Secondary: DuckDuckGo (DDGS) with datacenter timeout circuit breaker
     3. Fallback: LLM knowledge synthesis (Groq / Gemini memory)
     """
+    global _DDGS_COOLDOWN_UNTIL
+
     # 1. Primary: Google Search Grounding
     results = google_search_grounding(query, max_results=max_results)
     if results:
         return results
 
-    # 2. Secondary: DuckDuckGo
-    if DDGS:
+    # 2. Secondary: DuckDuckGo (skip if in cooldown from datacenter IP timeout)
+    if DDGS and time.time() >= _DDGS_COOLDOWN_UNTIL:
         try:
-            with DDGS(timeout=4) as ddgs:
+            with DDGS(timeout=3) as ddgs:
                 ddg_results = list(ddgs.text(query, max_results=max_results))
                 if ddg_results:
                     print(f"[SearchManager] DDGS succeeded for query: {query}")
                     return ddg_results
         except Exception as e:
-            print(f"[SearchManager] DDGS search failed or blocked for query '{query}': {e}")
+            err_msg = str(e)
+            print(f"[SearchManager] DDGS search failed or blocked for query '{query}': {err_msg}")
+            if "timed out" in err_msg.lower() or "timeout" in err_msg.lower() or "ratelimit" in err_msg.lower():
+                _DDGS_COOLDOWN_UNTIL = time.time() + 300
 
     # 3. Fallback: LLM knowledge base
     print(f"[SearchManager] Falling back to LLM knowledge synthesis for: {query}")

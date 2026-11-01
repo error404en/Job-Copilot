@@ -376,7 +376,8 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
         result = scrape_careers_page(company_name, keywords)
         discovered_jobs = result.get("jobs", [])
         careers_url = result.get("careers_url")
-        known = discover_careers_url_and_ats(company_name)
+        known_key = match_registry_key(company_name, KNOWN_COMPANY_ATS.keys())
+        known = KNOWN_COMPANY_ATS.get(known_key) if known_key else None
         if known and known.ats_info:
             ats_info = known.ats_info
         if not careers_url and known:
@@ -399,6 +400,8 @@ def _discover_company_jobs_and_ats(company_name: str, target_keywords: Optional[
                 results = perform_resilient_search(query, max_results=4)
                 for r in results:
                     u = r.get("href", "")
+                    if not any(ats_d in u.lower() for ats_d in ("greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com", "myworkdayjobs.com", "workdayjobs.com")):
+                        continue
                     cand_disc = discover_careers_url_and_ats(company_name, u)
                     if cand_disc.ats_info:
                         if token_matches_company(cand_disc.ats_info.token, company_name) and verify_ats_token(cand_disc.ats_info.system, cand_disc.ats_info.token):
@@ -558,16 +561,18 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
         try:
             discovered_jobs, careers_url, ats_info = future_jobs.result(timeout=14)
         except Exception as e:
-            print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {e}")
+            err_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+            print(f"[DeepDive] Job discovery failed or timed out for {req.company_name}: {err_detail}")
             # Keep whatever was already verified instead of discarding it
-            discovered_jobs = []
+            discovered_jobs = progress.get("jobs", [])
             careers_url = progress.get("careers_url")
             ats_info = progress.get("ats_info")
 
         try:
             company_info = future_info.result(timeout=max(1.0, 14 - (time.time() - started)))
         except Exception as e:
-            print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {e}")
+            err_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+            print(f"[DeepDive] Company intelligence failed or timed out for {req.company_name}: {err_detail}")
             company_info = _get_startup_fallback_intelligence(req.company_name)
 
         if not company_info:

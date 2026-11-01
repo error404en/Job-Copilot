@@ -1375,6 +1375,35 @@ VERIFIED_COMPANY_ROLES = {
                 "source": "official_portal"
             }
         ]
+    },
+    "pwc": {
+        "careers_url": "https://www.pwc.in/careers.html",
+        "roles": [
+            {
+                "role_title": "Associate - Technology Consulting & Digital Engineering",
+                "company": "PwC India (Acceleration Centers)",
+                "location": "Bengaluru / Hyderabad / Kolkata / Gurugram",
+                "url": "https://www.pwc.in/careers/experienced-jobs.html",
+                "experience_level": "0-2 Yrs (Freshers & Associate)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹8.5L - ₹13.5L CTC",
+                "required_skills": ["Python", "SQL", "Cloud", "Java", "Data Analytics", "REST APIs"],
+                "raw_jd": "Associate - Technology Consulting & Digital Engineering at PwC India / PwC Acceleration Center (AC). Design and implement full-stack cloud applications, enterprise data pipelines, and AI-enabled business workflows for global clients. Open to engineering graduates and early-career software developers (0-2 years experience).",
+                "source": "official_portal"
+            },
+            {
+                "role_title": "Associate - Data & AI Engineering",
+                "company": "PwC India (Acceleration Centers)",
+                "location": "Bengaluru /Gurugram / Mumbai / Pune",
+                "url": "https://www.pwc.in/careers.html",
+                "experience_level": "0-2 Yrs (Freshers & Associate)",
+                "seniority_required": "0-2yr",
+                "compensation_range": "₹9.0L - ₹14.5L CTC",
+                "required_skills": ["Python", "SQL", "Generative AI", "Machine Learning", "ETL", "AWS/Azure"],
+                "raw_jd": "Associate - Data & AI Engineering at PwC India. Build generative AI copilots, RAG pipelines, and cloud analytics architectures across financial services and enterprise clients. Requires strong foundations in Python, SQL, and modern data engineering.",
+                "source": "official_portal"
+            }
+        ]
     }
 }
 

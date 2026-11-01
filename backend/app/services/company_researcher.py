@@ -163,6 +163,18 @@ VERIFIED_COMPANY_BENCHMARKS = {
         "work_life_balance": "Demanding (45-55 hrs/wk), hybrid policy in Bengaluru & Hyderabad offices.",
         "perks": "Top-tier private medical cover, gym subsidies, tuition reimbursement, comprehensive relocation support.",
         "bonds_or_contracts": "No bond."
+    },
+    "pwc": {
+        "compensation_estimates": "Associate (0-2 Yrs) CTC ~₹8.5L - ₹14.5L (Base: ₹7.5L - ₹12L, Bonus: ₹1L - ₹2.5L). Senior Associate (2-5 Yrs) CTC ~₹16L - ₹25L.",
+        "compensation_levels": [
+            {"level_name": "Associate (Entry Level / 0-2 Yrs)", "base_pay": "₹9,50,000", "bonus": "₹1,50,000", "stock": "₹0", "total_comp": "₹11,00,000"},
+            {"level_name": "Senior Associate (2-5 Yrs)", "base_pay": "₹17,50,000", "bonus": "₹2,50,000", "stock": "₹0", "total_comp": "₹20,00,000"},
+            {"level_name": "Manager (5+ Yrs)", "base_pay": "₹28,00,000", "bonus": "₹4,50,000", "stock": "₹0", "total_comp": "₹32,50,000"}
+        ],
+        "work_culture": "Big 4 global consulting and technology advisory firm (PwC India & Acceleration Centers). Client-driven delivery across cloud, AI/data engineering, and enterprise transformation.",
+        "work_life_balance": "Moderate (45-50 hrs/wk), hybrid 2-3 days in Bengaluru, Hyderabad, Gurugram, Kolkata, and Mumbai.",
+        "perks": "Comprehensive family health insurance, certification sponsorships (AWS/Azure/GCP), wellness allowances.",
+        "bonds_or_contracts": "No employment bond for lateral/associate roles."
     }
 }
 
