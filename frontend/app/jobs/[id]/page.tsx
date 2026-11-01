@@ -7,8 +7,10 @@ import { useState, useEffect } from 'react'
 import { useApiClient } from '@/lib/useApiClient'
 import TailoringStudio from './TailoringStudio'
 import CopilotCoach from '@/components/CopilotCoach'
+import AutoFillModal from '@/components/AutoFillModal'
 import { 
   ArrowUpRight, 
+  Zap, 
   Target, 
   ListTodo, 
   Calendar, 
@@ -139,6 +141,8 @@ export default function JobDetailPage() {
   const [trackingDropdownOpen, setTrackingDropdownOpen] = useState(false)
   const [copiedResumeTitle, setCopiedResumeTitle] = useState(false)
   const [jdSearchQuery, setJdSearchQuery] = useState('')
+  const [autoFillModalData, setAutoFillModalData] = useState<any | null>(null)
+  const [isSyncingResume, setIsSyncingResume] = useState(false)
 
   // Sync tab with URL search parameter and sessionStorage on browser popstate / back button / mount
   useEffect(() => {
@@ -309,6 +313,40 @@ export default function JobDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['profile'] })
     }
   })
+
+  const autoApplyMutation = useMutation({
+    mutationFn: async ({ url, jobId }: { url: string; jobId: string }) => {
+      const res = await apiFetch('/api/applications/auto-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, job_id: jobId })
+      })
+      if (!res.ok) throw new Error('Failed to build auto-fill kit')
+      return res.json()
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
+      setAutoFillModalData(data)
+    }
+  })
+
+  const handleSyncIdentityFromResume = async () => {
+    setIsSyncingResume(true)
+    try {
+      const res = await apiFetch('/api/profile/sync-from-resume', { method: 'POST' })
+      if (res.ok && autoFillModalData) {
+        const currentUrl = autoFillModalData?.autofill?.apply_url || ''
+        const refreshed = await apiFetch(`/api/auto-apply/data?url=${encodeURIComponent(currentUrl)}&job_id=${jobId}`)
+        if (refreshed.ok) {
+          const newPacket = await refreshed.json()
+          setAutoFillModalData({ ...autoFillModalData, autofill: newPacket })
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+    } finally {
+      setIsSyncingResume(false)
+    }
+  }
 
   const toggleBookmark = () => updateJobMutation.mutate({ is_bookmarked: !job?.is_bookmarked })
 
@@ -731,17 +769,29 @@ export default function JobDetailPage() {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2.5 w-full lg:w-48 relative">
+            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto relative">
               {applyUrl ? (
-                <a
-                  href={applyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.35)] flex items-center justify-center gap-1.5 active:scale-95"
-                >
-                  <span>Apply Now</span>
-                  <ArrowUpRight className="w-4 h-4" />
-                </a>
+                <>
+                  <a
+                    href={applyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 lg:flex-initial bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.35)] flex items-center justify-center gap-1.5 active:scale-95"
+                  >
+                    <span>Apply Now</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => autoApplyMutation.mutate({ url: applyUrl, jobId: job.id })}
+                    disabled={autoApplyMutation.isPending}
+                    className="px-3.5 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/35 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+                    title="Open Copilot Auto-Fill Kit (Candidate Identity, Recommended Resume & Tailored Cover Letter)"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" />
+                    <span>{autoApplyMutation.isPending ? 'Loading...' : 'Auto-Fill'}</span>
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={() => {
@@ -1246,6 +1296,19 @@ export default function JobDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Copilot Auto-Fill Launchpad Modal */}
+      <AutoFillModal
+        isOpen={Boolean(autoFillModalData)}
+        onClose={() => setAutoFillModalData(null)}
+        data={autoFillModalData}
+        onSyncFromResume={handleSyncIdentityFromResume}
+        isSyncingResume={isSyncingResume}
+        onMarkApplied={() => {
+          trackMutation.mutate({ jobData: job, status: 'applied' })
+          setAutoFillModalData(null)
+        }}
+      />
 
     </div>
   )

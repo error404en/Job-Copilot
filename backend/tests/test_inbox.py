@@ -480,3 +480,35 @@ def test_copilot_fit_triage_separates_high_fit_stretch_and_off_target_in_18_lead
     assert stretch.count("EY") == 2
 
 
+def test_resume_identity_extraction_and_autofill_script_generation():
+    from app.api.profile import extract_identity_from_resume_text
+    from app.api.auto_apply import _generate_universal_autofill_js
+
+    sample_resume = """
+    SHREYAS VERMA
+    Bengaluru, India | +91 98765 43210 | shreyas.verma@gmail.com
+    https://linkedin.com/in/shreyas-verma | https://github.com/shreyasverma | https://shreyas.dev
+    EDUCATION
+    B.Tech in Computer Science & Engineering
+    """
+    extracted = extract_identity_from_resume_text(sample_resume)
+    assert extracted["first_name"] == "Shreyas"
+    assert extracted["last_name"] == "Verma"
+    assert extracted["email"] == "shreyas.verma@gmail.com"
+    assert "98765" in extracted["phone"]
+    assert extracted["linkedin_url"] == "https://linkedin.com/in/shreyas-verma"
+    assert extracted["github_url"] == "https://github.com/shreyasverma"
+    assert extracted["portfolio_url"] == "https://shreyas.dev"
+
+    js = _generate_universal_autofill_js({
+        **extracted,
+        "full_name": "Shreyas Verma",
+        "location": "Bengaluru, India",
+        "cover_letter": "Dear Hiring Team at Stripe...",
+        "why_company_pitch": "I am excited to join Stripe...",
+    })
+    assert "shreyas.verma@gmail.com" in js
+    assert "JobCopilot Auto-Filled" in js
+
+
+

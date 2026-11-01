@@ -89,6 +89,22 @@ export default function SettingsPage() {
     }
   })
 
+  const syncResumeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch('/api/profile/sync-from-resume', {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error('Failed to sync identity from resume')
+      return res.json()
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['profile'], updated)
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    }
+  })
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     mutation.mutate({
@@ -202,11 +218,22 @@ export default function SettingsPage() {
 
         {/* Section 2: Candidate Identity & Profiles */}
         <div className="bg-zinc-900/60 p-6 sm:p-8 rounded-3xl border border-zinc-800/80 shadow-xl backdrop-blur-xl space-y-6">
-          <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-3">
-            <User className="w-4 h-4 text-indigo-400" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
-              Candidate Identity & Profile Links
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 pb-3">
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-indigo-400" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+                Candidate Identity & Profile Links (Auto-Fill Tokens)
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => syncResumeMutation.mutate()}
+              disabled={syncResumeMutation.isPending}
+              className="px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{syncResumeMutation.isPending ? 'Extracting...' : '✨ Auto-Populate from Uploaded Resume'}</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -263,7 +290,7 @@ export default function SettingsPage() {
           <div className="p-4 bg-zinc-950/60 rounded-2xl border border-zinc-800/80 flex items-center justify-between">
             <div>
               <span className="text-xs font-bold text-white block">Enable Autonomous Form Filling</span>
-              <span className="text-[11px] text-zinc-500">Allow Chrome Extension HUD to pre-populate ATS inputs</span>
+              <span className="text-[11px] text-zinc-500">Allow Chrome Extension HUD & Auto-Fill Launchpad to pre-populate ATS inputs</span>
             </div>
             <input 
               type="checkbox" 
@@ -271,6 +298,21 @@ export default function SettingsPage() {
               checked={formData.auto_apply_enabled}
               onChange={(e) => setFormData({...formData, auto_apply_enabled: e.target.checked})}
             />
+          </div>
+
+          <div className="p-4 bg-zinc-950/60 rounded-2xl border border-zinc-800/80 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-white block">JobCopilot Chrome Extension (v1.2)</span>
+              <span className="text-[11px] text-zinc-500">Injects a live floating ⚡ Auto-Fill HUD on Greenhouse, Lever, Ashby, Workday, SmartRecruiters & Keka</span>
+            </div>
+            <a
+              href="/JobCopilot_Extension.zip"
+              download="JobCopilot_Extension.zip"
+              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all"
+            >
+              <span>Download Extension (.zip)</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
 

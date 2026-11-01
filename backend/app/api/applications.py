@@ -143,31 +143,40 @@ class AutoApplyRequest(BaseModel):
 @router.post("/auto-apply")
 async def auto_apply_job(req: AutoApplyRequest, user_id: str = Depends(get_current_user)):
     """
-    Triggers the Hermes background auto-apply agent for a specific job URL.
+    Synthesizes the Copilot Auto-Fill Kit (Candidate Identity, Recommended Resume,
+    Tailored Cover Letter & Why-Company Pitch, and Universal Auto-Fill Script) and
+    optionally runs the Hermes Playwright agent if enabled.
     """
     from app.services.hermes_agent import run_hermes_apply
-    
-    # Run the background automation asynchronously to prevent blocking
-    result = await run_hermes_apply(req.url, req.job_id or "unknown")
-    
-    if result["status"] == "success" and req.job_id:
-        # Check if the job actually belongs to the user
-        job_check = await asyncio.to_thread(lambda: supabase.table("jobs").select("id").eq("id", req.job_id).eq("user_id", user_id).execute())
-        if not job_check.data:
-            raise HTTPException(status_code=404, detail="Job not found or does not belong to user.")
+    from app.api.auto_apply import build_autofill_packet
 
-        # Mark as applied in tracker automatically
-        existing = await asyncio.to_thread(lambda: supabase.table("applications").select("id").eq("job_id", req.job_id).eq("user_id", user_id).execute())
-        applied_timestamp = datetime.now(timezone.utc).isoformat()
-        if existing.data and len(existing.data) > 0:
-            await asyncio.to_thread(lambda: supabase.table("applications").update({"status": "applied", "applied_at": applied_timestamp}).eq("id", existing.data[0]["id"]).execute())
-        else:
-            await asyncio.to_thread(lambda: supabase.table("applications").insert({
-                "job_id": req.job_id,
-                "status": "applied",
-                "applied_at": applied_timestamp,
-                "notes": "Auto-applied via Hermes Agent",
-                "user_id": user_id
-            }).execute())
+    packet = await asyncio.to_thread(build_autofill_packet, user_id, req.url, req.job_id)
+    result = await run_hermes_apply(req.url, req.job_id or "unknown", profile_data=packet)
+
+    if result["status"] in ("success", "ready") and req.job_id:
+        job_check = await asyncio.to_thread(
+            lambda: supabase.table("jobs").select("id").eq("id", req.job_id).eq("user_id", user_id).execute()
+        )
+        if job_check.data:
+            existing = await asyncio.to_thread(
+                lambda: supabase.table("applications").select("id, status").eq("job_id", req.job_id).eq("user_id", user_id).execute()
+            )
+            applied_timestamp = datetime.now(timezone.utc).isoformat()
+            target_status = "applied" if result["status"] == "success" else "saved"
+            if existing.data and len(existing.data) > 0:
+                if result["status"] == "success":
+                    await asyncio.to_thread(
+                        lambda: supabase.table("applications").update({"status": "applied", "applied_at": applied_timestamp}).eq("id", existing.data[0]["id"]).execute()
+                    )
+            else:
+                await asyncio.to_thread(
+                    lambda: supabase.table("applications").insert({
+                        "job_id": req.job_id,
+                        "status": target_status,
+                        "applied_at": applied_timestamp if target_status == "applied" else None,
+                        "notes": "Prepared via Copilot Auto-Fill Launchpad",
+                        "user_id": user_id
+                    }).execute()
+                )
 
     return result

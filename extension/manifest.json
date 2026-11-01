@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "JobCopilot Link Finder & Analyzer",
-  "version": "1.1",
-  "description": "Send any job posting directly to JobCopilot for instant AI analysis.",
+  "name": "JobCopilot Auto-Fill & AI Job Analyzer",
+  "version": "1.2",
+  "description": "1-Click ATS Auto-Fill and AI Job Fit Analysis for Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Keka, and enterprise career portals.",
   "permissions": ["activeTab", "scripting", "tabs", "cookies"],
   "host_permissions": [
     "https://job-copilot-ci8e.onrender.com/*",
@@ -10,7 +10,19 @@
     "http://localhost:8000/*",
     "http://localhost:3000/*",
     "*://*.greenhouse.io/*",
-    "*://jobs.lever.co/*",
+    "*://*.lever.co/*",
+    "*://*.ashbyhq.com/*",
+    "*://*.smartrecruiters.com/*",
+    "*://*.myworkdayjobs.com/*",
+    "*://*.workdayjobs.com/*",
+    "*://*.keka.com/*",
+    "*://*.yello.co/*",
+    "*://*.mynexthire.com/*",
+    "*://*.joinsuperset.com/*",
+    "*://*.gem.com/*",
+    "*://*.pwc.com/*",
+    "*://*.hackerrank.com/*",
+    "*://*.cisco.com/*",
     "*://*.linkedin.com/*"
   ],
   "background": {
@@ -23,8 +35,19 @@
     {
       "matches": [
         "*://*.greenhouse.io/*",
-        "*://jobs.lever.co/*",
-        "*://*.linkedin.com/*"
+        "*://*.lever.co/*",
+        "*://*.ashbyhq.com/*",
+        "*://*.smartrecruiters.com/*",
+        "*://*.myworkdayjobs.com/*",
+        "*://*.workdayjobs.com/*",
+        "*://*.keka.com/*",
+        "*://*.yello.co/*",
+        "*://*.mynexthire.com/*",
+        "*://*.joinsuperset.com/*",
+        "*://*.gem.com/*",
+        "*://*.pwc.com/*",
+        "*://*.hackerrank.com/*",
+        "*://*.cisco.com/*"
       ],
       "js": ["content-scripts/auto_apply.js"],
       "run_at": "document_idle"

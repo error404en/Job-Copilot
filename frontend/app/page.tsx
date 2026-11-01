@@ -32,6 +32,7 @@ import { Suspense, useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useApiClient } from '@/lib/useApiClient'
 import { PageHeader } from '@/components/ui/PageHeader'
+import AutoFillModal from '@/components/AutoFillModal'
 import { SignInButton, SignUpButton } from '@clerk/nextjs'
 
 function formatJobDate(dateStr?: string) {
@@ -135,6 +136,8 @@ function DashboardContent() {
   )
   const [sourceChannelFilter, setSourceChannelFilter] = useState<'all' | 'ats' | 'leads'>('all')
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [autoFillModalData, setAutoFillModalData] = useState<any | null>(null)
+  const [isSyncingResume, setIsSyncingResume] = useState(false)
 
   const isHydratedRef = useRef(false)
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
@@ -333,10 +336,29 @@ function DashboardContent() {
       if (!res.ok) throw new Error('Failed to trigger auto apply')
       return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       refetchApplications()
+      setAutoFillModalData(data)
     }
   })
+
+  const handleSyncIdentityFromResume = async () => {
+    setIsSyncingResume(true)
+    try {
+      const res = await apiFetch('/api/profile/sync-from-resume', { method: 'POST' })
+      if (res.ok && autoFillModalData) {
+        const currentJobId = autoFillModalData?.autofill?.job_id
+        const currentUrl = autoFillModalData?.autofill?.apply_url || ''
+        const refreshed = await apiFetch(`/api/auto-apply/data?url=${encodeURIComponent(currentUrl)}${currentJobId ? `&job_id=${currentJobId}` : ''}`)
+        if (refreshed.ok) {
+          const newPacket = await refreshed.json()
+          setAutoFillModalData({ ...autoFillModalData, autofill: newPacket })
+        }
+      }
+    } finally {
+      setIsSyncingResume(false)
+    }
+  }
 
   // Derive unique locations from analyzed jobs
   const availableLocations = useMemo(() => {
@@ -1526,16 +1548,16 @@ function DashboardContent() {
                         </a>
                       )}
 
-                      {/* Auto-Apply */}
-                      {job.url && (
+                      {/* Auto-Fill & Apply Kit */}
+                      {(job.official_apply_url || job.url) && (
                         <button 
-                          onClick={() => autoApplyMutation.mutate({ url: job.url, jobId: job.id })}
+                          onClick={() => autoApplyMutation.mutate({ url: job.official_apply_url || job.url, jobId: job.id })}
                           disabled={autoApplyMutation.isPending}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all active:scale-95 cursor-pointer disabled:opacity-50 shrink-0"
-                          title="Experimental Playwright Auto-Apply"
+                          title="Open Copilot Auto-Fill Kit (Candidate Identity, Recommended Resume & Tailored Cover Letter)"
                         >
                           <Zap className="w-3.5 h-3.5 fill-emerald-400 shrink-0" />
-                          <span>{autoApplyMutation.isPending ? '...' : 'Auto'}</span>
+                          <span>{autoApplyMutation.isPending ? '...' : 'Auto-Fill'}</span>
                         </button>
                       )}
 
@@ -1576,6 +1598,23 @@ function DashboardContent() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* Copilot Auto-Fill Launchpad Modal */}
+      <AutoFillModal
+        isOpen={Boolean(autoFillModalData)}
+        onClose={() => setAutoFillModalData(null)}
+        data={autoFillModalData}
+        onSyncFromResume={handleSyncIdentityFromResume}
+        isSyncingResume={isSyncingResume}
+        onMarkApplied={() => {
+          const targetJobId = autoFillModalData?.autofill?.job_id
+          const matchedJob = jobs?.find((j: any) => j.id === targetJobId)
+          if (matchedJob) {
+            trackMutation.mutate({ job: matchedJob, status: 'applied' })
+          }
+          setAutoFillModalData(null)
+        }}
+      />
     </div>
   )
 }
