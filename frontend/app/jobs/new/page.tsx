@@ -16,6 +16,7 @@ export default function AddJobPage() {
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
   const [activeTab, setActiveTab] = useState<'manual' | 'ats' | 'screenshot' | 'deep-dive'>('manual')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null)
   
   // Manual Paste State
   const [rawJd, setRawJd] = useState('')
@@ -101,8 +102,8 @@ export default function AddJobPage() {
       return res.json()
     },
     onSuccess: () => {
-      alert('Started fetching jobs in the background! They will appear on your dashboard shortly.')
-      router.push('/')
+      setNotice({ message: 'Started fetching ATS jobs in background. Redirecting to dashboard...', type: 'success' })
+      setTimeout(() => router.push('/'), 1200)
     },
     onError: (err: any) => setError(err.message)
   })
@@ -121,9 +122,11 @@ export default function AddJobPage() {
       if (data.ats_info) {
         setAtsSystem(data.ats_info.system)
         setCompanyToken(data.ats_info.token)
-        alert(`Detected ${data.ats_info.system} ATS!`)
+        setNotice({ message: `Detected ${data.ats_info.system.toUpperCase()} ATS board!`, type: 'success' })
+        setTimeout(() => setNotice(null), 4000)
       } else {
-        alert("Could not auto-detect ATS. You may need to enter it manually, or use Company Deep Dive.")
+        setNotice({ message: "Could not auto-detect ATS. You can enter the board token manually or use Company Deep Dive.", type: 'info' })
+        setTimeout(() => setNotice(null), 5000)
       }
     },
     onError: (err: any) => setError(err.message)
@@ -363,7 +366,8 @@ export default function AddJobPage() {
   const handleClipboardRead = async () => {
     try {
       if (!navigator.clipboard || !navigator.clipboard.read) {
-        alert("Direct clipboard read is restricted by browser security. Please press Ctrl+V directly to paste your copied screenshot!")
+        setNotice({ message: "Direct clipboard read is restricted by your browser. Please press Ctrl+V directly to paste your screenshot!", type: 'info' })
+        setTimeout(() => setNotice(null), 5000)
         return
       }
       const items = await navigator.clipboard.read()
@@ -375,12 +379,16 @@ export default function AddJobPage() {
           setSelectedFile(file)
           setActiveTab('screenshot')
           setPastedFromClipboard(true)
+          setNotice({ message: "Screenshot detected from clipboard and loaded!", type: 'success' })
+          setTimeout(() => setNotice(null), 3000)
           return
         }
       }
-      alert("No image found in clipboard! Copy a screenshot first (e.g. Win+Shift+S), then press Ctrl+V or click this button.")
+      setNotice({ message: "No image found in clipboard! Copy a screenshot first (Win+Shift+S), then press Ctrl+V.", type: 'info' })
+      setTimeout(() => setNotice(null), 5000)
     } catch {
-      alert("To paste, simply press Ctrl+V anywhere on this page!")
+      setNotice({ message: "To paste a screenshot, simply press Ctrl+V anywhere on this page!", type: 'info' })
+      setTimeout(() => setNotice(null), 4000)
     }
   }
 
@@ -462,7 +470,8 @@ export default function AddJobPage() {
 
   const handleUrlFetch = async () => {
     if (!url) {
-      alert("Please enter a URL first")
+      setNotice({ message: "Please enter a job requisition URL first.", type: 'info' })
+      setTimeout(() => setNotice(null), 3500)
       return
     }
     setIsUrlFetching(true)
@@ -474,7 +483,7 @@ export default function AddJobPage() {
       const data = await res.json()
       
       if (!res.ok) {
-        alert(`Failed to scrape: ${data.detail || 'Site blocked request'}\nPlease paste the text or screenshot manually.`)
+        setError(`Failed to scrape: ${data.detail || 'Site blocked request'}. Please paste the text or screenshot manually.`)
       } else {
         if (data.is_promo) {
           setPromoWarning(`⚠️ Creator Link Warning: This link was detected as an influencer course/bootcamp (${data.promo_name || 'ProPeers/Course'}). It is not an official company job posting. We recommend using Company Deep Dive or Target Companies to find the official careers page!`)
@@ -486,10 +495,12 @@ export default function AddJobPage() {
         if (data.resolved_url && data.resolved_url !== url) {
           setUrl(data.resolved_url)
         }
+        setNotice({ message: "Requisition text scraped and loaded successfully!", type: 'success' })
+        setTimeout(() => setNotice(null), 3000)
       }
     } catch (err) {
       console.error(err)
-      alert("Network error. Please paste the job description text or screenshot directly.")
+      setError("Network error while scraping. Please paste the job description text or screenshot directly.")
     } finally {
       setIsUrlFetching(false)
     }
@@ -569,7 +580,7 @@ export default function AddJobPage() {
         return next
       })
     } catch (err: any) {
-      alert(err.message || 'Error scoring role.')
+      setError(err.message || 'Error scoring role.')
     } finally {
       setScoringRoleIdx(null)
     }
@@ -626,11 +637,11 @@ export default function AddJobPage() {
         })
         router.push(`/jobs/${data.job_id}`)
       } else {
-        alert('Job analysis queued! Opening dashboard...')
-        router.push('/')
+        setNotice({ message: 'Job analysis queued. Navigating to dashboard...', type: 'success' })
+        setTimeout(() => router.push('/'), 1200)
       }
     } catch (err: any) {
-      alert(`Error starting analysis: ${err.message}`)
+      setError(`Error starting analysis: ${err.message}`)
     } finally {
       setAnalyzingRoleIdx(null)
     }
@@ -696,7 +707,7 @@ export default function AddJobPage() {
   })
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 font-sans">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-16 font-sans">
       
       {/* Unified Page Header */}
       <PageHeader
@@ -709,64 +720,78 @@ export default function AddJobPage() {
         actions={
           <Link
             href="/inbox"
-            className="bg-zinc-900/80 border border-zinc-800 text-zinc-300 px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-zinc-800 hover:text-white transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+            className="bg-[#1a1c20] border border-[#464553]/35 text-[#e2e2e8] px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-[#282a2e] transition-all flex items-center gap-1.5 shrink-0"
           >
-            <span>Have raw chats/files? Ingest Leads</span>
+            <span>Have raw chats/files? Open Lead Inbox</span>
           </Link>
         }
       />
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-xl text-sm flex items-center justify-between">
+        <div className="bg-rose-500/10 border border-rose-500/40 text-rose-300 p-4 rounded-xl text-xs flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-300 hover:text-white font-bold ml-4">✕</button>
+          <button onClick={() => setError(null)} className="text-rose-300 hover:text-white font-bold ml-4">✕</button>
+        </div>
+      )}
+
+      {notice && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center justify-between border ${
+            notice.type === 'success'
+              ? 'bg-[#45dfa4]/10 border-[#45dfa4]/30 text-[#45dfa4]'
+              : notice.type === 'error'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              : 'bg-[#5b5bd6]/15 border-[#5b5bd6]/35 text-[#c3c0ff]'
+          }`}
+        >
+          <span>{notice.message}</span>
+          <button onClick={() => setNotice(null)} className="opacity-75 hover:opacity-100 font-bold ml-4">✕</button>
         </div>
       )}
 
       {/* Global Quick Paste Banner */}
-      <div className="bg-gradient-to-r from-blue-900/30 via-purple-900/20 to-zinc-900/40 border border-blue-500/30 rounded-xl p-3 px-4 flex items-center justify-between text-xs text-zinc-300 backdrop-blur-sm">
+      <div className="bg-[#1a1c20] border border-[#464553]/35 rounded-xl p-3.5 px-4 flex items-center justify-between text-xs text-[#918f9f]">
         <div className="flex items-center gap-2">
-          <span className="text-base">📋</span>
-          <span><strong>Quick Paste Ready:</strong> Copied a screenshot from LinkedIn or Snipping Tool? Press <kbd className="bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded text-white font-mono font-bold">Ctrl+V</kbd> anywhere on this page to instantly load and analyze it!</span>
+          <span><strong className="text-[#e2e2e8]">Quick Paste Ready:</strong> Copied a screenshot from LinkedIn or Snipping Tool? Press <kbd className="bg-[#0c0e12] border border-[#464553]/50 px-1.5 py-0.5 rounded text-[#e2e2e8] font-mono font-semibold">Ctrl+V</kbd> anywhere on this page to load and analyze it.</span>
         </div>
         <button 
           onClick={handleClipboardRead}
-          className="bg-blue-600/80 hover:bg-blue-600 text-white font-semibold px-3 py-1 rounded-lg transition-colors shrink-0 ml-3"
+          className="bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white font-semibold px-3 py-1.5 rounded-lg transition-colors shrink-0 ml-3"
         >
           Paste from Clipboard
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex space-x-2 bg-zinc-900/50 p-2 rounded-xl backdrop-blur-sm border border-zinc-800/50">
+      <div className="flex space-x-2 bg-[#1a1c20] p-1.5 rounded-xl border border-[#464553]/35">
         <button 
           onClick={() => setActiveTab('manual')}
-          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all ${activeTab === 'manual' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all ${activeTab === 'manual' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
         >
           Paste Job / URL
         </button>
         <button 
           onClick={() => setActiveTab('screenshot')}
-          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-1.5 ${activeTab === 'screenshot' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'screenshot' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
         >
-          <span>📸</span> Screenshot
-          {selectedFile && <span className="w-2 h-2 rounded-full bg-green-400 ml-1"></span>}
+          <span>Screenshot OCR</span>
+          {selectedFile && <span className="w-2 h-2 rounded-full bg-[#45dfa4] ml-1"></span>}
         </button>
         <button 
           onClick={() => setActiveTab('deep-dive')}
-          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all ${activeTab === 'deep-dive' ? 'bg-purple-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all ${activeTab === 'deep-dive' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
         >
           Company Deep Dive
         </button>
         <button 
           onClick={() => setActiveTab('ats')}
-          className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm transition-all ${activeTab === 'ats' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all ${activeTab === 'ats' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
         >
-          ATS Search
+          ATS Board Sync
         </button>
       </div>
 
-      <div className="bg-zinc-900/40 p-8 rounded-2xl shadow-sm border border-zinc-800/50 backdrop-blur-sm">
+      <div className="bg-[#1a1c20] p-6 sm:p-8 rounded-xl border border-[#464553]/35">
         
         {/* TAB 1: MANUAL PASTE / URL */}
         {activeTab === 'manual' && (

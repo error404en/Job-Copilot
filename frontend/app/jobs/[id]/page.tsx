@@ -40,7 +40,9 @@ import {
   Award,
   ArrowLeft,
   GraduationCap,
-  X
+  X,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react'
 
 function formatSeniority(sen?: string): string {
@@ -140,6 +142,7 @@ export default function JobDetailPage() {
   const [deadlineInput, setDeadlineInput] = useState('')
   const [trackingDropdownOpen, setTrackingDropdownOpen] = useState(false)
   const [copiedResumeTitle, setCopiedResumeTitle] = useState(false)
+  const [copiedJd, setCopiedJd] = useState(false)
   const [jdSearchQuery, setJdSearchQuery] = useState('')
   const [autoFillModalData, setAutoFillModalData] = useState<any | null>(null)
   const [isSyncingResume, setIsSyncingResume] = useState(false)
@@ -485,31 +488,23 @@ export default function JobDetailPage() {
 
   return (
     <div className="space-y-6 pb-16 max-w-6xl mx-auto font-sans antialiased">
-      
-      {/* Top Breadcrumb Trail & Quick Actions */}
-      <div className="flex items-center justify-between text-xs text-zinc-400">
-        <button 
-          type="button"
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.history.length > 1) {
-              router.back()
-            } else {
-              router.push('/')
-            }
-          }}
-          className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors group cursor-pointer bg-transparent border-0 p-0 text-xs font-medium"
+      {/* Top Navigation & Actions Bar */}
+      <div className="flex items-center justify-between text-xs text-[#918f9f] pb-1">
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 text-[#918f9f] hover:text-[#e2e2e8] transition-colors group text-xs font-semibold"
         >
           <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-          <span>Back</span>
-        </button>
+          <span>Back to Live Feed</span>
+        </Link>
         <div className="flex items-center gap-2">
           <button
             onClick={() => reanalyzeMutation.mutate()}
             disabled={reanalyzeMutation.isPending}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#1a1c20] border border-[#464553]/35 hover:border-[#464553]/60 text-[#918f9f] hover:text-[#e2e2e8] transition-colors cursor-pointer text-xs font-semibold"
             title="Re-run AI scoring"
           >
-            <RotateCcw className={`w-3 h-3 ${reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
+            <RotateCcw className={`w-3.5 h-3.5 ${reanalyzeMutation.isPending ? 'animate-spin' : ''}`} />
             <span>Re-score</span>
           </button>
           <button
@@ -519,35 +514,35 @@ export default function JobDetailPage() {
               }
             }}
             disabled={deleteJobMutation.isPending}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-rose-500/40 text-zinc-400 hover:text-rose-400 transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#1a1c20] border border-[#464553]/35 hover:border-rose-500/40 text-[#918f9f] hover:text-rose-400 transition-colors cursor-pointer text-xs font-semibold"
             title="Delete requisition"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="w-3.5 h-3.5" />
             <span>Delete</span>
           </button>
         </div>
       </div>
 
       {/* 1. HERO REQUISITION COMMAND CENTER */}
-      <div className="bg-zinc-900/60 rounded-3xl border border-zinc-800/80 shadow-[0_12px_40px_rgb(0,0,0,0.22)] backdrop-blur-xl overflow-hidden relative">
+      <div className="bg-[#1a1c20] rounded-2xl border border-[#464553]/35 overflow-hidden relative">
         <div className="p-6 sm:p-8 flex flex-col lg:flex-row justify-between items-start gap-8 relative z-10">
           
           {/* Left Column: Requisition Meta */}
-          <div className="flex-1 min-w-0 space-y-4">
+          <div className="flex-1 min-w-0 space-y-4 w-full">
             
             {/* Title & Badges */}
             <div className="space-y-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <button 
                   onClick={toggleBookmark}
-                  className="transition-transform hover:scale-110 active:scale-95 shrink-0"
+                  className="transition-transform hover:scale-110 active:scale-95 shrink-0 cursor-pointer"
                   title={job.is_bookmarked ? "Bookmarked Role" : "Bookmark Role"}
                 >
                   <Star 
-                    className={`w-5 h-5 ${job.is_bookmarked ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-zinc-600 hover:text-amber-400'}`} 
+                    className={`w-5 h-5 ${job.is_bookmarked ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-[#918f9f] hover:text-amber-400'}`} 
                   />
                 </button>
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#e2e2e8] leading-tight font-heading">
                   {cleanTitle(job.role_title)}
                 </h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${vStyle.bg} ${vStyle.text} ${vStyle.border}`}>
@@ -557,8 +552,8 @@ export default function JobDetailPage() {
 
               {/* Company & Dream Tag */}
               <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2 text-zinc-200 text-lg font-bold">
-                  <Building2 className="w-4 h-4 text-indigo-400 shrink-0" />
+                <div className="flex items-center gap-2 text-[#e2e2e8] text-base sm:text-lg font-bold font-heading">
+                  <Building2 className="w-4 h-4 text-[#5b5bd6] shrink-0" />
                   <span>{job.company}</span>
                 </div>
 
@@ -569,8 +564,8 @@ export default function JobDetailPage() {
                     rel="noopener noreferrer"
                     className={`text-xs flex items-center gap-1 font-medium transition-colors ${
                       applySource.isOfficial
-                        ? 'text-emerald-400 hover:text-emerald-300'
-                        : 'text-indigo-400 hover:text-indigo-300'
+                        ? 'text-[#45dfa4] hover:underline'
+                        : 'text-[#c3c0ff] hover:underline'
                     }`}
                   >
                     <span>{applySource.label}</span>
@@ -581,53 +576,53 @@ export default function JobDetailPage() {
                 <button
                   onClick={() => dreamCompanyMutation.mutate(job.company)}
                   disabled={dreamCompanyMutation.isPending}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border ${
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border cursor-pointer ${
                     isDreamCompany
                       ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                      : 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border-zinc-700/80'
+                      : 'bg-[#0c0e12] hover:bg-[#282a2e] text-[#918f9f] hover:text-[#e2e2e8] border-[#464553]/40'
                   }`}
                   title={isDreamCompany ? "In your Dream Companies" : "Add to Dream Companies"}
                 >
-                  <Target className={`w-3 h-3 ${isDreamCompany ? 'text-amber-400' : 'text-zinc-400'}`} />
+                  <Target className={`w-3 h-3 ${isDreamCompany ? 'text-amber-400' : 'text-[#918f9f]'}`} />
                   <span>{isDreamCompany ? 'Dream Company' : '+ Dream Target'}</span>
                 </button>
               </div>
             </div>
 
-            {/* High-Visibility Recommended Resume Callout */}
+            {/* High-Visibility Recommended Resume Callout (Bulletproof Responsive Layout) */}
             {analysis.recommended_resume_title && (
-              <div className="p-3.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-500/15 via-purple-500/15 to-emerald-500/10 border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_0_20px_rgba(99,102,241,0.12)]">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[#5b5bd6]/15 via-[#8083ff]/10 to-[#45dfa4]/10 border border-[#5b5bd6]/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                  <div className="w-9 h-9 rounded-xl bg-[#5b5bd6]/20 border border-[#5b5bd6]/30 flex items-center justify-center text-[#c3c0ff] shrink-0 mt-0.5 sm:mt-0">
                     <FileText className="w-4 h-4" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#c3c0ff]">
                         Recommended Resume to Submit
                       </span>
-                      <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#45dfa4]/15 text-[#45dfa4] border border-[#45dfa4]/30 font-mono">
                         {analysis.match_score}% Skill Overlap
                       </span>
                     </div>
-                    <p className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
+                    <p className="text-xs sm:text-sm font-semibold text-[#e2e2e8] truncate">
                       {analysis.recommended_resume_title}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap w-full md:w-auto">
                   <button
                     onClick={() => handleCopyTitle(analysis.recommended_resume_title)}
-                    className="flex-1 sm:flex-initial bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                    className="flex-1 md:flex-initial bg-[#5b5bd6]/20 hover:bg-[#5b5bd6]/35 text-[#c3c0ff] border border-[#5b5bd6]/40 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                     title="Copy exact resume title"
                   >
-                    {copiedResumeTitle ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-indigo-300" />}
+                    {copiedResumeTitle ? <Check className="w-3.5 h-3.5 text-[#45dfa4]" /> : <Copy className="w-3.5 h-3.5 text-[#c3c0ff]" />}
                     <span>{copiedResumeTitle ? 'Title Copied' : 'Copy Title'}</span>
                   </button>
                   <button
                     onClick={() => setActiveTab('resume-target')}
-                    className="flex-1 sm:flex-initial bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-zinc-700/80"
+                    className="flex-1 md:flex-initial bg-[#0c0e12] hover:bg-[#282a2e] text-[#e2e2e8] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-[#464553]/40 cursor-pointer"
                   >
                     <span>View Resume Tab</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -1174,12 +1169,17 @@ export default function JobDetailPage() {
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(job.raw_jd || '')
-                  alert('Job description copied to clipboard!')
+                  setCopiedJd(true)
+                  setTimeout(() => setCopiedJd(false), 2000)
                 }}
-                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0"
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shrink-0 ${
+                  copiedJd
+                    ? 'bg-[#45dfa4]/15 text-[#45dfa4] border border-[#45dfa4]/30'
+                    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                }`}
               >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy JD</span>
+                {copiedJd ? <Check className="w-3.5 h-3.5 text-[#45dfa4]" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedJd ? 'Copied JD!' : 'Copy JD'}</span>
               </button>
             </div>
           </div>
@@ -1309,7 +1309,6 @@ export default function JobDetailPage() {
           setAutoFillModalData(null)
         }}
       />
-
     </div>
   )
 }

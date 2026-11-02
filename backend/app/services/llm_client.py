@@ -368,7 +368,7 @@ def get_completion(prompt: str, use_groq: bool = False) -> str:
     )
 
 
-def generate_tailoring_text(prompt: str) -> str:
+def generate_tailoring_text(prompt: str, **kwargs) -> str:
     """
     Dedicated generator for high-nuance writing tasks (cover letters, bullet points).
     Used for complex reasoning tasks like cover letter generation or bullet point tailoring.

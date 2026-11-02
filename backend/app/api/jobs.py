@@ -349,8 +349,12 @@ def quick_score_job(req: QuickScoreRequest, user_id: str = Depends(get_current_u
                 "company_info": fit_report.culture_assessment,
                 "user_id": user_id
             }
-            # Upsert into job_analyses
-            supabase.table("job_analyses").upsert(analysis_insert, on_conflict="job_id").execute()
+            # Upsert into job_analyses (check existing to avoid missing unique constraint errors)
+            existing_an = supabase.table("job_analyses").select("id").eq("job_id", job_id).limit(1).execute()
+            if existing_an.data:
+                supabase.table("job_analyses").update(analysis_insert).eq("id", existing_an.data[0]["id"]).execute()
+            else:
+                supabase.table("job_analyses").insert(analysis_insert).execute()
         except Exception as ae:
             print(f"[quick_score_job] Analysis save error: {ae}")
 

@@ -81,47 +81,47 @@ export default function AutoFillModal({
   const missingCoreIdentity = !payload.first_name || !payload.email || !payload.phone
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-[0_25px_70px_rgba(0,0,0,0.75)] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150 font-sans">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
         
         {/* Header */}
-        <div className="p-5 sm:p-6 border-b border-zinc-800/80 flex items-start justify-between gap-4 bg-gradient-to-r from-indigo-950/40 via-zinc-900 to-teal-950/30">
+        <div className="px-6 py-4 border-b border-zinc-800/80 flex items-start justify-between gap-4 bg-zinc-900/40">
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                <Zap className="w-3 h-3 fill-emerald-400 text-emerald-400" />
-                Live Copilot Auto-Fill Kit
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 flex items-center gap-1">
+                <Zap className="w-3 h-3 text-indigo-400" />
+                Auto-Fill Kit
               </span>
               {data.mode === 'playwright' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  Hermes Verified
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
+                  Verified
                 </span>
               )}
             </div>
-            <h2 className="text-lg sm:text-xl font-extrabold text-white truncate">
-              {roleTitle} <span className="text-zinc-400 font-normal">at</span> {company}
+            <h2 className="text-base sm:text-lg font-semibold text-zinc-100 truncate">
+              {roleTitle} <span className="text-zinc-500 font-normal">at</span> {company}
             </h2>
             <p className="text-xs text-zinc-400">
-              Your profile tokens, recommended resume, and tailored answers are pre-loaded for instant form filling.
+              Identity tokens, recommended resume, and tailored answers pre-loaded for instant form filling.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-zinc-800/70 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors shrink-0"
+            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800 transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Primary Launch Bar */}
-        <div className="px-6 py-3.5 bg-zinc-950/70 border-b border-zinc-800/80 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-6 py-3 bg-zinc-900/20 border-b border-zinc-800/80 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
-              <FileText className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-indigo-400 shrink-0">
+              <FileText className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Recommended Resume to Upload</div>
-              <div className="text-xs font-bold text-emerald-300 truncate">
+              <div className="text-[10px] uppercase font-medium tracking-wider text-zinc-500">Recommended Resume</div>
+              <div className="text-xs font-medium text-zinc-200 truncate">
                 {payload.recommended_resume_title || 'Primary Technical Resume'}
               </div>
             </div>
@@ -132,20 +132,20 @@ export default function AutoFillModal({
               <button
                 type="button"
                 onClick={handleLaunchAndCopyScript}
-                className="bg-gradient-to-r from-indigo-600 via-indigo-500 to-teal-600 hover:from-indigo-500 hover:to-teal-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-[0_0_20px_rgba(79,70,229,0.35)] flex items-center gap-1.5 cursor-pointer active:scale-95"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <Zap className="w-3.5 h-3.5 fill-white" />
-                <span>Open ATS Portal & Copy Auto-Fill</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                <Zap className="w-3.5 h-3.5" />
+                <span>Open Portal & Copy Auto-Fill</span>
+                <ExternalLink className="w-3 h-3" />
               </button>
             )}
             {onMarkApplied && (
               <button
                 type="button"
                 onClick={onMarkApplied}
-                className="bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-bold px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-1 cursor-pointer"
+                className="bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 font-medium px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Mark Applied</span>
               </button>
             )}
@@ -153,20 +153,20 @@ export default function AutoFillModal({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="px-6 pt-3 border-b border-zinc-800/80 flex items-center gap-2 bg-zinc-900/60">
+        <div className="px-6 border-b border-zinc-800/80 flex items-center gap-4 bg-zinc-950">
           {[
-            { id: 'kit', label: '⚡ 1-Click Field Values' },
-            { id: 'pitch', label: '📝 Cover Letter & Why Us Pitch' },
-            { id: 'browser', label: '🧩 Browser Auto-Fill & Extension' },
+            { id: 'kit', label: 'Field Values' },
+            { id: 'pitch', label: 'Cover Letter & Pitch' },
+            { id: 'browser', label: 'Browser Extension & Script' },
           ].map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id as any)}
-              className={`px-3.5 py-2 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+              className={`py-2.5 text-xs font-medium border-b-2 transition-colors cursor-pointer ${
                 activeTab === t.id
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                  ? 'border-indigo-500 text-zinc-100'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
               }`}
             >
               {t.label}
@@ -177,10 +177,10 @@ export default function AutoFillModal({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
           {copiedKey === 'launch_script' && (
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2">
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                Opened portal! If using the Chrome Extension, click <strong>⚡ Auto-Fill Form</strong> in the bottom-right corner of the page.
+                Opened portal and copied Auto-Fill script. If using the Chrome Extension, click <strong>Auto-Fill Form</strong> in the bottom-right corner of the portal.
               </span>
             </div>
           )}
@@ -347,40 +347,40 @@ export default function AutoFillModal({
                       href={payload.bookmarklet_url}
                       onClick={(e) => e.preventDefault()}
                       draggable
-                      className="px-3.5 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 cursor-grab active:cursor-grabbing"
-                      title="Drag me to your Chrome/Edge Bookmarks Bar, then click me on any job application page!"
+                      className="px-3.5 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-indigo-500/40 text-zinc-200 text-xs font-medium flex items-center gap-1.5 cursor-grab active:cursor-grabbing"
+                      title="Drag me to your Chrome/Edge Bookmarks Bar, then click me on any job application page"
                     >
-                      <Zap className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>⚡ JobCopilot Auto-Fill (Drag to Bookmarks Bar)</span>
+                      <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>JobCopilot Auto-Fill (Drag to Bookmarks Bar)</span>
                     </a>
                   )}
                   <button
                     type="button"
                     onClick={() => copyText('autofill_script', payload.autofill_script)}
-                    className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
                   >
                     {copiedKey === 'autofill_script' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Terminal className="w-3.5 h-3.5 text-indigo-400" />}
-                    <span>{copiedKey === 'autofill_script' ? 'Copied Auto-Fill JS!' : 'Copy Auto-Fill Console JS'}</span>
+                    <span>{copiedKey === 'autofill_script' ? 'Copied Auto-Fill JS' : 'Copy Auto-Fill Console JS'}</span>
                   </button>
                 </div>
               </div>
 
               {/* Option 2: Unpacked Chrome Extension */}
-              <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
+              <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <h4 className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
                       <Download className="w-3.5 h-3.5 text-indigo-400" />
-                      Option 2: JobCopilot Chrome Extension (Automatic Floating HUD)
+                      Option 2: JobCopilot Chrome Extension (Floating HUD)
                     </h4>
                     <p className="text-[11px] text-zinc-400 mt-0.5">
-                      Automatically injects a floating <strong>🤖 JobCopilot Auto-Fill</strong> button on Greenhouse, Lever, Ashby, Workday, SmartRecruiters & Keka pages.
+                      Automatically injects a floating <strong>JobCopilot Auto-Fill</strong> button on Greenhouse, Lever, Ashby, Workday, SmartRecruiters & Keka pages.
                     </p>
                   </div>
                   <a
                     href="/JobCopilot_Extension.zip"
                     download="JobCopilot_Extension.zip"
-                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shrink-0"
+                    className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium flex items-center gap-1.5 shrink-0"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download Extension (.zip)</span>
@@ -399,3 +399,4 @@ export default function AutoFillModal({
     </div>
   )
 }
+

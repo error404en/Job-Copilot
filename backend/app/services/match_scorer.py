@@ -223,15 +223,19 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
         score += 8
 
     # Seniority calibration
+    seniority_fit = "good_fit"
     if sen in ["fresher", "intern"] or "intern" in role_title_lower:
         seniority_fit = "good_fit"
         score += 5
-    elif sen == "0-2yr":
+    elif sen in ["0-2yr", "entry", "associate"]:
         seniority_fit = "good_fit"
         score += 3
     elif sen == "2-5yr":
         seniority_fit = "stretch"
         score -= 15
+    elif any(s in sen for s in ["senior", "lead", "staff", "principal", "5+"]):
+        seniority_fit = "underqualified"
+        score -= 25
 
     # Startup & Freshness Preferences
     # Prefer < 200 people

@@ -526,30 +526,30 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
   }, [messages, currentThreadId, isStreaming, streamingMessageId, streamingContent, queryClient])
 
   return (
-    <div className={`flex w-full ${inline ? 'h-[640px] rounded-2xl' : 'h-[calc(100vh-100px)] rounded-3xl'} bg-zinc-950 border border-zinc-800/80 shadow-2xl overflow-hidden font-sans`}>
+    <div className={`flex w-full ${inline ? 'h-[640px] rounded-xl' : 'h-[calc(100vh-140px)] rounded-xl'} bg-[#0c0e12] border border-[#464553]/35 shadow-xl overflow-hidden font-sans`}>
       {/* 1. Left Conversation History Sidebar (Desktop & Mobile Drawer) */}
       {!inline && (
         <AnimatePresence initial={false}>
           {sidebarOpen && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 280, opacity: 1 }}
+              animate={{ width: 270, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: 'easeInOut' }}
-              className="h-full bg-zinc-900/70 border-r border-zinc-800/80 flex flex-col shrink-0 overflow-hidden backdrop-blur-xl"
+              className="h-full bg-[#1a1c20] border-r border-[#464553]/35 flex flex-col shrink-0 overflow-hidden"
             >
               {/* Sidebar Header */}
-              <div className="p-3.5 border-b border-zinc-800/60 flex items-center justify-between gap-2">
+              <div className="p-3.5 border-b border-[#464553]/30 flex items-center justify-between gap-2">
                 <button
                   onClick={handleStartNewChat}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95"
+                  className="flex-1 bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>New Conversation</span>
                 </button>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800/60 transition-colors"
+                  className="p-2 text-[#918f9f] hover:text-[#e2e2e8] rounded-lg hover:bg-[#282a2e] transition-colors"
                   title="Collapse Sidebar"
                 >
                   <PanelLeftClose className="w-4 h-4" />
@@ -559,16 +559,16 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
               {/* Thread Search */}
               <div className="px-3 pt-2.5 pb-1">
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-zinc-500" />
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#918f9f]" />
                   <input
                     type="text"
                     value={threadSearch}
                     onChange={(e) => setThreadSearch(e.target.value)}
                     placeholder="Search conversations..."
-                    className="w-full bg-zinc-950/80 border border-zinc-800/80 text-zinc-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs placeholder:text-zinc-500 focus:outline-none focus:border-zinc-700"
+                    className="w-full bg-[#0c0e12] border border-[#464553]/40 text-[#e2e2e8] rounded-lg pl-8 pr-2.5 py-1.5 text-xs placeholder:text-[#918f9f] focus:outline-none focus:border-[#5b5bd6]"
                   />
                   {threadSearch && (
-                    <button onClick={() => setThreadSearch('')} className="absolute right-2 top-2 text-zinc-500 hover:text-zinc-300">
+                    <button onClick={() => setThreadSearch('')} className="absolute right-2 top-2 text-[#918f9f] hover:text-[#e2e2e8]">
                       <X className="w-3 h-3" />
                     </button>
                   )}
@@ -578,11 +578,11 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
               {/* Thread List */}
               <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                 {isLoadingThreads ? (
-                  <div className="flex items-center justify-center py-10 text-zinc-500 text-xs gap-2">
+                  <div className="flex items-center justify-center py-10 text-[#918f9f] text-xs gap-2">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading chats...
                   </div>
                 ) : filteredThreads.length === 0 ? (
-                  <div className="text-center py-10 px-4 text-xs text-zinc-500">
+                  <div className="text-center py-10 px-4 text-xs text-[#918f9f]">
                     {threadSearch ? 'No matching chats found.' : 'No conversations yet.'}
                   </div>
                 ) : (
@@ -601,14 +601,14 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                             localStorage.setItem('jobcopilot_active_thread_id', t.id)
                           }
                         }}
-                        className={`group relative flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer text-xs transition-all ${
+                        className={`group relative flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer text-xs transition-all ${
                           isActive
-                            ? 'bg-zinc-800/90 text-white font-semibold border border-zinc-700/80 shadow-sm'
-                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+                            ? 'bg-[#282a2e] text-[#e2e2e8] font-semibold border border-[#464553]/45'
+                            : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]/50'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                          <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                          <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#5b5bd6]' : 'text-[#918f9f]'}`} />
                           
                           {isEditing ? (
                             <form 
@@ -692,43 +692,43 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
       )}
 
       {/* 2. Main Chat Workstation */}
-      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-zinc-950 relative">
+      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-[#0c0e12] relative">
         {/* Workspace Top Bar */}
-        <div className="px-5 py-3.5 bg-zinc-900/50 border-b border-zinc-800/80 flex items-center justify-between backdrop-blur-md shrink-0 z-10">
+        <div className="px-5 py-3.5 bg-[#1a1c20] border-b border-[#464553]/35 flex items-center justify-between shrink-0 z-10">
           <div className="flex items-center gap-3 min-w-0">
             {!inline && !sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="p-2 text-zinc-400 hover:text-zinc-100 rounded-lg hover:bg-zinc-800 transition-colors"
+                className="p-2 text-[#918f9f] hover:text-[#e2e2e8] rounded-lg hover:bg-[#282a2e] transition-colors"
                 title="Expand Conversations"
               >
                 <PanelLeft className="w-4 h-4" />
               </button>
             )}
 
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-[#5b5bd6] flex items-center justify-center text-white shrink-0">
               <Bot className="w-4 h-4" />
             </div>
 
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="font-bold text-white text-sm truncate tracking-tight">
+                <h2 className="font-bold text-[#e2e2e8] text-sm truncate tracking-tight">
                   {activeThread?.title || (currentThreadId === 'new' ? 'New Conversation' : 'Copilot Mentor')}
                 </h2>
-                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#5b5bd6]/15 text-[#c3c0ff] border border-[#5b5bd6]/30">
                   Staff Mentor
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-400 truncate">System Design • Live Coding Prep • Tailored Interview Coaching</p>
+              <p className="text-[11px] text-[#918f9f] truncate">System Design • Live Coding Prep • Tailored Interview Coaching</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={handleStartNewChat}
-              className="text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white px-3 py-1.5 rounded-lg transition-all font-semibold flex items-center gap-1.5 hover:bg-zinc-800 active:scale-95"
+              className="text-xs bg-[#0c0e12] border border-[#464553]/40 text-[#e2e2e8] hover:bg-[#282a2e] px-3 py-1.5 rounded-lg transition-all font-semibold flex items-center gap-1.5"
             >
-              <Plus className="w-3.5 h-3.5 text-indigo-400" />
+              <Plus className="w-3.5 h-3.5 text-[#5b5bd6]" />
               <span>New Chat</span>
             </button>
           </div>
@@ -736,18 +736,17 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
 
         {/* Error Alert */}
         {errorMessage && (
-          <div className="bg-red-950/70 border-b border-red-800/80 px-4 py-2.5 text-xs text-red-200 flex items-center justify-between z-10">
+          <div className="bg-rose-500/10 border-b border-rose-500/30 px-4 py-2.5 text-xs text-rose-300 flex items-center justify-between z-10">
             <div className="flex items-center gap-2">
-              <span>⚠️</span>
               <span>{errorMessage}</span>
             </div>
-            <button onClick={() => setErrorMessage(null)} className="text-red-400 hover:text-white px-1">
-              ✕
+            <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-white px-1">
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
-        {/* Message Canvas (ChatGPT & Claude Centered Reading Container) */}
+        {/* Message Canvas */}
         <div 
           ref={scrollContainerRef}
           onScroll={handleScroll}
@@ -756,17 +755,17 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
           <div className="max-w-3xl mx-auto space-y-6">
             {/* Welcome Screen when starting fresh */}
             {(!currentThreadId || currentThreadId === 'new') && displayMessages.length === 0 && (
-              <div className="flex flex-col items-center justify-center text-zinc-400 space-y-6 py-12 max-w-xl mx-auto">
+              <div className="flex flex-col items-center justify-center text-[#918f9f] space-y-6 py-12 max-w-xl mx-auto">
                 <div className="scale-90 origin-center">
                   <AIOrb state="idle" />
                 </div>
                 
                 <div className="text-center space-y-2">
-                  <h3 className="text-xl font-bold text-white tracking-tight">
-                    {jobId ? 'Contextual Job Mentor' : 'What would you like to master today?'}
+                  <h3 className="text-xl font-bold text-[#e2e2e8] tracking-tight">
+                    {jobId ? 'Contextual Job Mentor' : 'What would you like to prepare for today?'}
                   </h3>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
-                    Trained on real FAANG & Tier-1 technical interviews. Ask about complex system designs, code refactoring, resume tailoring, or live coding prep.
+                  <p className="text-xs text-[#918f9f] max-w-md mx-auto leading-relaxed">
+                    Trained on Tier-1 technical interviews. Ask about complex system designs, code refactoring, resume tailoring, or behavioral mock drills.
                   </p>
                 </div>
 
@@ -774,34 +773,34 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full pt-2">
                   <button
                     onClick={() => executeSendMessage("What are the key technical requirements of this job and where are my biggest skill gaps?")}
-                    className="bg-zinc-900/60 border border-zinc-800/80 hover:border-indigo-500/40 hover:bg-zinc-900 p-3.5 rounded-2xl text-left transition-all group"
+                    className="bg-[#1a1c20] border border-[#464553]/35 hover:border-[#5b5bd6]/50 hover:bg-[#282a2e] p-3.5 rounded-xl text-left transition-all group"
                   >
-                    <p className="text-xs font-bold text-zinc-200 group-hover:text-indigo-300">🎯 Skill Gap Analysis</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">Analyze strengths & missing skills</p>
+                    <p className="text-xs font-semibold text-[#e2e2e8] group-hover:text-[#c3c0ff]">Skill Gap Analysis</p>
+                    <p className="text-[11px] text-[#918f9f] mt-0.5">Analyze strengths & missing skills</p>
                   </button>
 
                   <button
                     onClick={() => executeSendMessage("Design a scalable distributed rate-limiter supporting 100k req/sec with Redis and Token Bucket.")}
-                    className="bg-zinc-900/60 border border-zinc-800/80 hover:border-indigo-500/40 hover:bg-zinc-900 p-3.5 rounded-2xl text-left transition-all group"
+                    className="bg-[#1a1c20] border border-[#464553]/35 hover:border-[#5b5bd6]/50 hover:bg-[#282a2e] p-3.5 rounded-xl text-left transition-all group"
                   >
-                    <p className="text-xs font-bold text-zinc-200 group-hover:text-indigo-300">🏗️ System Design Deep-Dive</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">High-throughput architectures</p>
+                    <p className="text-xs font-semibold text-[#e2e2e8] group-hover:text-[#c3c0ff]">System Design Deep-Dive</p>
+                    <p className="text-[11px] text-[#918f9f] mt-0.5">High-throughput architectures</p>
                   </button>
 
                   <button
                     onClick={() => executeSendMessage("Give me a challenging technical coding problem on concurrency or graph traversals with clean solution breakdown.")}
-                    className="bg-zinc-900/60 border border-zinc-800/80 hover:border-indigo-500/40 hover:bg-zinc-900 p-3.5 rounded-2xl text-left transition-all group"
+                    className="bg-[#1a1c20] border border-[#464553]/35 hover:border-[#5b5bd6]/50 hover:bg-[#282a2e] p-3.5 rounded-xl text-left transition-all group"
                   >
-                    <p className="text-xs font-bold text-zinc-200 group-hover:text-indigo-300">💻 Mock Coding Challenge</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">Real interview algorithms & tests</p>
+                    <p className="text-xs font-semibold text-[#e2e2e8] group-hover:text-[#c3c0ff]">Mock Coding Challenge</p>
+                    <p className="text-[11px] text-[#918f9f] mt-0.5">Real interview algorithms & tests</p>
                   </button>
 
                   <button
                     onClick={() => executeSendMessage("Review my resume summary against Senior Backend / AI Engineer expectations.")}
-                    className="bg-zinc-900/60 border border-zinc-800/80 hover:border-indigo-500/40 hover:bg-zinc-900 p-3.5 rounded-2xl text-left transition-all group"
+                    className="bg-[#1a1c20] border border-[#464553]/35 hover:border-[#5b5bd6]/50 hover:bg-[#282a2e] p-3.5 rounded-xl text-left transition-all group"
                   >
-                    <p className="text-xs font-bold text-zinc-200 group-hover:text-indigo-300">📄 Resume Audit</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">Tailor bullets to recruiter standards</p>
+                    <p className="text-xs font-semibold text-[#e2e2e8] group-hover:text-[#c3c0ff]">Resume Audit</p>
+                    <p className="text-[11px] text-[#918f9f] mt-0.5">Tailor bullets to recruiter standards</p>
                   </button>
                 </div>
               </div>
@@ -825,19 +824,19 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
                 <div key={msg.id || idx} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group`}>
                   <div className={`flex items-start gap-3 max-w-[90%] md:max-w-[85%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                     {/* Avatar */}
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border shadow-sm ${
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
                       isUser 
-                        ? 'bg-zinc-800 border-zinc-700 text-zinc-200' 
-                        : 'bg-indigo-600/20 border-indigo-500/30 text-indigo-400'
+                        ? 'bg-[#282a2e] border-[#464553]/40 text-[#e2e2e8]' 
+                        : 'bg-[#5b5bd6]/15 border-[#5b5bd6]/35 text-[#c3c0ff]'
                     }`}>
                       {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                     </div>
 
                     {/* Message Bubble */}
-                    <div className={`rounded-2xl px-4 py-3.5 shadow-sm text-[13px] leading-relaxed break-words overflow-hidden ${
+                    <div className={`rounded-xl px-4 py-3.5 text-[13px] leading-relaxed break-words overflow-hidden ${
                       isUser 
-                        ? 'bg-indigo-600 text-white rounded-tr-xs' 
-                        : 'bg-zinc-900/90 border border-zinc-800 text-zinc-100 rounded-tl-xs w-full'
+                        ? 'bg-[#5b5bd6] text-white' 
+                        : 'bg-[#1a1c20] border border-[#464553]/35 text-[#e2e2e8] w-full'
                     }`}>
                       {isCurrentlyStreaming && !msg.content ? (
                         <div className="flex items-center gap-2 py-1 text-xs text-indigo-300">
@@ -981,9 +980,9 @@ export default function CopilotCoach({ jobId, inline = false }: CopilotCoachProp
           </button>
         )}
 
-        {/* 3. Claude & ChatGPT Style Centered Floating Input Dock */}
+        {/* 3. Centered Input Dock */}
         <div className="w-full max-w-4xl mx-auto px-4 pb-4 shrink-0 z-10">
-          <div className="bg-zinc-900/90 border border-zinc-700/60 shadow-2xl rounded-3xl backdrop-blur-xl transition-all focus-within:border-indigo-500/50 focus-within:ring-2 focus-within:ring-indigo-500/20 p-2.5 flex flex-col gap-2">
+          <div className="bg-[#1a1c20] border border-[#464553]/40 shadow-xl rounded-2xl transition-all focus-within:border-[#5b5bd6] p-2.5 flex flex-col gap-2">
             {/* Attachment Preview Chips */}
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 px-2 pt-1 pb-1.5">

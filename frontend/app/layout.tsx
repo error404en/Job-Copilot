@@ -1,19 +1,27 @@
-import { ClerkProvider, SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 import { Navigation } from "@/components/ui/Navigation";
 import { SWRegister } from "@/components/SWRegister";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const jakartaHeading = Plus_Jakarta_Sans({
+  variable: "--font-heading",
   subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const interSans = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -28,15 +36,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-50 min-h-screen selection:bg-indigo-500/30 overflow-x-hidden`}>
+    <html lang="en" className="dark">
+      <body
+        className={`${jakartaHeading.variable} ${interSans.variable} ${jetbrainsMono.variable} antialiased bg-[#0c0e12] text-[#e2e2e8] min-h-screen selection:bg-[#5b5bd6]/30 overflow-x-hidden`}
+      >
         <ClerkProvider>
           <Providers>
-          <Navigation />
-          <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 mt-2 animate-in fade-in duration-500 w-full">
-          {children}
-          </main>
-          <SWRegister />
+            <div className="min-h-screen flex flex-col lg:flex-row bg-[#0c0e12]">
+              <Navigation />
+              <main className="flex-1 lg:pl-[232px] min-w-0 w-full">
+                <div className="max-w-[1480px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 animate-in fade-in duration-300">
+                  {children}
+                </div>
+              </main>
+            </div>
+            <SWRegister />
           </Providers>
         </ClerkProvider>
       </body>
