@@ -7,8 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, monospace;
+  --font-sans: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-serif-display), 'Instrument Serif', Georgia, serif;
+  --font-mono: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
   --font-heading: var(--font-heading), var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -49,19 +50,39 @@
 }
 
 body {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-sans), 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.005em;
 }
 
-h1, h2, h3, h4, .font-heading {
+.serif, .font-serif {
+  font-family: var(--font-serif-display), 'Instrument Serif', Georgia, serif !important;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+.serif i, .font-serif i {
+  font-style: italic;
+  color: #A9A59C;
+}
+
+.mono, .font-mono {
+  font-family: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace !important;
+  letter-spacing: 0.06em;
+}
+
+h1:not(.serif):not(.font-serif),
+h2:not(.serif):not(.font-serif),
+h3:not(.serif):not(.font-serif),
+h4:not(.serif):not(.font-serif),
+.font-heading {
   font-family: var(--font-heading), var(--font-sans), system-ui, sans-serif;
   letter-spacing: -0.025em;
 }
 
-code, pre, .font-mono {
-  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+code, pre {
+  font-family: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
 }
 
 ::selection {
@@ -174,5 +195,425 @@ code, pre, .font-mono {
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* =========================================================================
+   JobCopilot Masterpiece Redesign Design System
+   ========================================================================= */
+
+html, body {
+  color-scheme: dark;
+  background-color: #050507;
+  color: #F3EFE7;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  scrollbar-width: thin;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.pg {
+  background: #050507;
+  color: #F3EFE7;
+  font-family: var(--font-sans), 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.serif {
+  font-family: var(--font-serif-display), 'Instrument Serif', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.serif i, .serif em {
+  font-style: italic;
+  color: #A9A59C;
+}
+
+.mono {
+  font-family: var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 0;
+  box-sizing: border-box;
+  transition: transform .25s ease, background .25s ease, border-color .25s ease;
+}
+.pill-c {
+  background: #F3EFE7;
+  color: #0A0A0C;
+}
+.pill-c:hover {
+  background: #FFFFFF;
+  transform: translateY(-2px);
+}
+.pill-g {
+  background: rgba(255,255,255,0.08);
+  color: #F3EFE7;
+  border: 1px solid rgba(255,255,255,0.14);
+}
+.pill-g:hover {
+  background: rgba(255,255,255,0.15);
+  transform: translateY(-2px);
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 22px;
+}
+
+.jobrow {
+  transition: border-color .25s ease, background .25s ease, transform .25s ease;
+}
+.jobrow:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-2px);
+}
+
+.tag {
+  display: inline-block;
+  background: #2F3DFF;
+  color: #FFFFFF;
+  border: 1px solid rgba(255,255,255,0.4);
+  padding: 6px 10px;
+}
+
+.navlink {
+  font-size: 14px;
+  color: #C9C6BE;
+  padding: 8px 14px;
+  border-radius: 999px;
+  transition: background .2s, color .2s;
+}
+.navlink:hover {
+  background: rgba(255,255,255,0.08);
+  color: #FFFFFF;
+}
+
+.nv {
+  font-size: 13px;
+  color: #C9C6BE;
+  padding: 8px 14px;
+  border-radius: 999px;
+  transition: background .2s, color .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.nv:hover {
+  background: rgba(255,255,255,0.08);
+  color: #FFFFFF;
+}
+.nvon {
+  background: #F3EFE7 !important;
+  color: #0A0A0C !important;
+  font-weight: 600;
+}
+.nvwrap {
+  scrollbar-width: none;
+}
+.nvwrap::-webkit-scrollbar {
+  display: none;
+}
+
+.rise {
+  animation: rise 0.8s cubic-bezier(.2,.7,.2,1) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes slide {
+  to { transform: translateX(-50%); }
+}
+
+@keyframes drift {
+  to { background-position: 44px 22px; }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-10%); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(110%); opacity: 0; }
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes gridmove {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 72px, 0 72px; }
+}
+
+@keyframes flow {
+  from { stroke-dashoffset: 1600; }
+  to { stroke-dashoffset: 0; }
+}
+
+.gridfloor {
+  background-image: linear-gradient(rgba(140,151,255,0.38) 1px, transparent 1px), linear-gradient(90deg, rgba(140,151,255,0.38) 1px, transparent 1px);
+  background-size: 72px 72px;
+  animation: gridmove 4s linear infinite;
+}
+
+.streak {
+  stroke-dasharray: 140 1460;
+  filter: drop-shadow(0 0 6px rgba(140,151,255,0.9));
+  animation: flow 9s linear infinite;
+}
+.s2 { animation-duration: 12s; animation-delay: -5s; }
+.s3 { animation-duration: 10s; animation-delay: -2s; }
+.s4 { animation-duration: 14s; animation-delay: -8s; }
+
+.marq {
+  display: flex;
+  width: max-content;
+  animation: slide 38s linear infinite;
+}
+
+.fc {
+  position: absolute;
+  bottom: 0;
+  width: 36%;
+  aspect-ratio: 3/4.2;
+  border-radius: 18px;
+  box-sizing: border-box;
+  padding: 16px;
+  overflow: hidden;
+  background: linear-gradient(170deg, #1A1C24, #0B0C10);
+  border: 1px solid rgba(255,255,255,0.12);
+  transform-origin: 50% 120%;
+  transition: transform .6s cubic-bezier(.2,.7,.2,1), border-color .3s;
+}
+.fc1 { left: 0; transform: rotate(-14deg); }
+.fc2 { left: 16%; transform: rotate(-7deg); }
+.fc3 { left: 32%; transform: rotate(0deg); }
+.fc4 { left: 48%; transform: rotate(7deg); }
+.fc5 { left: 64%; transform: rotate(14deg); }
+.fc:hover {
+  transform: translateY(-34px) rotate(0deg) scale(1.05);
+  border-color: #8C97FF;
+  z-index: 6;
+}
+
+.dots {
+  background-image: radial-gradient(circle, #7482FF 1.1px, transparent 1.7px);
+  background-size: 11px 11px;
+  animation: drift 18s linear infinite;
+}
+
+.card {
+  transition: transform .35s ease, border-color .35s ease;
+}
+.card:hover {
+  border-color: rgba(255,255,255,0.28);
+  transform: translateY(-4px);
+}
+
+.chip {
+  animation: bob 6s ease-in-out infinite;
+}
+
+.kcard {
+  background: #0E1015;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color .25s, transform .25s;
+}
+.kcard:hover {
+  border-color: rgba(255,255,255,0.25);
+  transform: translateY(-2px);
+}
+
+.mv {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #F3EFE7;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.mv:hover {
+  background: #F3EFE7;
+  color: #0A0A0C;
+}
+
+.pick {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 18px 0;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  text-decoration: none;
+  color: inherit;
+  transition: background .2s;
+}
+.pick:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+.co {
+  transition: border-color .25s, transform .25s;
+  text-decoration: none;
+  color: inherit;
+}
+.co:hover {
+  border-color: rgba(255,255,255,0.28);
+  transform: translateY(-2px);
+}
+
+.ta {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 240px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #F3EFE7;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  padding: 18px;
+  resize: vertical;
+  outline: none;
+  transition: border-color .2s;
+}
+.ta:focus {
+  border-color: #8C97FF;
+}
+
+.fld {
+  width: 100%;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #F3EFE7;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .2s;
+}
+.fld:focus {
+  border-color: #8C97FF;
+}
+.fld::placeholder {
+  color: #8E8C86;
+}
+
+.sess {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #C9C6BE;
+  text-decoration: none;
+  transition: background .2s, color .2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sess:hover {
+  background: rgba(255,255,255,0.06);
+  color: #FFFFFF;
+}
+
+@property --p {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+.reveal {
+  color: #F3EFE7;
+}
+@supports (animation-timeline: view()) {
+  .reveal {
+    background: linear-gradient(180deg, #F3EFE7 var(--p), #4A4B53 calc(var(--p) + 24%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: fill linear both;
+    animation-timeline: view();
+    animation-range: entry 25% cover 50%;
+  }
+  @keyframes fill {
+    from { --p: -24%; }
+    to { --p: 100%; }
+  }
+}
+
+:focus-visible {
+  outline: 1.5px solid rgba(255, 255, 255, 0.25);
+  outline-offset: 2px;
+}
+
+input:focus, input:focus-visible, textarea:focus, textarea:focus-visible {
+  outline: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
   }
 }

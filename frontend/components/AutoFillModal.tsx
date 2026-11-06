@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import {
   X,
   Zap,
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   Terminal
 } from 'lucide-react'
+import { useApiClient } from '@/lib/useApiClient'
 
 interface AutoFillModalProps {
   isOpen: boolean
@@ -40,24 +42,125 @@ export default function AutoFillModal({
 }: AutoFillModalProps) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'kit' | 'pitch' | 'browser'>('kit')
+  const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
+
+  // Fetch candidate profile for auto-fill enrichment
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    enabled: isLoaded && !!isSignedIn,
+    queryFn: async () => {
+      const res = await apiFetch('/api/profile')
+      if (!res.ok) return null
+      return res.json()
+    },
+  })
 
   if (!isOpen || !data) return null
 
-  const payload = data.autofill || data
+  const rawPayload = data.autofill || data
+
+  // Merge candidate profile with payload
+  const payload = useMemo(() => {
+    if (isSignedIn && profile) {
+      const firstName = rawPayload.first_name || profile.first_name || 'Shreyansh'
+      const lastName = rawPayload.last_name || profile.last_name || 'Bhadani'
+      const fullName = rawPayload.full_name || `${firstName} ${lastName}`.trim()
+      const email = rawPayload.email || profile.email || 'shreyanshbhadani@gmail.com'
+      const phone = rawPayload.phone || profile.phone || '8377074973'
+      const location = rawPayload.location || profile.base_location || 'Noida, Delhi NCR, India'
+      const linkedin = rawPayload.linkedin_url || profile.linkedin_url || 'https://linkedin.com/in/shreyansh-bhadani-77bb28329'
+      const github = rawPayload.github_url || profile.github_url || 'https://github.com/error404en'
+      const portfolio = rawPayload.portfolio_url || profile.portfolio_url || 'https://shreyansh-37.vercel.app/'
+      return {
+        ...rawPayload,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: fullName,
+        email,
+        phone,
+        location,
+        linkedin_url: linkedin,
+        github_url: github,
+        portfolio_url: portfolio,
+        school: rawPayload.school || 'Jaypee Institute of Information Technology (JIIT)',
+        degree: rawPayload.degree || 'B.Tech Computer Science',
+        current_title: rawPayload.current_title || 'Software Development Engineer Intern',
+        notice_period: rawPayload.notice_period || 'Immediate / 2027 Graduate',
+        expected_salary: rawPayload.expected_salary || '6,00,000 INR (Baseline Floor)',
+        authorized_to_work: true,
+      }
+    }
+    // Generic sample data when not signed in
+    return {
+      ...rawPayload,
+      first_name: rawPayload.first_name || 'Alex',
+      last_name: rawPayload.last_name || 'Morgan',
+      full_name: rawPayload.full_name || 'Alex Morgan',
+      email: rawPayload.email || 'alex.morgan@example.com',
+      phone: rawPayload.phone || '+1 (555) 019-2834',
+      location: rawPayload.location || 'Bengaluru, India',
+      linkedin_url: rawPayload.linkedin_url || 'https://linkedin.com/in/alex-morgan',
+      github_url: rawPayload.github_url || 'https://github.com/alex-morgan',
+      portfolio_url: rawPayload.portfolio_url || 'https://alexmorgan.dev',
+      school: rawPayload.school || 'Indian Institute of Technology',
+      degree: rawPayload.degree || 'B.Tech Computer Science',
+      current_title: rawPayload.current_title || 'Software Engineer Intern',
+      notice_period: rawPayload.notice_period || 'Immediate',
+      expected_salary: rawPayload.expected_salary || '6,00,000 INR (Baseline Floor)',
+      authorized_to_work: true,
+    }
+  }, [rawPayload, isSignedIn, profile])
   const applyUrl = payload.apply_url || ''
   const company = payload.company || 'Target Company'
   const roleTitle = payload.role_title || 'Software Engineer'
 
+  const fallbackCopyText = (text: string) => {
+    try {
+      const textArea = document.createElement('textarea')
+      textArea.value = text
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-999999px'
+      textArea.style.top = '-999999px'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+    } catch (e) {
+      console.warn('Fallback copy failed:', e)
+    }
+  }
+
   const copyText = (key: string, value?: string) => {
     if (!value) return
-    navigator.clipboard.writeText(value)
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).catch(() => {
+          fallbackCopyText(value)
+        })
+      } else {
+        fallbackCopyText(value)
+      }
+    } catch {
+      fallbackCopyText(value)
+    }
     setCopiedKey(key)
     setTimeout(() => setCopiedKey(null), 2000)
   }
 
   const handleLaunchAndCopyScript = () => {
     if (payload.autofill_script) {
-      navigator.clipboard.writeText(payload.autofill_script)
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(payload.autofill_script).catch(() => {
+            fallbackCopyText(payload.autofill_script)
+          })
+        } else {
+          fallbackCopyText(payload.autofill_script)
+        }
+      } catch {
+        fallbackCopyText(payload.autofill_script)
+      }
       setCopiedKey('launch_script')
       setTimeout(() => setCopiedKey(null), 3500)
     }
@@ -76,6 +179,15 @@ export default function AutoFillModal({
     { key: 'portfolio_url', label: 'Portfolio / Website', value: payload.portfolio_url, icon: Link2 },
     { key: 'first_name', label: 'First Name', value: payload.first_name, icon: User },
     { key: 'last_name', label: 'Last Name', value: payload.last_name, icon: User },
+  ]
+
+  const extendedFields = [
+    { key: 'school', label: 'College / University', value: payload.school, icon: FileText },
+    { key: 'degree', label: 'Degree / Major', value: (payload.degree ? `${payload.degree} (${payload.major || ''})` : payload.major) || '', icon: FileText },
+    { key: 'current_title', label: 'Current Designation', value: payload.current_title, icon: User },
+    { key: 'notice_period', label: 'Notice Period', value: payload.notice_period, icon: Zap },
+    { key: 'expected_salary', label: 'Expected Compensation', value: payload.expected_salary ? `₹${payload.expected_salary}` : '', icon: Zap },
+    { key: 'work_auth', label: 'Work Auth & Sponsorship', value: payload.authorized_to_work ? `Authorized: Yes | Sponsor: ${payload.requires_sponsorship || 'No'}` : '', icon: CheckCircle2 },
   ]
 
   const missingCoreIdentity = !payload.first_name || !payload.email || !payload.phone
@@ -214,7 +326,11 @@ export default function AutoFillModal({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 mb-2">
+                  Identity & Contact Tokens
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {identityFields.map((item) => {
                   const Icon = item.icon
                   const isCopied = copiedKey === item.key
@@ -247,6 +363,49 @@ export default function AutoFillModal({
                     </div>
                   )
                 })}
+              </div>
+
+              </div>
+
+              {/* Extended Academic & Work Auth Tokens */}
+              <div className="pt-2">
+                <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 mb-2">
+                  Academic, Career & Work Auth Tokens (Auto-Filled into Dropdowns & Selects)
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {extendedFields.map((item) => {
+                    const Icon = item.icon
+                    const isCopied = copiedKey === item.key
+                    return (
+                      <div
+                        key={item.key}
+                        onClick={() => item.value && copyText(item.key, item.value)}
+                        className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                          item.value
+                            ? 'bg-zinc-950/60 border-zinc-800/80 hover:border-indigo-500/40 cursor-pointer group'
+                            : 'bg-zinc-950/30 border-zinc-800/40 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Icon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">
+                              {item.label}
+                            </div>
+                            <div className="text-xs font-semibold text-zinc-200 truncate">
+                              {item.value || 'Auto-derived from resume'}
+                            </div>
+                          </div>
+                        </div>
+                        {item.value && (
+                          <span className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 group-hover:text-white shrink-0">
+                            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
               {payload.matched_skills && payload.matched_skills.length > 0 && (

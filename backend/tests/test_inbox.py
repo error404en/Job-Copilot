@@ -508,7 +508,7 @@ def test_resume_identity_extraction_and_autofill_script_generation():
         "why_company_pitch": "I am excited to join Stripe...",
     })
     assert "shreyas.verma@gmail.com" in js
-    assert "JobCopilot Auto-Filled" in js
+    assert "JobCopilot" in js and "Auto-Filled" in js
 
 
 

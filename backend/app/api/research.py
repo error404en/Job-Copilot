@@ -584,12 +584,16 @@ def deep_dive_company(req: ResearchRequest, user_id: str = Depends(get_current_u
             print(f"[DeepDive] Dropping non-official careers_url for {req.company_name}: {careers_url}")
             careers_url = None
 
+        from app.services.company_cooldown_policy import check_user_cooldown_status
+        cooldown_info = check_user_cooldown_status(user_id, req.company_name)
+
         return {
             "company_info": company_info,
             "ats_info": ats_info.model_dump() if ats_info else None,
             "careers_url": careers_url,
             "careers_url_verified": bool(careers_url),
-            "jobs": discovered_jobs or []
+            "jobs": discovered_jobs or [],
+            "cooldown_policy": cooldown_info,
         }
     finally:
         executor.shutdown(wait=False)

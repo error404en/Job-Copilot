@@ -24,7 +24,7 @@ def extract_urls(text: str) -> list[str]:
     Extracts only explicit http/https URLs from a given string.
     Does NOT auto-promote bare hostnames — PDF text is full of false positives
     (degree abbreviations like B.Tech, technical terms like Node.js, truncated
-    line-wrapped URLs like 'shreyansh-37.vercel' without the '.app' suffix).
+    line-wrapped URLs like 'portfolio-demo.vercel' without the '.app' suffix).
     """
     if not text:
         return []

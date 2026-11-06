@@ -1,93 +1,195 @@
 # ========================
+
 # Environment / Secrets
+**/.env
+**/.env.*
+**/*.env
+
 # ========================
+
 .env
+
 .env.local
+
 .env.development
+
 .env.production
+
 .env.staging
+
 *.env
 
+
+
 # ========================
+
 # Python
+
 # ========================
+
 __pycache__/
+
 *.py[cod]
+
 *$py.class
+
 *.pyo
+
 *.pyd
+
 .Python
+
 *.egg
+
 *.egg-info/
+
 dist/
+
 build/
+
 eggs/
+
 parts/
+
 var/
+
 sdist/
+
 develop-eggs/
+
 .installed.cfg
+
 # (Removed lib/ here so frontend/lib can be tracked)
+
 lib64/
+
 pip-wheel-metadata/
+
 share/python-wheels/
+
 *.so
+
 .venv/
+
 venv/
+
 ENV/
+
 env/
+
 .pytest_cache/
+
 .mypy_cache/
+
 .dmypy.json
+
 dmypy.json
 
+
+
 # ========================
+
 # Node / Next.js / Frontend
+
 # ========================
+
 node_modules/
+
 .next/
+
 out/
+
 .cache/
+
 .turbo/
+
 *.tsbuildinfo
+
 next-env.d.ts
 
+
+
 # ========================
+
 # IDE / OS
+
 # ========================
+
 .vscode/
+
 .idea/
+
 *.swp
+
 *.swo
+
 .DS_Store
+
 Thumbs.db
+
 desktop.ini
 
+
+
 # ========================
+
 # Playwright / Testing
+
 # ========================
+
 .playwright-mcp/
+
 playwright-report/
+
 test-results/
 
-# ========================
-# Agents & Workflows
-# ========================
-.agent/
-.agents/
-.gemini/
-.gsd/
-GSD-STYLE.md
-PROJECT_RULES.md
-VERSION
-adapters/
-model_capabilities.yaml
-scripts/
+
 
 # ========================
-# Misc
+
+# Agents & Workflows
+
 # ========================
+
+.agent/
+
+.agents/
+
+.gemini/
+
+.gsd/
+
+GSD-STYLE.md
+
+PROJECT_RULES.md
+
+VERSION
+
+adapters/
+
+model_capabilities.yaml
+
+scripts/
+
+
+
+# ========================
+
+# Misc
+
+# ========================
+
+backend/data_*.json
 implementation_plan.md
+
 *.log
+
 scratch/
+
 *.csv
+
+
+/*.png
+/extracted_boards/
+/unpacked_redesign.html
+/JobCopilot Redesign.html

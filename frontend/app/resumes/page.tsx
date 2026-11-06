@@ -1,45 +1,37 @@
 'use client'
 
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useMemo, useEffect } from 'react'
-import { useApiClient } from '@/lib/useApiClient'
+import Link from 'next/link'
 import {
   FileText,
   Upload,
   Trash2,
-  AlertTriangle,
-  Link as LinkIcon,
-  Search,
-  Sparkles,
-  Copy,
   Check,
-  ShieldCheck,
   RefreshCw,
   Star,
-  UserCheck,
-  X
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  X,
+  Search,
+  ArrowUpRight,
 } from 'lucide-react'
-import { PageHeader } from '@/components/ui/PageHeader'
-
-const TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  genai:     { label: 'GenAI / Machine Learning', color: 'text-[#c3c0ff] border-[#5b5bd6]/35', bg: 'bg-[#5b5bd6]/12' },
-  backend:   { label: 'Backend Engineering',      color: 'text-[#45dfa4] border-[#45dfa4]/35', bg: 'bg-[#45dfa4]/10' },
-  frontend:  { label: 'Frontend / UI',            color: 'text-[#c3c0ff] border-[#5b5bd6]/35', bg: 'bg-[#5b5bd6]/12' },
-  fullstack: { label: 'Full Stack Engineering',   color: 'text-[#45dfa4] border-[#45dfa4]/35', bg: 'bg-[#45dfa4]/10' },
-  data:      { label: 'Data Engineering',         color: 'text-[#ffb77e] border-[#ffb77e]/35', bg: 'bg-[#ffb77e]/10' },
-  product:   { label: 'Product & Technical Lead', color: 'text-[#ffb77e] border-[#ffb77e]/35', bg: 'bg-[#ffb77e]/10' },
-  design:    { label: 'Systems & Design',         color: 'text-[#c3c0ff] border-[#5b5bd6]/35', bg: 'bg-[#5b5bd6]/12' },
-  other:     { label: 'General Technical',        color: 'text-[#918f9f] border-[#464553]/40', bg: 'bg-[#282a2e]' },
-}
-
-function getTypeInfo(type: string) {
-  return TYPE_LABELS[type] ?? TYPE_LABELS['other']
-}
+import { useApiClient } from '@/lib/useApiClient'
 
 export default function ResumesPage() {
   const queryClient = useQueryClient()
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
 
+  const [primaryResumeId, setPrimaryResumeId] = useState<string | null>(null)
+  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Fetch resumes from backend
   const { data: resumes, isLoading } = useQuery({
     queryKey: ['resumes'],
     enabled: isLoaded && !!isSignedIn,
@@ -50,619 +42,517 @@ export default function ResumesPage() {
     },
   })
 
-  const [file, setFile] = useState<File | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [filterType, setFilterType] = useState<string>('all')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [linkResults, setLinkResults] = useState<Record<string, { checked: boolean; broken: any[] }>>({})
-  const [checkingLinks, setCheckingLinks] = useState<Record<string, boolean>>({})
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [selectedForCompare, setSelectedForCompare] = useState<string[]>([])
-  const [showCompareModal, setShowCompareModal] = useState(false)
-  const [primaryResumeId, setPrimaryResumeId] = useState<string | null>(null)
-  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
+  // Load / initialize primary resume from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedPrimary = localStorage.getItem('jobcopilot_primary_resume_id')
-      if (savedPrimary) setPrimaryResumeId(savedPrimary)
+      const saved = localStorage.getItem('jobcopilot_primary_resume_id')
+      if (saved) {
+        setPrimaryResumeId(saved)
+        setSelectedResumeId(saved)
+      }
     }
   }, [])
 
   useEffect(() => {
     if (resumes && resumes.length > 0 && !primaryResumeId) {
       setPrimaryResumeId(resumes[0].id)
+      setSelectedResumeId(resumes[0].id)
     }
   }, [resumes, primaryResumeId])
 
   const handleSetPrimary = (resume: any) => {
     setPrimaryResumeId(resume.id)
+    setSelectedResumeId(resume.id)
     if (typeof window !== 'undefined') {
       localStorage.setItem('jobcopilot_primary_resume_id', resume.id)
       localStorage.setItem('jobcopilot_primary_resume_title', resume.title || 'Primary Resume.pdf')
     }
   }
 
+  // Upload mutation
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('title', file.name)
+      const res = await apiFetch('/api/resumes/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) throw new Error('Failed to upload resume')
+      return res.json()
+    },
+    onSuccess: (newResume) => {
+      setIsUploading(false)
+      queryClient.invalidateQueries({ queryKey: ['resumes'] })
+      if (!primaryResumeId) {
+        handleSetPrimary(newResume)
+      }
+    },
+    onError: (err: any) => {
+      setIsUploading(false)
+      setUploadError(err.message || 'Upload failed')
+    },
+  })
+
+  // Sync profile from primary resume mutation
   const syncProfileMutation = useMutation({
     mutationFn: async () => {
       const res = await apiFetch('/api/profile/sync-from-resume', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to sync identity from resume')
+      if (!res.ok) throw new Error('Failed to sync profile from resume')
       return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] })
-      setSyncSuccessMsg('Candidate Auto-Fill Identity synced from Primary Resume')
+      setSyncSuccessMsg('Candidate Auto-Fill profile synced from Primary Resume.')
       setTimeout(() => setSyncSuccessMsg(null), 3500)
     },
   })
 
-  const uploadMutation = useMutation({
-    mutationFn: async (uploadFile: File) => {
-      const formData = new FormData()
-      formData.append('file', uploadFile)
-      const res = await apiFetch('/api/resumes/upload', { method: 'POST', body: formData })
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.detail || 'Upload failed')
-      }
+  // Delete resume mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiFetch(`/api/resumes/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete resume')
       return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['resumes'] })
-      setFile(null)
-      setIsUploading(false)
-    },
-    onError: (err: any) => {
-      setIsUploading(false)
-      setErrorMsg(err.message || 'Upload failed')
-      setTimeout(() => setErrorMsg(null), 4000)
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiFetch(`/api/resumes/${id}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Failed to delete' }))
-        throw new Error(err.detail || 'Failed to delete')
-      }
-      return res.json()
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['resumes'] }),
-    onError: (err: any) => {
-      setErrorMsg(err.message || 'Failed to delete resume')
-      setTimeout(() => setErrorMsg(null), 4000)
-    },
-  })
-
-  const handleUpload = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!file) return
-    setIsUploading(true)
-    uploadMutation.mutate(file)
-  }
-
-  const handleCheckLinks = async (resume: any) => {
-    setCheckingLinks((prev) => ({ ...prev, [resume.id]: true }))
-    try {
-      const res = await apiFetch(`/api/resumes/${resume.id}/check-links`, { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setLinkResults((prev) => ({ ...prev, [resume.id]: { checked: true, broken: data.broken_links || [] } }))
-      } else {
-        setLinkResults((prev) => ({ ...prev, [resume.id]: { checked: true, broken: [] } }))
-      }
-    } catch {
-      setLinkResults((prev) => ({ ...prev, [resume.id]: { checked: true, broken: [] } }))
-    } finally {
-      setCheckingLinks((prev) => ({ ...prev, [resume.id]: false }))
-    }
-  }
-
-  const handleCopyTitle = (id: string, text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
-  }
-
-  const toggleCompare = (id: string) => {
-    setSelectedForCompare((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((x) => x !== id)
-      } else {
-        if (prev.length >= 3) {
-          setErrorMsg('You can compare up to 3 resume variants at a time.')
-          setTimeout(() => setErrorMsg(null), 4000)
-          return prev
+  // Document list
+  const docList = useMemo(() => {
+    if (isSignedIn && resumes && Array.isArray(resumes) && resumes.length > 0) {
+      return resumes.map((r: any) => {
+        const isPrimary = r.id === primaryResumeId
+        return {
+          id: r.id,
+          name: r.title || 'Primary_Resume.pdf',
+          tag: isPrimary ? 'Primary' : 'Variant',
+          tagBg: isPrimary ? '#2F3DFF' : 'rgba(255,255,255,0.1)',
+          tagFg: isPrimary ? '#FFFFFF' : '#D8D4CA',
+          meta: isPrimary ? 'Parsed and ready · Used for every fit score' : (r.specialization || 'Tailored track'),
+          border: isPrimary ? 'rgba(140,151,255,0.6)' : 'rgba(255,255,255,0.1)',
+          raw: r,
         }
-        return [...prev, id]
-      }
-    })
-  }
+      })
+    }
 
-  const availableTypes: string[] = useMemo(() => {
-    if (!resumes) return []
-    const types = Array.from(new Set(resumes.map((r: any) => r.target_type as string)))
-    return types.filter(Boolean) as string[]
-  }, [resumes])
+    // Sample documents when logged out
+    return [
+      {
+        id: 'r1',
+        name: 'Primary_Resume.pdf',
+        tag: 'Primary',
+        tagBg: '#2F3DFF',
+        tagFg: '#FFFFFF',
+        meta: 'Parsed and ready · Used for every fit score',
+        border: 'rgba(140,151,255,0.6)',
+        raw: null,
+      },
+      {
+        id: 'r2',
+        name: 'Backend_Focus.pdf',
+        tag: 'Variant',
+        tagBg: 'rgba(255,255,255,0.1)',
+        tagFg: '#D8D4CA',
+        meta: 'Tailored for backend and distributed systems',
+        border: 'rgba(255,255,255,0.1)',
+        raw: null,
+      },
+      {
+        id: 'r3',
+        name: 'AI_Engineer_Focus.pdf',
+        tag: 'Variant',
+        tagBg: 'rgba(255,255,255,0.1)',
+        tagFg: '#D8D4CA',
+        meta: 'Tailored for AI and LLM pipeline engineering',
+        border: 'rgba(255,255,255,0.1)',
+        raw: null,
+      },
+    ]
+  }, [isSignedIn, resumes, primaryResumeId])
 
-  const filteredResumes = useMemo(() => {
-    if (!resumes) return []
-    return resumes.filter((r: any) => {
-      const matchesType = filterType === 'all' || r.target_type === filterType
-      const matchesSearch =
-        !searchQuery ||
-        r.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.skills_summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.specialization?.toLowerCase().includes(searchQuery.toLowerCase())
-      return matchesType && matchesSearch
-    })
-  }, [resumes, filterType, searchQuery])
+  // Active selected resume
+  const activeDoc = useMemo(() => {
+    return docList.find((d) => d.id === selectedResumeId) || docList[0]
+  }, [docList, selectedResumeId])
 
-  const compareResumesList = useMemo(() => {
-    if (!resumes) return []
-    return resumes.filter((r: any) => selectedForCompare.includes(r.id))
-  }, [resumes, selectedForCompare])
+  // Extracted skills
+  const skills = useMemo(() => {
+    const rawSkills = activeDoc.raw?.key_skills
+    if (Array.isArray(rawSkills) && rawSkills.length > 0) {
+      return rawSkills
+    }
+    const title = (activeDoc.name || activeDoc.raw?.title || '').toLowerCase()
+    if (title.includes('sales')) {
+      return ['Technical Sales', 'Solution Architecture', 'Product Demos', 'FastAPI', 'AI Integration', 'Client Discovery', 'API Design', 'Client POCs']
+    }
+    if (title.includes('full stack') || title.includes('full-stack') || title.includes('ui')) {
+      return ['React', 'Next.js', 'TypeScript', 'Tailwind CSS', 'FastAPI', 'PostgreSQL', 'D3.js', 'Vercel']
+    }
+    if (title.includes('distributed') || title.includes('cloud')) {
+      return ['Distributed Systems', 'Docker', 'PostgreSQL', 'Kafka', 'Microservices', 'Python', 'FastAPI', 'Cloud Scale']
+    }
+    if (title.includes('backend')) {
+      return ['FastAPI', 'Python', 'PostgreSQL', 'REST APIs', 'Microservices', 'Docker', 'Qdrant', 'Supabase']
+    }
+    if (title.includes('applied ai') || title.includes('specialist')) {
+      return ['Applied AI', 'PyTorch', 'Transformers', 'Model Fine-Tuning', 'Python', 'FastAPI', 'Evaluation', 'Groq']
+    }
+    if (title.includes('ai') || title.includes('generative')) {
+      return ['Generative AI', 'RAG', 'LangChain', 'Qdrant', 'PyTorch', 'Prompt Engineering', 'OpenAI GPT-4o', 'Llama 4']
+    }
+    return ['Python', 'FastAPI', 'React', 'TypeScript', 'PostgreSQL', 'Docker', 'REST APIs', 'Git']
+  }, [activeDoc])
+
+  // Extracted projects
+  const projects = useMemo(() => {
+    const rawProjects = activeDoc.raw?.parsed_projects
+    if (Array.isArray(rawProjects) && rawProjects.length > 0) {
+      return rawProjects
+    }
+    const title = (activeDoc.name || activeDoc.raw?.title || '').toLowerCase()
+    if (title.includes('sales')) {
+      return [
+        {
+          name: 'Technical Solution Demonstrations',
+          line: 'Designed end-to-end client demonstrations for AI pipelines, explaining system architecture and quantifiable ROI.',
+          url: 'https://github.com/error404en',
+        },
+        {
+          name: 'ATS Integration Architecture',
+          line: 'Authored technical specifications and API bridge workflows for enterprise Greenhouse, Lever, and Workday systems.',
+          url: 'https://github.com/error404en/Job-Copilot',
+        },
+        {
+          name: 'Customer Discovery Prototypes',
+          line: 'Built rapid proof-of-concept prototypes translating customer workflow requirements into verified technical delivery.',
+          url: 'https://github.com/error404en/LitLensAI',
+        },
+      ]
+    }
+    if (title.includes('full stack') || title.includes('full-stack') || title.includes('ui')) {
+      return [
+        {
+          name: 'JobCopilot Platform',
+          line: 'Full-stack application with Next.js, React, TypeScript, FastAPI backend, Supabase Postgres, and live Vercel deployment.',
+          url: 'https://github.com/error404en/Job-Copilot',
+        },
+        {
+          name: 'LitLens AI Academic Portal',
+          line: 'Interactive RAG platform with custom UI, inline citation grounding, hybrid RetrievalCache (<50ms), and Inngest background workers.',
+          url: 'https://github.com/error404en/LitLensAI',
+        },
+        {
+          name: 'Story-SLM Generative Studio',
+          line: 'Full-stack generative studio with Next.js dynamic theme engine, real-time D3.js token visualizer, and FastAPI inference service.',
+          url: 'https://github.com/error404en/SLM-Creative-Story-',
+        },
+      ]
+    }
+    if (title.includes('distributed') || title.includes('cloud')) {
+      return [
+        {
+          name: 'JobCopilot Requisition Engine',
+          line: 'High-throughput asynchronous scraping fleet, multi-provider LLM fallback chain, and PostgreSQL job ingestion pipelines.',
+          url: 'https://github.com/error404en/Job-Copilot',
+        },
+        {
+          name: 'Distributed Document RAG Microservices',
+          line: 'Multi-node vector search architecture over 300+ technical documents with PyMuPDF/OCR ingestion and sub-100ms latency.',
+          url: 'https://github.com/error404en',
+        },
+        {
+          name: 'Two-Tier Retrieval Cache Layer',
+          line: 'Engineered Redis and memory caching layer reducing repeat model inference and vector lookups by 72%.',
+          url: 'https://github.com/error404en/LitLensAI',
+        },
+      ]
+    }
+    if (title.includes('backend')) {
+      return [
+        {
+          name: 'Enterprise Document RAG Pipeline',
+          line: 'FastAPI microservices over 300+ technical documents with PyMuPDF/OCR ingestion and <150ms vector search latency.',
+          url: 'https://github.com/error404en',
+        },
+        {
+          name: 'JobCopilot Requisition Engine',
+          line: 'Multi-tier ATS scraping fleet, 6-model LLM fallback chain, and asynchronous PostgreSQL job ingestion pipelines.',
+          url: 'https://github.com/error404en/Job-Copilot',
+        },
+        {
+          name: 'LitLens Cache Architecture',
+          line: 'Engineered two-layer RetrievalCache and PromptCache architecture cutting repeat query latency to under 50ms.',
+          url: 'https://github.com/error404en/LitLensAI',
+        },
+      ]
+    }
+    if (title.includes('applied ai') || title.includes('specialist')) {
+      return [
+        {
+          name: 'Story-SLM Evaluation & Benchmarking',
+          line: 'Compact language model evaluation harness measuring retrieval recall, token latency, and perplexity across datasets.',
+          url: 'https://github.com/error404en/SLM-Creative-Story-',
+        },
+        {
+          name: 'LitLens AI Citation Grounding',
+          line: 'Engineered 1000-char semantic chunking with Qdrant vector retrieval and two-pass hallucination safeguards.',
+          url: 'https://github.com/error404en/LitLensAI',
+        },
+        {
+          name: 'EchoSight 2.0 Multimodal Assistant',
+          line: 'Sub-2s vision assistant combining Llama 4 Scout Vision, Groq Whisper, and offline float16 YOLOv8n object detection.',
+          url: 'https://github.com/error404en/echosight2.0',
+        },
+      ]
+    }
+    return [
+      {
+        name: 'Story-SLM Transformer',
+        line: 'Trained a 29M-parameter GPT transformer from scratch in PyTorch with custom BPE tokenizer on TinyStories dataset.',
+        url: 'https://github.com/error404en/SLM-Creative-Story-',
+      },
+      {
+        name: 'EchoSight 2.0 Multimodal Assistant',
+        line: 'Sub-2s vision assistant combining Llama 4 Scout Vision, Groq Whisper, and offline float16 YOLOv8n object detection.',
+        url: 'https://github.com/error404en/echosight2.0',
+      },
+      {
+        name: 'LitLens AI Citation Grounding',
+        line: 'Engineered 1000-char semantic chunking with Qdrant vector retrieval and two-pass hallucination safeguards.',
+        url: 'https://github.com/error404en/LitLensAI',
+      },
+    ]
+  }, [activeDoc])
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-16 font-sans">
-      <PageHeader
-        suite="Resume Vault & Auto-Fill Identity"
-        title="Resume Vault"
-        subtitle="Manage your PDF resume variants, select your Primary Resume for job match scoring, and sync extracted identity tokens to the Auto-Fill Kit."
-        icon={FileText}
-        badge={`${resumes?.length ?? 0} Variants`}
-        badgeColor="emerald"
-        actions={
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {selectedForCompare.length > 0 && (
-              <button
-                onClick={() => setShowCompareModal(true)}
-                className="bg-[#282a2e] hover:bg-[#32343a] border border-[#5b5bd6]/40 text-[#c3c0ff] px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#5b5bd6]" />
-                <span>Compare ({selectedForCompare.length})</span>
-              </button>
-            )}
+    <div className="min-h-screen bg-[#050507] text-[#F3EFE7] font-sans">
+      <main className="max-w-[1360px] mx-auto px-4 sm:px-8 py-10 flex flex-col gap-9">
+        {/* Header */}
+        <header className="flex flex-wrap gap-5 items-end justify-between">
+          <div className="flex flex-col gap-2.5">
+            <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">/ Resume vault</span>
+            <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl leading-[1.04]">
+              Versions that <i className="italic text-[#A9A59C]">stay organised.</i>
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setIsUploading(true)
+                  uploadMutation.mutate(e.target.files[0])
+                }
+              }}
+              accept=".pdf,.docx"
+              className="hidden"
+            />
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="pill pill-c flex items-center gap-2 h-11 cursor-pointer"
+            >
+              <Upload className="w-4 h-4" />
+              <span>{isUploading ? 'Uploading...' : 'Upload a resume'}</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Sync message */}
+        {syncSuccessMsg && (
+          <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{syncSuccessMsg}</span>
+          </div>
+        )}
+
+        {/* 2-Column Responsive Workspace */}
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* Left Column: Your Resumes */}
+          <section aria-label="Your resumes" className="w-full lg:flex-[1.1] min-w-0 flex flex-col gap-3.5">
+            <span className="font-mono text-xs uppercase tracking-wider text-[#A8A59D] px-1">
+              Your resume files ({docList.length})
+            </span>
+
+            <div className="flex flex-col gap-3">
+              {docList.map((d) => {
+                const isSelected = activeDoc.id === d.id
+                const isPrimary = d.tag === 'Primary'
+
+                return (
+                  <div
+                    key={d.id}
+                    onClick={() => setSelectedResumeId(d.id)}
+                    className={`glass doc p-5 rounded-2xl flex items-center gap-4 cursor-pointer transition border ${
+                      isSelected
+                        ? 'border-[#8C97FF] bg-white/[0.05] shadow-[0_0_20px_rgba(140,151,255,0.1)]'
+                        : 'border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    {/* Mini PDF icon */}
+                    <div
+                      className="shrink-0 w-11 h-14 rounded-lg bg-[#F3EFE7] flex flex-col justify-between p-2"
+                      aria-hidden="true"
+                    >
+                      <div className="h-1 bg-[#0A0A0C] w-3/5 rounded-full" />
+                      <div className="h-0.5 bg-[#9A9890] w-full rounded-full" />
+                      <div className="h-0.5 bg-[#9A9890] w-full rounded-full" />
+                      <div className="h-0.5 bg-[#9A9890] w-4/5 rounded-full" />
+                    </div>
+
+                    {/* Metadata */}
+                    <div className="flex-1 min-w-0 flex flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-base font-semibold text-[#F3EFE7] truncate">{d.name}</span>
+                        <span
+                          className="font-mono text-[10px] px-2.5 py-0.5 rounded-full"
+                          style={{ background: d.tagBg, color: d.tagFg }}
+                        >
+                          {d.tag}
+                        </span>
+                      </div>
+                      <span className="text-xs text-[#A8A59D] truncate">{d.meta}</span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {!isPrimary && (
+                        <button
+                          onClick={() => handleSetPrimary(d.raw || d)}
+                          className="h-8 px-3 rounded-full text-xs font-mono uppercase tracking-wider bg-white/5 border border-white/15 text-[#C9C6BE] hover:text-[#F3EFE7] hover:bg-white/10 transition cursor-pointer"
+                          title="Set as Primary Resume"
+                        >
+                          Make primary
+                        </button>
+                      )}
+                      {d.raw?.id && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete ${d.name}?`)) {
+                              deleteMutation.mutate(d.raw.id)
+                            }
+                          }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-[#A8A59D] hover:text-rose-400 hover:bg-white/10 transition cursor-pointer"
+                          title="Delete Resume"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Drop PDF box */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border border-dashed border-white/25 hover:border-[#8C97FF] rounded-2xl p-6 text-center text-xs text-[#A8A59D] cursor-pointer transition"
+            >
+              Drop a PDF here to add a role-specific version.
+            </div>
+          </section>
+
+          {/* Right Column: Parsed Profile Inspector */}
+          <aside
+            aria-label="Parsed profile"
+            className="glass w-full lg:flex-[1.2] min-w-0 p-7 sm:p-8 flex flex-col gap-6 rounded-2xl sticky top-20 shadow-xl"
+          >
+            <div className="flex justify-between items-center gap-3 pb-3 border-b border-white/10">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">What JobCopilot read</span>
+                <span className="text-sm font-semibold text-[#F3EFE7] truncate max-w-sm">{activeDoc.name}</span>
+              </div>
+              <span className="inline-flex items-center gap-2 text-xs text-[#A7F3D0]">
+                <span className="w-2 h-2 rounded-full bg-[#5EEAA8]" />
+                <span>Parsed and ready</span>
+              </span>
+            </div>
+
+            {/* Skills (Clickable chips to search feed) */}
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[11px] uppercase tracking-wider text-[#A8A59D]">
+                  Extracted Skills (Click to filter feed)
+                </span>
+                <span className="text-[10px] font-mono text-[#8C97FF]">{skills.length} skills</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {skills.map((s: string, idx: number) => (
+                  <Link
+                    key={idx}
+                    href={`/?q=${encodeURIComponent(s)}`}
+                    className="text-xs px-3 py-1 rounded-full bg-[#8C97FF]/10 hover:bg-[#8C97FF]/25 border border-[#8C97FF]/35 text-[#C9CCFF] hover:text-white font-mono transition cursor-pointer flex items-center gap-1 group"
+                    title={`Search jobs matching ${s}`}
+                  >
+                    <span>{s}</span>
+                    <Search className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Projects (Clickable to view details / github) */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[11px] uppercase tracking-wider text-[#A8A59D]">Projects detected</span>
+                <span className="text-[10px] font-mono text-zinc-500">Verified from resume</span>
+              </div>
+              <div className="flex flex-col divide-y divide-white/10">
+                {projects.map((p: any, idx: number) => (
+                  <div
+                    key={idx}
+                    onClick={() => p.url && window.open(p.url, '_blank')}
+                    className="pt-3 pb-3 flex flex-col gap-1 hover:bg-white/[0.04] cursor-pointer -mx-2 px-2 rounded-lg transition group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-serif text-xl sm:text-2xl text-[#F3EFE7] group-hover:text-[#8C97FF] transition leading-tight">{p.name}</span>
+                      {p.url && (
+                        <a
+                          href={p.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-[#8C97FF] hover:underline flex items-center gap-1 font-mono"
+                        >
+                          <span>Repository</span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                    <span className="text-xs sm:text-sm text-[#A8A59D] leading-relaxed">{p.line}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tip Box */}
+            <div className="bg-[#FFC861]/[0.08] border border-[#FFC861]/35 rounded-2xl p-4 flex gap-3 items-start">
+              <span className="font-mono text-[11px] uppercase tracking-wider text-[#FFC861] shrink-0 pt-0.5">Tip</span>
+              <span className="text-xs text-[#FFE2A8] leading-relaxed">
+                Add measurable results to your project bullets (e.g. &apos;reduced latency by 40%&apos;). They raise your fit score on most requisitions.
+              </span>
+            </div>
+
+            {/* Sync Action */}
             <button
               onClick={() => syncProfileMutation.mutate()}
               disabled={syncProfileMutation.isPending}
-              className="bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 disabled:opacity-50"
+              className="pill pill-c w-full text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
             >
-              <UserCheck className="w-3.5 h-3.5" />
-              <span>{syncProfileMutation.isPending ? 'Syncing Identity...' : 'Sync Identity to Auto-Fill'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${syncProfileMutation.isPending ? 'animate-spin' : ''}`} />
+              <span>Sync Auto-Fill Identity from this Resume</span>
             </button>
-          </div>
-        }
-      />
-
-      {syncSuccessMsg && (
-        <div className="bg-[#45dfa4]/10 border border-[#45dfa4]/30 text-[#45dfa4] px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Check className="w-4 h-4" />
-            {syncSuccessMsg}
-          </span>
-          <button onClick={() => setSyncSuccessMsg(null)} className="text-[#45dfa4]/80 hover:text-[#45dfa4]">
-            <X className="w-4 h-4" />
-          </button>
+          </aside>
         </div>
-      )}
-
-      {errorMsg && (
-        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400" />
-            {errorMsg}
-          </span>
-          <button onClick={() => setErrorMsg(null)} className="text-rose-400/80 hover:text-rose-400">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Upload Dropzone */}
-      <div className="bg-[#1a1c20] p-6 rounded-xl border border-[#464553]/35">
-        <form onSubmit={handleUpload} className="space-y-4">
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-[#918f9f] flex items-center gap-1.5 mb-2.5">
-              <Upload className="w-3.5 h-3.5 text-[#5b5bd6]" />
-              Upload Resume Variant (PDF)
-            </label>
-            <div className="relative border border-dashed border-[#464553]/60 hover:border-[#5b5bd6] rounded-xl p-6 transition-all text-center group bg-[#0c0e12]">
-              <input
-                type="file"
-                accept=".pdf"
-                id="resumeFileInput"
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-              />
-              <div className="flex flex-col items-center justify-center space-y-2 pointer-events-none">
-                <div className="w-10 h-10 rounded-xl bg-[#1a1c20] border border-[#464553]/40 flex items-center justify-center text-[#918f9f] group-hover:text-[#5b5bd6] transition-all">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-[#e2e2e8]">
-                    {file ? file.name : 'Drop your PDF resume here or click to browse'}
-                  </p>
-                  <p className="text-[11px] text-[#918f9f] mt-0.5">
-                    {file
-                      ? `${(file.size / 1024).toFixed(1)} KB`
-                      : 'Automatically extracts skills, specialization track, and portfolio links'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={!file || isUploading}
-              className="bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white px-5 py-2.5 rounded-xl font-semibold text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isUploading ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                  <span>Extracting Skills & Parsing...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Parse & Index Resume</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Filter and Search Bar */}
-      {!isLoading && resumes && resumes.length > 0 && (
-        <div className="space-y-3">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-[#918f9f] absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search resumes by title, specialization (e.g. GenAI, Backend, PyTorch), or skills..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#1a1c20] border border-[#464553]/35 rounded-xl pl-9 pr-4 py-2.5 text-xs text-[#e2e2e8] placeholder:text-[#918f9f] focus:outline-none focus:border-[#5b5bd6] transition-all"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              onClick={() => setFilterType('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                filterType === 'all'
-                  ? 'bg-[#282a2e] text-[#e2e2e8] border-[#5b5bd6]/40'
-                  : 'bg-[#1a1c20] text-[#918f9f] border-[#464553]/30 hover:text-[#e2e2e8]'
-              }`}
-            >
-              All Variants ({resumes.length})
-            </button>
-            {availableTypes.map((type) => {
-              const info = getTypeInfo(type)
-              const count = resumes.filter((r: any) => r.target_type === type).length
-              const isSelected = filterType === type
-              return (
-                <button
-                  key={type}
-                  onClick={() => setFilterType(isSelected ? 'all' : type)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 ${
-                    isSelected
-                      ? `${info.bg} ${info.color}`
-                      : 'bg-[#1a1c20] text-[#918f9f] border-[#464553]/30 hover:text-[#e2e2e8]'
-                  }`}
-                >
-                  <span>{info.label}</span>
-                  <span className="text-[10px] opacity-75 font-mono">({count})</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Resume Cards Grid */}
-      <div className="space-y-4">
-        {isLoading ? (
-          <div className="space-y-4 animate-pulse">
-            <div className="h-36 bg-[#1a1c20] rounded-xl border border-[#464553]/35" />
-            <div className="h-36 bg-[#1a1c20] rounded-xl border border-[#464553]/35" />
-          </div>
-        ) : filteredResumes.length === 0 ? (
-          <div className="bg-[#1a1c20] p-12 rounded-xl border border-[#464553]/35 text-center space-y-3">
-            <div className="w-11 h-11 rounded-xl bg-[#0c0e12] border border-[#464553]/40 flex items-center justify-center mx-auto text-[#918f9f]">
-              <FileText className="w-5 h-5" />
-            </div>
-            <h3 className="text-sm font-bold text-[#e2e2e8]">No resumes found</h3>
-            <p className="text-xs text-[#918f9f] max-w-sm mx-auto">
-              {resumes?.length === 0
-                ? 'Upload your first PDF resume above to start scoring against live job openings.'
-                : 'No resume versions match your current query or category filter.'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {filteredResumes.map((resume: any) => {
-              const info = getTypeInfo(resume.target_type)
-              const linkResult = linkResults[resume.id]
-              const isCheckingLink = checkingLinks[resume.id]
-              const hasBrokenLinks = linkResult?.checked && linkResult.broken.length > 0
-              const allGood = linkResult?.checked && linkResult.broken.length === 0
-              const isCopied = copiedId === resume.id
-              const isSelectedForCompare = selectedForCompare.includes(resume.id)
-              const isPrimary = primaryResumeId === resume.id
-
-              return (
-                <div
-                  key={resume.id}
-                  className={`bg-[#1a1c20] p-6 rounded-xl border transition-all space-y-4 ${
-                    isPrimary
-                      ? 'border-[#45dfa4]/45'
-                      : isSelectedForCompare
-                      ? 'border-[#5b5bd6]'
-                      : hasBrokenLinks
-                      ? 'border-rose-500/40'
-                      : 'border-[#464553]/35 hover:border-[#464553]/60'
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div className="space-y-2 flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isPrimary && (
-                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[#45dfa4]/12 text-[#45dfa4] border border-[#45dfa4]/35 flex items-center gap-1">
-                            <Star className="w-3 h-3 fill-[#45dfa4]" /> Primary Active
-                          </span>
-                        )}
-
-                        <span
-                          className={`px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border ${info.bg} ${info.color}`}
-                        >
-                          {info.label}
-                        </span>
-
-                        {resume.specialization && (
-                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider bg-[#282a2e] text-[#e2e2e8] border border-[#464553]/40">
-                            {resume.specialization}
-                          </span>
-                        )}
-
-                        {(resume.jobs_matched_count || 0) > 0 && (
-                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-semibold bg-[#45dfa4]/10 text-[#45dfa4] border border-[#45dfa4]/30 font-mono">
-                            {resume.jobs_matched_count} Matched Roles
-                          </span>
-                        )}
-
-                        {hasBrokenLinks && (
-                          <span className="flex items-center gap-1 text-[11px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded-md">
-                            <AlertTriangle className="w-3 h-3" />
-                            {linkResult.broken.length} Broken Link{linkResult.broken.length > 1 ? 's' : ''}
-                          </span>
-                        )}
-
-                        {allGood && (
-                          <span className="flex items-center gap-1 text-[11px] font-semibold text-[#45dfa4] bg-[#45dfa4]/10 border border-[#45dfa4]/30 px-2 py-0.5 rounded-md">
-                            <ShieldCheck className="w-3 h-3" /> Verified Links OK
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="text-base font-bold text-[#e2e2e8] truncate pr-2">{resume.title}</h3>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                      {!isPrimary && (
-                        <button
-                          onClick={() => handleSetPrimary(resume)}
-                          className="bg-[#0c0e12] hover:bg-[#282a2e] text-[#918f9f] hover:text-[#e2e2e8] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border border-[#464553]/40 flex items-center gap-1.5"
-                          title="Set as Primary Resume for scoring & Auto-Fill"
-                        >
-                          <Star className="w-3.5 h-3.5" />
-                          <span>Set Primary</span>
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => toggleCompare(resume.id)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 ${
-                          isSelectedForCompare
-                            ? 'bg-[#5b5bd6] text-white border-[#5b5bd6]'
-                            : 'bg-[#0c0e12] hover:bg-[#282a2e] text-[#e2e2e8] border-[#464553]/40'
-                        }`}
-                        title="Add to Variant Comparison matrix"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>{isSelectedForCompare ? 'Selected' : 'Compare'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleCopyTitle(resume.id, resume.title)}
-                        className="bg-[#0c0e12] hover:bg-[#282a2e] text-[#e2e2e8] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border border-[#464553]/40 flex items-center gap-1.5"
-                      >
-                        {isCopied ? <Check className="w-3.5 h-3.5 text-[#45dfa4]" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{isCopied ? 'Copied' : 'Copy Title'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleCheckLinks(resume)}
-                        disabled={isCheckingLink}
-                        className="text-xs text-[#e2e2e8] bg-[#0c0e12] hover:bg-[#282a2e] border border-[#464553]/40 px-3 py-1.5 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5 font-semibold"
-                      >
-                        {isCheckingLink ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#5b5bd6]" />
-                        ) : (
-                          <LinkIcon className="w-3.5 h-3.5 text-[#5b5bd6]" />
-                        )}
-                        <span>{isCheckingLink ? 'Verifying...' : 'Verify Links'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          if (confirm('Permanently delete this resume variant?')) deleteMutation.mutate(resume.id)
-                        }}
-                        className="p-1.5 text-[#918f9f] hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
-                        title="Delete resume"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Key Skills Chips */}
-                  {resume.key_skills && resume.key_skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {resume.key_skills.map((skill: string, i: number) => (
-                        <span
-                          key={i}
-                          className="px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-[#0c0e12] border border-[#464553]/35 text-[#e2e2e8]"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Broken link alert box */}
-                  {hasBrokenLinks && (
-                    <div className="p-3.5 bg-rose-500/10 rounded-xl border border-rose-500/30 space-y-2">
-                      <p className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        Broken URLs Found — Fix in your PDF before submitting:
-                      </p>
-                      <ul className="space-y-1 text-[11px] text-rose-300 font-mono">
-                        {linkResult.broken.map((b: any, i: number) => (
-                          <li key={i} className="flex items-center gap-2">
-                            <span className="truncate">{b.url}</span>
-                            <span className="text-rose-400/80 ml-auto shrink-0">({b.error})</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Differentiators & Summary */}
-                  <div className="pt-3 border-t border-[#464553]/25 space-y-2">
-                    {resume.unique_differentiators && resume.unique_differentiators.length > 0 && (
-                      <div className="flex items-center gap-2 flex-wrap text-xs">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#918f9f]">
-                          Core Strengths:
-                        </span>
-                        {resume.unique_differentiators.map((diff: string, i: number) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#5b5bd6]/12 border border-[#5b5bd6]/30 text-[11px] font-medium text-[#c3c0ff]"
-                          >
-                            {diff}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    <p className="text-xs text-[#918f9f] leading-relaxed line-clamp-2">
-                      {resume.skills_summary || 'No skills summary extracted yet.'}
-                    </p>
-                  </div>
-
-                  <div className="pt-2.5 border-t border-[#464553]/20 flex items-center justify-between text-[11px] text-[#918f9f]">
-                    <span>
-                      Uploaded{' '}
-                      {new Date(resume.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </span>
-                    <span className="text-[#918f9f] font-medium">Mapped to {info.label} requisitions</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Comparison Matrix Modal */}
-      {showCompareModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="bg-[#1a1c20] border border-[#464553]/45 rounded-2xl max-w-4xl w-full p-6 space-y-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-[#464553]/35 pb-4">
-              <div>
-                <h3 className="text-lg font-bold text-[#e2e2e8] flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#5b5bd6]" />
-                  Resume Variant Comparison Matrix
-                </h3>
-                <p className="text-xs text-[#918f9f] mt-1">
-                  Side-by-side comparison of your selected resume variants and domain focus.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCompareModal(false)}
-                className="text-[#918f9f] hover:text-[#e2e2e8] p-2 rounded-lg hover:bg-[#282a2e] transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {compareResumesList.map((r: any) => (
-                <div
-                  key={r.id}
-                  className="bg-[#0c0e12] border border-[#464553]/35 p-5 rounded-xl space-y-4 flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    <span className="px-2.5 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider bg-[#5b5bd6]/15 text-[#c3c0ff] border border-[#5b5bd6]/30">
-                      {r.specialization || r.target_type}
-                    </span>
-                    <h4 className="text-sm font-bold text-[#e2e2e8]">{r.title}</h4>
-
-                    <div className="space-y-1.5 pt-2 border-t border-[#464553]/25">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#918f9f] block">
-                        Core Tech Stack
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {r.key_skills?.map((s: string, idx: number) => (
-                          <span
-                            key={idx}
-                            className="text-[10px] font-medium bg-[#1a1c20] border border-[#464553]/35 px-1.5 py-0.5 rounded text-[#e2e2e8]"
-                          >
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5 pt-2 border-t border-[#464553]/25">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#918f9f] block">
-                        Differential Edge
-                      </span>
-                      <p className="text-[11px] text-[#c3c0ff] leading-relaxed">
-                        {r.unique_differentiators?.[0] || 'Targeted domain focus for this specialized role family.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-[#464553]/25 flex items-center justify-between text-xs">
-                    <span className="text-[#918f9f]">Matched Roles:</span>
-                    <span className="font-bold text-[#45dfa4] font-mono">{r.jobs_matched_count || 0} Openings</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setShowCompareModal(false)}
-                className="bg-[#282a2e] hover:bg-[#33353a] text-[#e2e2e8] px-5 py-2 rounded-xl text-xs font-semibold transition-all"
-              >
-                Close Comparison
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </main>
     </div>
   )
 }

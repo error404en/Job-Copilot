@@ -5,9 +5,12 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useApiClient } from '@/lib/useApiClient'
+import { useViewedJobs } from '@/lib/useViewedJobs'
 import TailoringStudio from './TailoringStudio'
 import CopilotCoach from '@/components/CopilotCoach'
 import AutoFillModal from '@/components/AutoFillModal'
+import CompanyDeepDiveModal from '@/components/CompanyDeepDiveModal'
+import CareersPortalExplorer from '@/components/CareersPortalExplorer'
 import { 
   ArrowUpRight, 
   Zap, 
@@ -42,8 +45,20 @@ import {
   GraduationCap,
   X,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Eye,
+  EyeOff,
+  Globe,
+  Laptop,
+  IndianRupee,
 } from 'lucide-react'
+import { 
+  getJobWorkMode, 
+  getJobCompensation, 
+  getJobReleaseInfo, 
+  getCompanyMonogram, 
+  getCompanyMonogramGradient 
+} from '@/app/page'
 
 function formatSeniority(sen?: string): string {
   if (!sen) return 'Not Stated'
@@ -133,6 +148,7 @@ export default function JobDetailPage() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
+  const { isViewed, markAsViewed, markAsUnviewed } = useViewedJobs()
   
   const jobId = params.id as string
   const initialTab = (searchParams.get('tab') as any) || 'analysis'
@@ -146,6 +162,14 @@ export default function JobDetailPage() {
   const [jdSearchQuery, setJdSearchQuery] = useState('')
   const [autoFillModalData, setAutoFillModalData] = useState<any | null>(null)
   const [isSyncingResume, setIsSyncingResume] = useState(false)
+  const [deepDiveOpen, setDeepDiveOpen] = useState(false)
+
+  // Auto-mark as viewed when user inspects the full job page
+  useEffect(() => {
+    if (jobId) {
+      markAsViewed(jobId)
+    }
+  }, [jobId, markAsViewed])
 
   // Sync tab with URL search parameter and sessionStorage on browser popstate / back button / mount
   useEffect(() => {
@@ -231,15 +255,27 @@ export default function JobDetailPage() {
   // Mutations
   const updateJobMutation = useMutation({
     mutationFn: async (updates: any) => {
+      if ('is_bookmarked' in updates && Object.keys(updates).length === 1) {
+        const res = await apiFetch(`/api/jobs/${jobId}/bookmark`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_bookmarked: updates.is_bookmarked }),
+        })
+        if (!res.ok) throw new Error('Failed to update bookmark')
+        return res.json()
+      }
       const res = await apiFetch(`/api/jobs/${jobId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(updates),
       })
       if (!res.ok) throw new Error('Failed to update job')
       return res.json()
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['job', jobId] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    },
   })
 
   const reanalyzeMutation = useMutation({
@@ -319,6 +355,15 @@ export default function JobDetailPage() {
 
   const autoApplyMutation = useMutation({
     mutationFn: async ({ url, jobId }: { url: string; jobId: string }) => {
+      // 1. Fetch Auto-Fill data packet immediately from /api/auto-apply/data (fast & resilient)
+      const dataRes = await apiFetch(
+        `/api/auto-apply/data?url=${encodeURIComponent(url || '')}&job_id=${encodeURIComponent(jobId || '')}`
+      )
+      if (dataRes.ok) {
+        const packet = await dataRes.json()
+        return { autofill: packet, ...packet }
+      }
+      // 2. Fallback to POST /api/applications/auto-apply
       const res = await apiFetch('/api/applications/auto-apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -330,6 +375,9 @@ export default function JobDetailPage() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       setAutoFillModalData(data)
+    },
+    onError: (err: any) => {
+      console.error('AutoApply mutation error:', err)
     }
   })
 
@@ -351,7 +399,15 @@ export default function JobDetailPage() {
     }
   }
 
-  const toggleBookmark = () => updateJobMutation.mutate({ is_bookmarked: !job?.is_bookmarked })
+  const toggleBookmark = () => {
+    const nextBm = !job?.is_bookmarked
+    queryClient.setQueryData(['job', jobId], (old: any) => (old ? { ...old, is_bookmarked: nextBm } : old))
+    queryClient.setQueryData(['jobs'], (old: any) => {
+      if (!old) return old
+      return old.map((j: any) => (j.id === jobId ? { ...j, is_bookmarked: nextBm } : j))
+    })
+    updateJobMutation.mutate({ is_bookmarked: nextBm })
+  }
 
   const handleSaveDeadline = () => {
     updateJobMutation.mutate({ deadline: deadlineInput ? new Date(deadlineInput).toISOString() : null })
@@ -523,425 +579,394 @@ export default function JobDetailPage() {
         </div>
       </div>
 
-      {/* 1. HERO REQUISITION COMMAND CENTER */}
-      <div className="bg-[#1a1c20] rounded-2xl border border-[#464553]/35 overflow-hidden relative">
-        <div className="p-6 sm:p-8 flex flex-col lg:flex-row justify-between items-start gap-8 relative z-10">
-          
-          {/* Left Column: Requisition Meta */}
-          <div className="flex-1 min-w-0 space-y-4 w-full">
-            
-            {/* Title & Badges */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <button 
-                  onClick={toggleBookmark}
-                  className="transition-transform hover:scale-110 active:scale-95 shrink-0 cursor-pointer"
-                  title={job.is_bookmarked ? "Bookmarked Role" : "Bookmark Role"}
-                >
-                  <Star 
-                    className={`w-5 h-5 ${job.is_bookmarked ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-[#918f9f] hover:text-amber-400'}`} 
-                  />
-                </button>
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#e2e2e8] leading-tight font-heading">
-                  {cleanTitle(job.role_title)}
-                </h1>
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wider ${vStyle.bg} ${vStyle.text} ${vStyle.border}`}>
-                  {analysis.verdict}
-                </span>
-              </div>
+      {/* 1. DECLUTTERED HERO COMMAND CENTER */}
+      {(() => {
+        const workMode = getJobWorkMode(job)
+        const comp = getJobCompensation(job)
+        const release = getJobReleaseInfo(job)
+        const isIntern = isJobInternship(job)
+        const text = (job.raw_jd || '') + ' ' + (job.role_title || '')
+        const m = text.match(/\b(?:cgpa|gpa|pointer)\s*(?:of|>=|:|is|cutoff|minimum)?\s*([6-9](?:\.\d{1,2})?)\b/i) || text.match(/\b([6-9](?:\.\d{1,2})?)\s*(?:\+|and above)?\s*(?:cgpa|gpa|pointer)\b/i)
+        const cgpaCutoff = job.min_cgpa || (m ? parseFloat(m[1]) : null)
 
-              {/* Company & Dream Tag */}
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2 text-[#e2e2e8] text-base sm:text-lg font-bold font-heading">
-                  <Building2 className="w-4 h-4 text-[#5b5bd6] shrink-0" />
-                  <span>{job.company}</span>
-                </div>
-
-                {applyUrl && (
-                  <a
-                    href={applyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`text-xs flex items-center gap-1 font-medium transition-colors ${
-                      applySource.isOfficial
-                        ? 'text-[#45dfa4] hover:underline'
-                        : 'text-[#c3c0ff] hover:underline'
-                    }`}
-                  >
-                    <span>{applySource.label}</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-
-                <button
-                  onClick={() => dreamCompanyMutation.mutate(job.company)}
-                  disabled={dreamCompanyMutation.isPending}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 border cursor-pointer ${
-                    isDreamCompany
-                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                      : 'bg-[#0c0e12] hover:bg-[#282a2e] text-[#918f9f] hover:text-[#e2e2e8] border-[#464553]/40'
-                  }`}
-                  title={isDreamCompany ? "In your Dream Companies" : "Add to Dream Companies"}
-                >
-                  <Target className={`w-3 h-3 ${isDreamCompany ? 'text-amber-400' : 'text-[#918f9f]'}`} />
-                  <span>{isDreamCompany ? 'Dream Company' : '+ Dream Target'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* High-Visibility Recommended Resume Callout (Bulletproof Responsive Layout) */}
-            {analysis.recommended_resume_title && (
-              <div className="p-4 rounded-xl bg-gradient-to-r from-[#5b5bd6]/15 via-[#8083ff]/10 to-[#45dfa4]/10 border border-[#5b5bd6]/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
-                <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
-                  <div className="w-9 h-9 rounded-xl bg-[#5b5bd6]/20 border border-[#5b5bd6]/30 flex items-center justify-center text-[#c3c0ff] shrink-0 mt-0.5 sm:mt-0">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#c3c0ff]">
-                        Recommended Resume to Submit
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#45dfa4]/15 text-[#45dfa4] border border-[#45dfa4]/30 font-mono">
-                        {analysis.match_score}% Skill Overlap
-                      </span>
+        return (
+          <div className="space-y-4">
+            <div className="bg-[#141519] rounded-2xl border border-[#27272a] shadow-lg overflow-hidden relative">
+              <div className="p-5 sm:p-6 space-y-4 relative z-10">
+                {/* Identity Header */}
+                <div className="flex flex-col lg:flex-row items-start justify-between gap-4">
+                  <div className="flex items-start gap-4 flex-1 min-w-0">
+                    {/* Company Monogram Tile */}
+                    <div className={`w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-gradient-to-br ${getCompanyMonogramGradient(job.company)} border flex items-center justify-center shrink-0 font-bold font-mono text-base sm:text-lg shadow-inner relative`}>
+                      {getCompanyMonogram(job.company)}
+                      <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#141519] ${job.source === 'inbox' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
                     </div>
-                    <p className="text-xs sm:text-sm font-semibold text-[#e2e2e8] truncate">
-                      {analysis.recommended_resume_title}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2 shrink-0 flex-wrap w-full md:w-auto">
-                  <button
-                    onClick={() => handleCopyTitle(analysis.recommended_resume_title)}
-                    className="flex-1 md:flex-initial bg-[#5b5bd6]/20 hover:bg-[#5b5bd6]/35 text-[#c3c0ff] border border-[#5b5bd6]/40 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                    title="Copy exact resume title"
-                  >
-                    {copiedResumeTitle ? <Check className="w-3.5 h-3.5 text-[#45dfa4]" /> : <Copy className="w-3.5 h-3.5 text-[#c3c0ff]" />}
-                    <span>{copiedResumeTitle ? 'Title Copied' : 'Copy Title'}</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('resume-target')}
-                    className="flex-1 md:flex-initial bg-[#0c0e12] hover:bg-[#282a2e] text-[#e2e2e8] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 border border-[#464553]/40 cursor-pointer"
-                  >
-                    <span>View Resume Tab</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-heading truncate max-w-2xl">
+                          {cleanTitle(job.role_title)}
+                        </h1>
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border shrink-0 ${
+                          analysis.match_score >= 80 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' : 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                        }`}>
+                          {analysis.match_score}% Match
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${vStyle.bg} ${vStyle.text} ${vStyle.border}`}>
+                          {analysis.verdict}
+                        </span>
+                      </div>
 
-            {/* Clean Metadata Ribbon (Zero Raw Inputs) */}
-            <div className="flex flex-wrap gap-2 text-xs font-medium text-zinc-300 pt-1">
-              
-              {/* Location */}
-              <div className="px-3 py-1.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex items-center gap-1.5 shadow-sm">
-                <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span>{job.location || 'Location Not Specified'}</span>
-                {job.remote_type && (
-                  <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-                    {job.remote_type}
-                  </span>
-                )}
-              </div>
+                      {/* Company Subtitle & Quick Controls */}
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+                        <button
+                          type="button"
+                          onClick={() => setDeepDiveOpen(true)}
+                          className="font-bold text-zinc-200 hover:text-indigo-400 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>{job.company}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-300 font-mono">Deep Dive ↗</span>
+                        </button>
 
-              {/* Compensation */}
-              <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 flex items-center gap-1.5 shadow-sm">
-                <Banknote className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="font-semibold">
-                  {job.pay_min 
-                    ? `₹${(job.pay_min / 100000).toFixed(1)}L – ${(job.pay_max / 100000).toFixed(1)}L`
-                    : 'Target Pay Verified'}
-                </span>
-              </div>
-
-              {/* Seniority */}
-              <div className="px-3 py-1.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex items-center gap-1.5 shadow-sm">
-                <Briefcase className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span>{formatSeniority(job.seniority_required)}</span>
-              </div>
-
-              {/* Internship Status */}
-              {isJobInternship(job) && (
-                <div className="px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 flex items-center gap-1.5 shadow-sm font-semibold">
-                  <GraduationCap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                  <span>Internship / Trainee</span>
-                </div>
-              )}
-
-              {/* Academic CGPA Cutoff */}
-              {(() => {
-                const text = (job.raw_jd || '') + ' ' + (job.role_title || '')
-                const m = text.match(/\b(?:cgpa|gpa|pointer)\s*(?:of|>=|:|is|cutoff|minimum)?\s*([6-9](?:\.\d{1,2})?)\b/i) || text.match(/\b([6-9](?:\.\d{1,2})?)\s*(?:\+|and above)?\s*(?:cgpa|gpa|pointer)\b/i)
-                const cutoff = job.min_cgpa || (m ? parseFloat(m[1]) : null)
-                if (cutoff) {
-                  return (
-                    <div className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 flex items-center gap-1.5 shadow-sm font-semibold">
-                      <GraduationCap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>Min {cutoff} CGPA Cutoff</span>
-                    </div>
-                  )
-                }
-                return (
-                  <div className="px-3 py-1.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 text-zinc-400 flex items-center gap-1.5 shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
-                    <span>No CGPA Cutoff (Open to all)</span>
-                  </div>
-                )
-              })()}
-
-              {/* Posting Date */}
-              {job.posting_date && (
-                <div className="px-3 py-1.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex items-center gap-1.5 shadow-sm text-zinc-400">
-                  <Calendar className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                  <span>Posted {job.posting_date}</span>
-                </div>
-              )}
-
-              {/* Formatted Deadline with Clean Popover Modal */}
-              <div className="px-3 py-1.5 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex items-center gap-2 shadow-sm relative">
-                <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                <span className={job.deadline ? 'text-zinc-200' : 'text-zinc-500'}>
-                  {formatDeadlineDate(job.deadline)}
-                </span>
-                <button
-                  onClick={() => {
-                    setDeadlineInput(job.deadline ? job.deadline.split('T')[0] : '')
-                    setIsEditingDeadline(!isEditingDeadline)
-                  }}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold ml-1 transition-colors underline"
-                >
-                  {job.deadline ? 'Edit' : '+ Set Deadline'}
-                </button>
-
-                {/* Deadline Editor Dropdown */}
-                {isEditingDeadline && (
-                  <div className="absolute top-full left-0 mt-2 p-3 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 flex items-center gap-2">
-                    <input
-                      type="date"
-                      value={deadlineInput}
-                      onChange={(e) => setDeadlineInput(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
-                    />
-                    <button
-                      onClick={handleSaveDeadline}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setIsEditingDeadline(false)}
-                      className="text-zinc-400 hover:text-zinc-200 p-1"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-          </div>
-
-          {/* Right Column: Score Gauge & Action Hub */}
-          <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-6 shrink-0 w-full lg:w-auto pt-4 lg:pt-0 border-t lg:border-t-0 border-zinc-800/80">
-            
-            {/* Sleek Score Gauge */}
-            <div className="flex items-center gap-4 bg-zinc-950/80 p-3.5 px-5 rounded-2xl border border-zinc-800/80 shadow-inner">
-              <div className="text-right">
-                <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">
-                  Algorithm Score
-                </div>
-                <div className="text-xs font-semibold text-zinc-300">
-                  {vStyle.label}
-                </div>
-              </div>
-              <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-lg relative">
-                <span className={`text-2xl font-black bg-gradient-to-b ${scoreColor} bg-clip-text text-transparent`}>
-                  {analysis.match_score}
-                </span>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto relative">
-              {applyUrl ? (
-                <>
-                  <a
-                    href={applyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 lg:flex-initial bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.35)] flex items-center justify-center gap-1.5 active:scale-95"
-                  >
-                    <span>Apply Now</span>
-                    <ArrowUpRight className="w-4 h-4" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => autoApplyMutation.mutate({ url: applyUrl, jobId: job.id })}
-                    disabled={autoApplyMutation.isPending}
-                    className="px-3.5 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/35 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
-                    title="Open Copilot Auto-Fill Kit (Candidate Identity, Recommended Resume & Tailored Cover Letter)"
-                  >
-                    <Zap className="w-3.5 h-3.5 fill-emerald-400 text-emerald-400" />
-                    <span>{autoApplyMutation.isPending ? 'Loading...' : 'Auto-Fill'}</span>
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => {
-                    const newUrl = prompt('Enter application URL:')
-                    if (newUrl) updateJobMutation.mutate({ url: newUrl })
-                  }}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
-                >
-                  + Add Apply URL
-                </button>
-              )}
-
-              {/* Track Status Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setTrackingDropdownOpen(!trackingDropdownOpen)}
-                  disabled={trackMutation.isPending}
-                  className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                    currentApplication
-                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                      : 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-200 border-zinc-700/80'
-                  }`}
-                  title="Track Application Status"
-                >
-                  <ListTodo className={`w-4 h-4 ${currentApplication ? 'text-emerald-400' : 'text-indigo-400'}`} />
-                  <span className="capitalize">{trackMutation.isPending ? 'Saving...' : currentApplication ? currentApplication.status : 'Track'}</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                </button>
-
-                {trackingDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-1.5 z-50 space-y-1">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 px-2 py-1">
-                      Set Pipeline Status
-                    </div>
-                    {[
-                      { id: 'saved', label: 'Wishlist / Saved' },
-                      { id: 'applied', label: 'Applied' },
-                      { id: 'interviewing', label: 'Interviewing' },
-                      { id: 'offer', label: 'Offer Received' },
-                    ].map((st) => (
-                      <button
-                        key={st.id}
-                        onClick={() => trackMutation.mutate({ jobData: job, status: st.id })}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-between ${
-                          currentApplication?.status === st.id
-                            ? 'bg-indigo-600/30 text-indigo-200 font-bold'
-                            : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
-                        }`}
-                      >
-                        <span>{st.label}</span>
-                        {currentApplication?.status === st.id ? (
-                          <Check className="w-3.5 h-3.5 text-indigo-400" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3 text-zinc-500" />
+                        {job.cooldown_policy && (
+                          <button
+                            type="button"
+                            onClick={() => setDeepDiveOpen(true)}
+                            className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[10px] font-semibold flex items-center gap-1 hover:bg-amber-500/25 transition-colors cursor-pointer"
+                            title={job.cooldown_policy.description}
+                          >
+                            <Clock className="w-2.5 h-2.5 text-amber-400" /> {job.cooldown_policy.cooldown_days}d Cooldown
+                          </button>
                         )}
-                      </button>
-                    ))}
+
+                        <button
+                          onClick={() => dreamCompanyMutation.mutate(job.company)}
+                          disabled={dreamCompanyMutation.isPending}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 border cursor-pointer ${
+                            isDreamCompany
+                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/35'
+                              : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border-zinc-800'
+                          }`}
+                        >
+                          <Target className={`w-2.5 h-2.5 ${isDreamCompany ? 'text-amber-400' : 'text-zinc-500'}`} />
+                          <span>{isDreamCompany ? 'Dream Company' : '+ Dream Target'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => (isViewed(jobId) ? markAsUnviewed(jobId) : markAsViewed(jobId))}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border flex items-center gap-1 transition-all cursor-pointer ${
+                            !isViewed(jobId)
+                              ? 'bg-cyan-500/15 border-cyan-500/35 text-cyan-300'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          {!isViewed(jobId) ? <EyeOff className="w-2.5 h-2.5 text-cyan-400" /> : <Eye className="w-2.5 h-2.5 text-emerald-400" />}
+                          <span>{!isViewed(jobId) ? 'Unreviewed' : 'Looked At'}</span>
+                        </button>
+
+                        <button
+                          onClick={toggleBookmark}
+                          className="p-1 rounded-md text-zinc-400 hover:text-amber-300 transition-colors cursor-pointer"
+                          title={job.is_bookmarked ? "Bookmarked Role" : "Bookmark Role"}
+                        >
+                          <Star className={`w-3.5 h-3.5 ${job.is_bookmarked ? 'fill-amber-400 text-amber-400' : 'text-zinc-500'}`} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
 
-          </div>
+                  {/* Top Action Launchpad */}
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-zinc-800">
+                    {applyUrl && (
+                      <button
+                        type="button"
+                        onClick={() => autoApplyMutation.mutate({ url: applyUrl, jobId: job.id })}
+                        disabled={autoApplyMutation.isPending}
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] flex items-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                      >
+                        <Zap className="w-3.5 h-3.5 fill-white" />
+                        <span>{autoApplyMutation.isPending ? 'Preparing...' : '1-Click Auto-Fill'}</span>
+                      </button>
+                    )}
 
-        </div>
+                    {applyUrl && <CareersPortalExplorer job={job} />}
 
-        {/* 2. EXECUTIVE VERDICT SUMMARY (Zero Raw Strings) */}
-        <div className="border-t border-zinc-800/80 bg-zinc-950/40 p-6 sm:p-8">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-indigo-400" />
-            <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">
-              Executive Match Briefing
-            </h3>
-          </div>
-          
-          <p className="text-zinc-200 text-sm sm:text-base leading-relaxed font-normal">
-            {cleanReasoning(analysis.reasoning)}
-          </p>
+                    {/* Track Status Dropdown */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setTrackingDropdownOpen(!trackingDropdownOpen)}
+                        disabled={trackMutation.isPending}
+                        className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
+                          currentApplication
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700'
+                        }`}
+                        title="Track Application Status"
+                      >
+                        <ListTodo className={`w-3.5 h-3.5 ${currentApplication ? 'text-emerald-400' : 'text-indigo-400'}`} />
+                        <span className="capitalize">{trackMutation.isPending ? 'Saving...' : currentApplication ? currentApplication.status : 'Track'}</span>
+                        <ChevronDown className="w-3 h-3 text-zinc-400" />
+                      </button>
 
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {/* Career Direction Alignment */}
-            <div className="p-3.5 bg-zinc-900/80 rounded-xl border border-zinc-800/80 text-xs">
-              <span className="text-zinc-400 font-semibold uppercase tracking-wider text-[10px] block mb-1">
-                Career Direction Alignment
-              </span>
-              <span className="text-zinc-300">
-                {analysis.goal_alignment_note || `Directly aligns with software engineering trajectory in ${job.role_title}.`}
-              </span>
-            </div>
-
-            {/* Recommended Resume Profile */}
-            {analysis.recommended_resume_title && (
-              <div className="p-3.5 bg-indigo-500/5 border border-indigo-500/20 rounded-xl text-xs flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="text-indigo-400 font-semibold uppercase tracking-wider text-[10px] block mb-0.5">
-                    Recommended Resume Baseline
-                  </span>
-                  <span className="text-zinc-200 font-medium truncate block">
-                    {analysis.recommended_resume_title}
-                  </span>
+                      {trackingDropdownOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-1.5 z-50 space-y-1">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 px-2 py-1">
+                            Set Pipeline Status
+                          </div>
+                          {[
+                            { id: 'saved', label: 'Wishlist / Saved' },
+                            { id: 'applied', label: 'Applied' },
+                            { id: 'interviewing', label: 'Interviewing' },
+                            { id: 'offer', label: 'Offer Received' },
+                          ].map((st) => (
+                            <button
+                              key={st.id}
+                              onClick={() => trackMutation.mutate({ jobData: job, status: st.id })}
+                              className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-between cursor-pointer ${
+                                currentApplication?.status === st.id
+                                  ? 'bg-indigo-600/30 text-indigo-200 font-bold'
+                                  : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                              }`}
+                            >
+                              <span>{st.label}</span>
+                              {currentApplication?.status === st.id ? (
+                                <Check className="w-3.5 h-3.5 text-indigo-400" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3 text-zinc-500" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <button
-                  onClick={() => handleCopyTitle(analysis.recommended_resume_title)}
-                  className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors shrink-0 flex items-center gap-1 border border-indigo-500/20"
-                >
-                  {copiedResumeTitle ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  {copiedResumeTitle ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
 
-      </div>
+                {/* Upfront Vital Factors Strip */}
+                <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-zinc-800/60 text-xs">
+                  {/* 1. Work Mode Badge */}
+                  <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1.5 shrink-0 ${workMode.badgeClass}`}>
+                    {workMode.type === 'remote' ? <Globe className="w-3.5 h-3.5 text-emerald-400" /> : workMode.type === 'hybrid' ? <Laptop className="w-3.5 h-3.5 text-indigo-400" /> : <Building2 className="w-3.5 h-3.5 text-zinc-400" />}
+                    <span>{workMode.label} ({workMode.sublabel})</span>
+                  </span>
+
+                  {/* 2. Upfront Compensation (vs ₹6L Lower Threshold) */}
+                  <span className={`px-2.5 py-1 rounded-lg text-[11px] border flex items-center gap-1.5 shrink-0 cursor-help ${comp.badgeClass}`} title={`${comp.note} (Base condition: ₹600,000 INR lower threshold)`}>
+                    <IndianRupee className="w-3.5 h-3.5 text-current" />
+                    <span>{comp.display}</span>
+                  </span>
+
+                  {/* 3. Opening Release Recency */}
+                  <span className={`px-2.5 py-1 rounded-lg text-[11px] border flex items-center gap-1.5 shrink-0 cursor-help ${release.badgeClass}`} title={release.applyFactor}>
+                    {release.isFresh ? <Zap className="w-3.5 h-3.5 fill-emerald-400/20 text-emerald-400" /> : <Calendar className="w-3.5 h-3.5 text-zinc-400" />}
+                    <span>{release.label}</span>
+                  </span>
+
+                  {/* 4. Geographic City Pill */}
+                  <span className="flex items-center gap-1.5 text-[11px] text-zinc-300 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800">
+                    <MapPin className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>{job.location || 'India Tech Hub'}</span>
+                  </span>
+
+                  {/* Academic Cutoff */}
+                  <span className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-900 text-zinc-300 border border-zinc-800 font-medium">
+                    {cgpaCutoff ? `Min ${cgpaCutoff} CGPA` : 'No CGPA Cutoff'}
+                  </span>
+
+                  {/* Seniority Track */}
+                  <span className="text-[11px] px-2.5 py-1 rounded-lg bg-zinc-900 text-zinc-300 border border-zinc-800 font-medium">
+                    {isIntern ? 'Internship / Trainee' : formatSeniority(job.seniority_required)}
+                  </span>
+
+                  {/* Formatted Deadline with Clean Popover */}
+                  <div className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center gap-1.5 text-[11px] text-zinc-300 relative">
+                    <Clock className="w-3 h-3 text-zinc-400" />
+                    <span>{formatDeadlineDate(job.deadline)}</span>
+                    <button
+                      onClick={() => {
+                        setDeadlineInput(job.deadline ? job.deadline.split('T')[0] : '')
+                        setIsEditingDeadline(!isEditingDeadline)
+                      }}
+                      className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold ml-1 transition-colors underline cursor-pointer"
+                    >
+                      {job.deadline ? 'Edit' : '+ Set'}
+                    </button>
+                    {isEditingDeadline && (
+                      <div className="absolute top-full left-0 mt-2 p-3 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={deadlineInput}
+                          onChange={(e) => setDeadlineInput(e.target.value)}
+                          className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                        <button
+                          onClick={handleSaveDeadline}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setIsEditingDeadline(false)}
+                          className="text-zinc-400 hover:text-zinc-200 p-1"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Company Cooldown Callout Strip if Applicable */}
+              {job.cooldown_policy && (
+                <div className="border-t border-amber-500/25 bg-amber-500/10 px-5 sm:px-6 py-3 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-amber-300">
+                    <Clock className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span className="font-semibold">
+                      {job.cooldown_policy.company_name} enforces a {job.cooldown_policy.cooldown_days}-day reapplication cooldown.
+                    </span>
+                    <span className="hidden sm:inline text-zinc-400">
+                      Strategy: {job.cooldown_policy.recommendation}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setDeepDiveOpen(true)}
+                    className="text-amber-400 hover:text-amber-300 font-bold shrink-0 underline"
+                  >
+                    View Policy Details →
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 2. SIX-FACTOR VITAL METRIC GRID */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* Box 1: Match Score */}
+              <div className="bg-[#141519] p-3.5 rounded-xl border border-[#27272a] shadow-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
+                  Match Score
+                </span>
+                <span className="text-lg font-bold font-mono text-emerald-400 mt-0.5 block">
+                  {analysis.match_score}%
+                </span>
+                <span className="text-[10px] text-zinc-400 block truncate">
+                  {vStyle.label}
+                </span>
+              </div>
+
+              {/* Box 2: Work Mode */}
+              <div className="bg-[#141519] p-3.5 rounded-xl border border-[#27272a] shadow-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
+                  Work Mode
+                </span>
+                <span className="text-xs font-bold text-zinc-100 mt-1 flex items-center gap-1.5 truncate">
+                  {workMode.type === 'remote' ? <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : workMode.type === 'hybrid' ? <Laptop className="w-3.5 h-3.5 text-indigo-400 shrink-0" /> : <Building2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />}
+                  <span>{workMode.label}</span>
+                </span>
+                <span className="text-[10px] text-zinc-400 block truncate">
+                  {workMode.sublabel}
+                </span>
+              </div>
+
+              {/* Box 3: Compensation (Calibrated to ₹6L Floor) */}
+              <div className="bg-[#141519] p-3.5 rounded-xl border border-[#27272a] shadow-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
+                  Compensation
+                </span>
+                <span className={`text-xs font-bold font-mono mt-1 block truncate ${comp.status === 'above_floor' ? 'text-emerald-400' : comp.status === 'meets_floor' ? 'text-emerald-300' : 'text-zinc-200'}`}>
+                  {comp.display}
+                </span>
+                <span className="text-[10px] text-zinc-400 block truncate" title={`${comp.note} (Base condition: ₹600k lower threshold)`}>
+                  {comp.note}
+                </span>
+              </div>
+
+              {/* Box 4: Release Timing */}
+              <div className="bg-[#141519] p-3.5 rounded-xl border border-[#27272a] shadow-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
+                  Release Recency
+                </span>
+                <span className={`text-xs font-bold mt-1 flex items-center gap-1.5 truncate ${release.isFresh ? 'text-emerald-400' : 'text-zinc-200'}`}>
+                  {release.isFresh ? <Zap className="w-3.5 h-3.5 fill-emerald-400/20 text-emerald-400 shrink-0" /> : <Calendar className="w-3.5 h-3.5 text-zinc-400 shrink-0" />}
+                  <span>{release.shortLabel}</span>
+                </span>
+                <span className="text-[10px] text-zinc-400 block truncate" title={release.applyFactor}>
+                  {release.isFresh ? '🔥 High Response' : '📅 Active Requisition'}
+                </span>
+              </div>
+
+              {/* Box 5: Role Track */}
+              <div className="bg-[#141519] p-3.5 rounded-xl border border-[#27272a] shadow-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
+                  Role Track
+                </span>
+                <span className="text-xs font-semibold text-zinc-200 mt-1 block truncate">
+                  {isIntern ? 'Internship' : formatSeniority(job.seniority_required)}
+                </span>
+                <span className="text-[10px] text-zinc-400 block truncate">
+                  {job.min_years_experience !== null && job.min_years_experience !== undefined ? `${job.min_years_experience} yr min exp` : 'Fresher Friendly'}
+                </span>
+              </div>
+
+              {/* Box 6: Academic Cutoff */}
+              <div className="bg-[#141519] p-3.5 rounded-xl border border-[#27272a] shadow-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 block">
+                  Academic Cutoff
+                </span>
+                <span className="text-xs font-semibold font-mono text-amber-300 mt-1 block truncate">
+                  {cgpaCutoff ? `Min ${cgpaCutoff} CGPA` : 'No CGPA Cutoff'}
+                </span>
+                <span className="text-[10px] text-zinc-400 block truncate">
+                  Open to all candidates
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 3. SEGMENTED WORKSPACE TAB NAVIGATION */}
-      <div className="flex items-center gap-1 bg-zinc-900/60 p-1.5 rounded-2xl border border-zinc-800/80 backdrop-blur-md overflow-x-auto custom-scrollbar">
-        {/* Highlighted Tab: Which Resume to Apply From */}
+      <div className="flex items-center gap-1.5 bg-[#141519] p-1.5 rounded-2xl border border-[#27272a] backdrop-blur-md overflow-x-auto custom-scrollbar">
+        {/* Recommended Resume Tab */}
         {analysis.recommended_resume_title && (
           <button
             onClick={() => handleTabChange('resume-target')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 border cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 border cursor-pointer ${
               activeTab === 'resume-target'
-                ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-[0_0_20px_rgba(99,102,241,0.5)] border-indigo-400/50'
-                : 'bg-indigo-500/15 text-indigo-200 hover:text-white hover:bg-indigo-500/25 border-indigo-500/40 shadow-sm'
+                ? 'bg-indigo-600 text-white shadow-sm border-indigo-500'
+                : 'bg-indigo-500/10 text-indigo-300 hover:text-white hover:bg-indigo-500/20 border-indigo-500/30'
             }`}
+            title={`Recommended Resume: ${analysis.recommended_resume_title}`}
           >
-            <FileText className="w-4 h-4 text-indigo-300" />
-            <span className="font-extrabold text-white">Apply with:</span>
-            <span className="underline decoration-indigo-400 font-semibold">{analysis.recommended_resume_title}</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-1" title="Recommended Resume to Submit"></span>
+            <FileText className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Recommended Resume</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           </button>
         )}
 
         <button
           onClick={() => handleTabChange('analysis')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'analysis'
-              ? 'bg-zinc-800 text-white shadow-sm'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+              ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40 border border-transparent'
           }`}
         >
-          <Activity className="w-4 h-4 text-emerald-400" />
-          <span>Role Analysis & Company Intel</span>
+          <Activity className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Role Analysis &amp; Intel</span>
         </button>
 
         <button
           onClick={() => handleTabChange('studio')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'studio'
-              ? 'bg-zinc-800 text-white shadow-sm'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+              ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40 border border-transparent'
           }`}
         >
-          <Sparkles className="w-4 h-4 text-indigo-400" />
+          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
           <span>Tailoring Studio</span>
           {analysis.missing_keywords && analysis.missing_keywords.length > 0 && (
             <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
@@ -952,25 +977,25 @@ export default function JobDetailPage() {
 
         <button
           onClick={() => handleTabChange('coach')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'coach'
-              ? 'bg-zinc-800 text-white shadow-sm'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+              ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40 border border-transparent'
           }`}
         >
-          <Bot className="w-4 h-4 text-purple-400" />
+          <Bot className="w-3.5 h-3.5 text-purple-400" />
           <span>Interview Coach</span>
         </button>
 
         <button
           onClick={() => handleTabChange('description')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'description'
-              ? 'bg-zinc-800 text-white shadow-sm'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40'
+              ? 'bg-zinc-800 text-white shadow-sm border border-zinc-700'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/40 border border-transparent'
           }`}
         >
-          <FileText className="w-4 h-4 text-sky-400" />
+          <FileText className="w-3.5 h-3.5 text-sky-400" />
           <span>Job Description</span>
         </button>
       </div>
@@ -1308,6 +1333,13 @@ export default function JobDetailPage() {
           trackMutation.mutate({ jobData: job, status: 'applied' })
           setAutoFillModalData(null)
         }}
+      />
+
+      {/* High-Intelligence Executive Company Deep Dive Modal */}
+      <CompanyDeepDiveModal
+        companyName={job?.company}
+        isOpen={deepDiveOpen}
+        onClose={() => setDeepDiveOpen(false)}
       />
     </div>
   )

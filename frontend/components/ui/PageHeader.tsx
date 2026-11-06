@@ -31,7 +31,7 @@ export function PageHeader({
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#464553]/30">
       <div className="space-y-1 max-w-2xl">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <h1 className="text-2xl font-bold tracking-tight text-[#e2e2e8]">
+          <h1 className="font-display text-3xl sm:text-4xl text-[#ececf1]" style={{ fontFamily: "var(--font-serif-display), serif", fontWeight: 400, letterSpacing: "-0.02em" }}>
             {title}
           </h1>
           {badge && (

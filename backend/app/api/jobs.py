@@ -5,6 +5,8 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import logging
 import io
+import os
+import json
 import re
 import requests
 from bs4 import BeautifulSoup
@@ -22,6 +24,18 @@ from app.services.company_researcher import research_company
 from app.services.link_checker import check_resume_links
 from app.middleware.auth import get_current_user
 from app.api.profile import get_or_create_user_profile
+from app.services.direct_apply_resolver import (
+    is_generic_careers_url,
+    normalize_requisition_url,
+    resolve_direct_requisition_url,
+    generate_careers_portal_filters,
+    build_targeted_portal_search_url,
+    enrich_job_vital_factors,
+)
+from app.services.company_cooldown_policy import (
+    get_company_cooldown_policy,
+    check_user_cooldown_status,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -60,7 +74,34 @@ def get_jobs(user_id: str = Depends(get_current_user)):
         .eq("user_id", user_id) \
         .order("fetched_at", desc=True) \
         .execute()
-    return response.data
+    jobs = response.data or []
+
+    for j in jobs:
+        raw_apply = j.get("official_apply_url") or j.get("url") or ""
+        normalized_apply = normalize_requisition_url(raw_apply) or raw_apply
+        if normalized_apply != raw_apply:
+            j["official_apply_url"] = normalized_apply
+            j["url"] = normalized_apply
+        is_generic = is_generic_careers_url(normalized_apply)
+        j["is_direct_apply"] = not is_generic
+        portal_filters = generate_careers_portal_filters(
+            company=j.get("company") or "",
+            role_title=j.get("role_title") or "",
+            current_url=normalized_apply,
+            location=j.get("location"),
+        )
+        j["portal_filters"] = portal_filters
+        j["portal_search_url"] = portal_filters.get("exact_role") or normalized_apply
+        j["effective_apply_url"] = normalized_apply if not is_generic else (portal_filters.get("exact_role") or normalized_apply)
+
+        # Attach company cooldown policy badge if applicable
+        comp_policy = get_company_cooldown_policy(j.get("company") or "")
+        j["cooldown_policy"] = comp_policy
+
+        # Enrich with vital upfront factors (location mode, pay baseline, release age)
+        enrich_job_vital_factors(j)
+
+    return jobs
 
 @router.get("/digest")
 def get_digest(user_id: str = Depends(get_current_user)):
@@ -540,6 +581,141 @@ def copilot_optimize_jobs_feed(user_id: str = Depends(get_current_user)):
         "message": f"Copilot optimized your feed: {scored_count} unscored roles instantly analyzed, {cleaned_count} off-target/noise roles removed, {deduplicated_count} duplicates merged ({high_fit_count} High-Fit matches ready)."
     }
 
+_VIEWED_JOBS_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data_viewed_jobs.json")
+
+def _load_viewed_jobs_store() -> dict:
+    if os.path.exists(_VIEWED_JOBS_FILE):
+        try:
+            with open(_VIEWED_JOBS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def _save_viewed_jobs_store(data: dict):
+    try:
+        os.makedirs(os.path.dirname(_VIEWED_JOBS_FILE), exist_ok=True)
+        with open(_VIEWED_JOBS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Failed to persist viewed jobs store: {e}")
+
+class BatchViewRequest(BaseModel):
+    job_ids: List[str]
+
+@router.get("/viewed")
+def get_viewed_jobs(user_id: str = Depends(get_current_user)):
+    store = _load_viewed_jobs_store()
+    user_views = store.get(user_id, [])
+    return {"viewed_job_ids": user_views, "count": len(user_views)}
+
+@router.post("/viewed/batch")
+def mark_batch_jobs_viewed(req: BatchViewRequest, user_id: str = Depends(get_current_user)):
+    store = _load_viewed_jobs_store()
+    existing = set(store.get(user_id, []))
+    for jid in req.job_ids:
+        existing.add(jid)
+    store[user_id] = list(existing)
+    _save_viewed_jobs_store(store)
+    return {"status": "ok", "viewed_count": len(existing)}
+
+@router.post("/{job_id}/view")
+def mark_job_viewed(job_id: str, user_id: str = Depends(get_current_user)):
+    store = _load_viewed_jobs_store()
+    existing = set(store.get(user_id, []))
+    existing.add(job_id)
+    store[user_id] = list(existing)
+    _save_viewed_jobs_store(store)
+    return {"status": "ok", "job_id": job_id, "is_viewed": True}
+
+@router.delete("/{job_id}/view")
+def unmark_job_viewed(job_id: str, user_id: str = Depends(get_current_user)):
+    store = _load_viewed_jobs_store()
+    existing = set(store.get(user_id, []))
+    existing.discard(job_id)
+    store[user_id] = list(existing)
+    _save_viewed_jobs_store(store)
+    return {"status": "ok", "job_id": job_id, "is_viewed": False}
+
+class BookmarkRequest(BaseModel):
+    is_bookmarked: bool
+
+@router.patch("/{job_id}/bookmark")
+@router.post("/{job_id}/bookmark")
+def toggle_job_bookmark(job_id: str, req: BookmarkRequest, user_id: str = Depends(get_current_user)):
+    # First attempt update scoped to user_id, claiming if necessary
+    res = supabase.table("jobs").update({"is_bookmarked": req.is_bookmarked, "user_id": user_id}).eq("id", job_id).execute()
+    if not res.data:
+        # Fallback to direct job_id update
+        res = supabase.table("jobs").update({"is_bookmarked": req.is_bookmarked}).eq("id", job_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"status": "ok", "job_id": job_id, "is_bookmarked": req.is_bookmarked}
+
+@router.get("/{job_id}/apply-link-info")
+def get_apply_link_info(job_id: str, user_id: str = Depends(get_current_user)):
+    res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = res.data[0]
+    apply_url = job.get("official_apply_url") or job.get("url") or ""
+    is_generic = is_generic_careers_url(apply_url)
+    filters = generate_careers_portal_filters(
+        company=job.get("company") or "",
+        role_title=job.get("role_title") or "",
+        current_url=apply_url,
+        location=job.get("location"),
+    )
+    return {
+        "job_id": job_id,
+        "company": job.get("company"),
+        "role_title": job.get("role_title"),
+        "current_url": apply_url,
+        "is_direct_apply": not is_generic,
+        "effective_apply_url": apply_url if not is_generic else (filters.get("exact_role") or apply_url),
+        "portal_search_url": filters.get("exact_role"),
+        "portal_filters": filters,
+    }
+
+@router.post("/{job_id}/resolve-direct-url")
+def resolve_job_direct_url(job_id: str, user_id: str = Depends(get_current_user)):
+    res = supabase.table("jobs").select("*").eq("id", job_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = res.data[0]
+    current_url = job.get("official_apply_url") or job.get("url") or ""
+    resolved = resolve_direct_requisition_url(
+        company=job.get("company") or "",
+        role_title=job.get("role_title") or "",
+        current_url=current_url,
+        location=job.get("location"),
+    )
+    # If a new direct URL was found, save it to the DB
+    if resolved.get("is_direct") and resolved.get("resolved_url") and resolved.get("resolved_url") != current_url:
+        try:
+            supabase.table("jobs").update({
+                "official_apply_url": resolved["resolved_url"],
+                "url": resolved["resolved_url"],
+            }).eq("id", job_id).eq("user_id", user_id).execute()
+            logger.info("Updated job %s with resolved direct requisition URL: %s", job_id, resolved["resolved_url"])
+        except Exception as e:
+            logger.warning("Failed to persist resolved direct URL for job %s: %s", job_id, e)
+
+    return {
+        "job_id": job_id,
+        "company": job.get("company"),
+        "role_title": job.get("role_title"),
+        **resolved,
+    }
+
+@router.get("/{job_id}/cooldown-check")
+def check_job_cooldown(job_id: str, user_id: str = Depends(get_current_user)):
+    res = supabase.table("jobs").select("id, company, role_title").eq("id", job_id).eq("user_id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = res.data[0]
+    return check_user_cooldown_status(user_id, job.get("company") or "")
+
 @router.get("/{id}")
 def get_job(id: str, user_id: str = Depends(get_current_user)):
     # Fetch job joined with analyses and drafts
@@ -558,6 +734,26 @@ def get_job(id: str, user_id: str = Depends(get_current_user)):
     # Sort drafts so newest is first
     if job.get("application_drafts"):
         job["application_drafts"].sort(key=lambda x: x.get("generated_at", ""), reverse=True)
+
+    # Enrich with direct apply status and portal filters
+    raw_apply = job.get("official_apply_url") or job.get("url") or ""
+    is_generic = is_generic_careers_url(raw_apply)
+    job["is_direct_apply"] = not is_generic
+    portal_filters = generate_careers_portal_filters(
+        company=job.get("company") or "",
+        role_title=job.get("role_title") or "",
+        current_url=raw_apply,
+        location=job.get("location"),
+    )
+    job["portal_filters"] = portal_filters
+    job["portal_search_url"] = portal_filters.get("exact_role") or raw_apply
+    job["effective_apply_url"] = raw_apply if not is_generic else (portal_filters.get("exact_role") or raw_apply)
+
+    # Check user-specific cooldown status for this company
+    job["cooldown_status"] = check_user_cooldown_status(user_id, job.get("company") or "")
+    
+    # Enrich with vital upfront factors (location mode, pay baseline, release age)
+    enrich_job_vital_factors(job)
             
     return job
 

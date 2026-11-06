@@ -1,11 +1,12 @@
 {
-  "name": "Job Copilot",
-  "short_name": "Job Copilot",
-  "description": "Smart career pipeline and opportunity tracker.",
-  "start_url": "/inbox",
+  "id": "/",
+  "name": "JobCopilot — AI Job Analysis & Application Engine",
+  "short_name": "JobCopilot",
+  "description": "Smart career pipeline, ATS job finder, and auto-apply copilot.",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#4f46e5",
+  "background_color": "#0c0e12",
+  "theme_color": "#0c0e12",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -18,9 +19,12 @@
       "type": "image/png"
     }
   ],
+  "categories": ["productivity", "utilities", "business"],
+  "orientation": "any",
   "share_target": {
     "action": "/share",
     "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
     "params": {
       "title": "title",
       "text": "text",

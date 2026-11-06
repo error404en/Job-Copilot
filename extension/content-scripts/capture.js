@@ -46,23 +46,35 @@
 
     const btn = document.createElement('button');
     btn.id = 'jobcopilot-capture-btn';
-    btn.innerText = '🤖 Analyze with JobCopilot';
+    btn.innerText = '⚡ Analyze with JobCopilot';
     btn.style.cssText = `
       margin-left: 12px;
-      padding: 6px 12px;
-      background: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-weight: bold;
-      font-size: 13px;
+      padding: 7px 14px;
+      background: #0A0B0F;
+      color: #F3EFE7;
+      border: 1px solid rgba(140, 151, 255, 0.4);
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 12px;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      box-shadow: 0 0 10px rgba(37,99,235,0.3);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 10px rgba(140, 151, 255, 0.12);
       z-index: 9999;
+      transition: all 0.2s ease;
     `;
+    btn.onmouseenter = () => {
+      btn.style.background = '#141620';
+      btn.style.borderColor = '#8C97FF';
+      btn.style.transform = 'translateY(-1px)';
+    };
+    btn.onmouseleave = () => {
+      btn.style.background = '#0A0B0F';
+      btn.style.borderColor = 'rgba(140, 151, 255, 0.4)';
+      btn.style.transform = 'none';
+    };
 
     btn.onclick = async (e) => {
       e.preventDefault();

@@ -152,7 +152,7 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
         )
 
     # -------------------------------------------------------------------------
-    # HARD GATE 4: Pay Floor Check
+    # HARD GATE 4: Pay Floor Check (Treated strictly as a lower threshold floor)
     # -------------------------------------------------------------------------
     pay_floor_pass = True
     if parsed_job.pay_max and parsed_job.pay_currency == "INR" and parsed_job.pay_max < pay_floor:
@@ -167,7 +167,7 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
             goal_alignment_note="Below specified compensation baseline.",
             verdict="skip",
             disqualification_reason="pay_floor_failed",
-            reasoning=f"Pay Floor Violation: Maximum compensation (₹{parsed_job.pay_max:,}) is below candidate's specified minimum baseline (₹{pay_floor:,}).",
+            reasoning=f"Pay Floor Violation: Maximum compensation (₹{parsed_job.pay_max:,}) is below candidate's base lower threshold (₹{pay_floor:,}).",
             culture_assessment=f"Corporate environment at {parsed_job.company}."
         )
 
@@ -249,7 +249,7 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
         elif any(x in c_size for x in ["1-10", "11-50", "51-200"]):
             score += 10
             
-    # Prefer < 48 hours
+    # Prefer < 48 hours (fresh releases receive a prime timing bonus)
     h_posted = parsed_job.hours_since_posted
     if h_posted is not None:
         if h_posted <= 48:
@@ -257,14 +257,31 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
         elif h_posted > 168: # older than a week
             score -= 10
 
+    # -------------------------------------------------------------------------
+    # Compensation Calibration: Treat ₹600k as a LOWER THRESHOLD baseline (not a ceiling/norm)
+    # Higher compensation >= 12L or >= 18L is actively rewarded with score bonuses.
+    # -------------------------------------------------------------------------
+    if parsed_job.pay_min and parsed_job.pay_currency == "INR":
+        if parsed_job.pay_min >= 1800000:
+            score += 8  # Premium tier compensation (18L+ CTC)
+        elif parsed_job.pay_min >= 1200000:
+            score += 5  # Strong tier compensation (12L–18L CTC)
+        elif parsed_job.pay_min >= pay_floor:
+            score += 3  # Clears base lower threshold floor (>= 6L CTC)
+    elif parsed_job.pay_max and parsed_job.pay_currency == "INR" and parsed_job.pay_max >= 1200000:
+        score += 4
 
-    # Relocation analysis
+    # -------------------------------------------------------------------------
+    # Location Calibration: Delhi NCR is the base anchor, not an exclusive boundary.
+    # Premier Indian tech hubs (Bengaluru, Hyderabad, Pune, Mumbai, Gurgaon, Noida)
+    # and Remote/Hybrid roles are treated as prime career destinations.
+    # -------------------------------------------------------------------------
     from app.services.job_fetcher import check_role_location_and_relocation
     loc_lower = (parsed_job.location or "").lower()
     jd_lower = (parsed_job.raw_jd or parsed_job.description or "").lower()
-    is_remote = parsed_job.remote_type == "remote" or "remote" in loc_lower or "anywhere" in loc_lower or "work from home" in loc_lower
-    is_local = any(city in loc_lower for city in ["delhi", "ncr", "noida", "gurgaon", "gurugram"])
-    is_india = any(city in loc_lower for city in ["india", "bengaluru", "bangalore", "hyderabad", "pune", "mumbai", "chennai", "kolkata"])
+    is_remote = parsed_job.remote_type == "remote" or any(w in loc_lower for w in ["remote", "anywhere", "work from home", "wfh"])
+    is_ncr = any(city in loc_lower for city in ["delhi", "ncr", "noida", "gurgaon", "gurugram", "faridabad"])
+    is_tier1_tech_hub = any(city in loc_lower for city in ["bengaluru", "bangalore", "hyderabad", "pune", "mumbai", "chennai", "kolkata", "chandigarh", "mohali", "ahmedabad", "india"])
     
     loc_eval = check_role_location_and_relocation(parsed_job.location or "", jd_lower)
     
@@ -288,12 +305,17 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
             culture_assessment=f"Corporate environment at {parsed_job.company}."
         )
 
-    # Non-India onsite/hybrid requires relocation/visa
-    relocation_required = not (is_remote or is_local)
-    if loc_eval["is_abroad"] and loc_eval["covers_relocation"]:
-        score += 5  # Bonus for verified international relocation support
-    elif not is_remote and not is_local and not is_india:
-        score -= 10
+    # Award location bonus: NCR base anchor, Remote flexibility, and Tier-1 Tech Hubs are all high fit
+    if is_remote:
+        score += 5  # Remote flexibility
+    elif is_ncr:
+        score += 5  # Local base anchor
+    elif is_tier1_tech_hub:
+        score += 4  # Top Indian tech ecosystem
+    elif not is_remote and not is_ncr and not is_tier1_tech_hub and not (loc_eval["is_abroad"] and loc_eval["covers_relocation"]):
+        score -= 5
+
+    relocation_required = not (is_remote or is_ncr)
 
     # Final verdict calculation
     if score >= 75:
@@ -305,11 +327,27 @@ def score_match_deterministic(parsed_job: ParsedJob, user_profile: dict, resume_
 
     final_score = max(20, min(score, 95))
 
+    # Formulate compensation reasoning acknowledging ₹600k as lower threshold baseline
+    if parsed_job.pay_min and parsed_job.pay_min >= pay_floor:
+        pay_note = f"Exceeds ₹{pay_floor//100000}L base floor (₹{parsed_job.pay_min/100000:.1f}L–₹{(parsed_job.pay_max or parsed_job.pay_min)/100000:.1f}L CTC)."
+    elif parsed_job.pay_max and parsed_job.pay_max >= pay_floor:
+        pay_note = f"Meets ₹{pay_floor//100000}L base floor (up to ₹{parsed_job.pay_max/100000:.1f}L CTC)."
+    elif not pay_floor_pass:
+        pay_note = f"Below ₹{pay_floor//100000}L minimum floor."
+    else:
+        pay_note = f"Satisfies base ₹{pay_floor//100000}L compensation threshold."
+
+    loc_note = (
+        "Delhi NCR Base Anchor" if is_ncr else
+        ("Remote Flexibility" if is_remote else
+        (f"{parsed_job.location or 'India Tech Hub'}" if is_tier1_tech_hub else (parsed_job.location or "Location Unspecified")))
+    )
+
     reasoning = (
         f"Executive Evaluation: Core technical skill match at {int(skill_ratio * 100)}% "
         f"({len(matched)} verified proficiencies: {', '.join(matched[:4]) if matched else 'core CS foundations'}). "
         f"Seniority alignment is {seniority_fit.replace('_', ' ')}. "
-        f"{'Meets target compensation baseline.' if pay_floor_pass else 'Below specified compensation target.'}"
+        f"{pay_note} Location: {loc_note}."
     )
 
     culture = f"Established engineering culture and structured development teams at {parsed_job.company}."
@@ -344,13 +382,13 @@ def score_match(parsed_job: ParsedJob, user_profile: dict, resume_summary: str, 
     target_roles = user_profile.get("target_roles", [])
     
     prompt = f"""
-    You are an expert technical recruiter acting as a personal assistant for an entry-level candidate (graduating soon / 0-2 yrs).
+    You are an expert technical recruiter acting as a personal career copilot for an entry-level candidate (graduating soon / 0-2 yrs).
     Evaluate the match between the Job Posting and the Candidate's Profile/Resume.
 
     CANDIDATE PROFILE:
-    - Base Location: {base_location}
+    - Base Location: {base_location} (Delhi NCR is candidate's base reference location; Pan-India tech hubs such as Bengaluru, Hyderabad, Pune, Mumbai, Gurgaon, Noida, and Remote/Hybrid roles are prime career destinations and must NOT be penalized or skipped).
     - Remote OK: {user_profile.get("remote_ok", True)}
-    - Pay Floor: ₹{pay_floor} INR
+    - Pay Floor: ₹{pay_floor:,} INR (Strict lower threshold/floor only, NOT an expected norm or ceiling. Openings with higher compensation e.g. 10L-40L+ fully satisfy and exceed this condition and should receive high alignment ratings).
     - Target Roles: {target_roles}
     - Resume Summary: {resume_summary[:1500]}
 

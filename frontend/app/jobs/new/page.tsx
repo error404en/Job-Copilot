@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useApiClient } from '@/lib/useApiClient'
-import { PlusCircle } from 'lucide-react'
+import { PlusCircle, Sparkles, Copy, FileText, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 
 const STORAGE_KEY_JOBS_NEW = 'apply_tool_jobs_new_state'
@@ -707,140 +707,179 @@ export default function AddJobPage() {
   })
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-16 font-sans">
-      
-      {/* Unified Page Header */}
-      <PageHeader
-        suite="Requisition Studio"
-        title="Add Job Requisition"
-        subtitle="Ingest opportunities via direct URL scraping, Greenhouse/Lever/Ashby ATS sync, JD screenshot OCR, or deep company research."
-        icon={PlusCircle}
-        badge="Multi-Source"
-        badgeColor="indigo"
-        actions={
-          <Link
-            href="/inbox"
-            className="bg-[#1a1c20] border border-[#464553]/35 text-[#e2e2e8] px-3.5 py-2 rounded-xl text-xs font-semibold hover:bg-[#282a2e] transition-all flex items-center gap-1.5 shrink-0"
-          >
-            <span>Have raw chats/files? Open Lead Inbox</span>
-          </Link>
-        }
-      />
-
-      {error && (
-        <div className="bg-rose-500/10 border border-rose-500/40 text-rose-300 p-4 rounded-xl text-xs flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-rose-300 hover:text-white font-bold ml-4">✕</button>
-        </div>
-      )}
-
-      {notice && (
-        <div
-          className={`p-4 rounded-xl text-xs flex items-center justify-between border ${
-            notice.type === 'success'
-              ? 'bg-[#45dfa4]/10 border-[#45dfa4]/30 text-[#45dfa4]'
-              : notice.type === 'error'
-              ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-              : 'bg-[#5b5bd6]/15 border-[#5b5bd6]/35 text-[#c3c0ff]'
-          }`}
-        >
-          <span>{notice.message}</span>
-          <button onClick={() => setNotice(null)} className="opacity-75 hover:opacity-100 font-bold ml-4">✕</button>
-        </div>
-      )}
-
-      {/* Global Quick Paste Banner */}
-      <div className="bg-[#1a1c20] border border-[#464553]/35 rounded-xl p-3.5 px-4 flex items-center justify-between text-xs text-[#918f9f]">
-        <div className="flex items-center gap-2">
-          <span><strong className="text-[#e2e2e8]">Quick Paste Ready:</strong> Copied a screenshot from LinkedIn or Snipping Tool? Press <kbd className="bg-[#0c0e12] border border-[#464553]/50 px-1.5 py-0.5 rounded text-[#e2e2e8] font-mono font-semibold">Ctrl+V</kbd> anywhere on this page to load and analyze it.</span>
-        </div>
-        <button 
-          onClick={handleClipboardRead}
-          className="bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white font-semibold px-3 py-1.5 rounded-lg transition-colors shrink-0 ml-3"
-        >
-          Paste from Clipboard
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex space-x-2 bg-[#1a1c20] p-1.5 rounded-xl border border-[#464553]/35">
-        <button 
-          onClick={() => setActiveTab('manual')}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all ${activeTab === 'manual' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
-        >
-          Paste Job / URL
-        </button>
-        <button 
-          onClick={() => setActiveTab('screenshot')}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'screenshot' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
-        >
-          <span>Screenshot OCR</span>
-          {selectedFile && <span className="w-2 h-2 rounded-full bg-[#45dfa4] ml-1"></span>}
-        </button>
-        <button 
-          onClick={() => setActiveTab('deep-dive')}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all ${activeTab === 'deep-dive' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
-        >
-          Company Deep Dive
-        </button>
-        <button 
-          onClick={() => setActiveTab('ats')}
-          className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-xs transition-all ${activeTab === 'ats' ? 'bg-[#5b5bd6] text-white' : 'text-[#918f9f] hover:text-[#e2e2e8] hover:bg-[#282a2e]'}`}
-        >
-          ATS Board Sync
-        </button>
-      </div>
-
-      <div className="bg-[#1a1c20] p-6 sm:p-8 rounded-xl border border-[#464553]/35">
-        
-        {/* TAB 1: MANUAL PASTE / URL */}
-        {activeTab === 'manual' && (
-          <form onSubmit={handleManualSubmit} className="space-y-6">
-            <h1 className="text-2xl font-bold mb-6 text-white tracking-tight">Analyze a Single Job</h1>
-            
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Source</label>
-                <select 
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                  value={source}
-                  onChange={(e) => setSource(e.target.value)}
-                >
-                  <option value="manual">Manual Paste</option>
-                  <option value="linkedin">LinkedIn</option>
-                  <option value="indeed">Indeed</option>
-                  <option value="glassdoor">Glassdoor</option>
-                  <option value="naukri">Naukri</option>
-                  <option value="wellfound">Wellfound</option>
-                  <option value="instahyre">Instahyre</option>
-                  <option value="himalayas">Himalayas</option>
-                  <option value="remote.co">Remote.co</option>
-                  <option value="ycombinator">Y Combinator</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Company Name (Optional)</label>
-                <input 
-                  type="text" 
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="e.g. Barclays, Google, HSBC"
-                />
-              </div>
+    <div className="min-h-screen bg-[#050507] text-[#F3EFE7] font-sans pb-20">
+      <main className="max-w-5xl mx-auto px-4 sm:px-8 py-10 flex flex-col gap-6">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-2 border-b border-white/[0.08]">
+          <div className="flex flex-col gap-2 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">/ Requisition Studio</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#8C97FF]/15 text-[#8C97FF] border border-[#8C97FF]/30 font-semibold">
+                Live Ingestion & OCR
+              </span>
             </div>
-            
-            <div className="grid grid-cols-1 gap-6">
+            <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl leading-[1.04]">
+              Paste & Ingest <i className="italic text-[#A9A59C]">Requisitions</i>
+            </h1>
+            <p className="text-base sm:text-lg leading-relaxed text-[#B4B1A9]">
+              Paste a link, full description, or screenshot (<kbd className="px-1.5 py-0.5 rounded bg-white/10 border border-white/20 text-[#F3EFE7] font-mono text-xs">Ctrl+V</kbd>) from LinkedIn, Glassdoor, or any ATS board.
+            </p>
+          </div>
+
+          <div className="flex items-center p-1 rounded-full bg-white/5 border border-white/10 shrink-0">
+            <span className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-[#F3EFE7] text-[#0A0A0C] shadow-sm">
+              Single JD & OCR Studio
+            </span>
+            <Link
+              href="/inbox"
+              className="px-3.5 py-1.5 rounded-full text-xs font-medium text-[#C9C6BE] hover:text-white transition flex items-center gap-1.5"
+              title="Batch Lead Inbox"
+            >
+              <span>Batch Lead Inbox ↗</span>
+            </Link>
+          </div>
+        </header>
+
+        {error && (
+          <div className="bg-rose-500/10 border border-rose-500/40 text-rose-300 p-4 rounded-xl text-xs flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="text-rose-300 hover:text-white font-bold ml-4 cursor-pointer">✕</button>
+          </div>
+        )}
+
+        {notice && (
+          <div
+            className={`p-4 rounded-xl text-xs flex items-center justify-between border ${
+              notice.type === 'success'
+                ? 'bg-[#5EEAA8]/10 border-[#5EEAA8]/30 text-[#5EEAA8]'
+                : notice.type === 'error'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : 'bg-[#8C97FF]/15 border-[#8C97FF]/35 text-[#C9CCFF]'
+            }`}
+          >
+            <span>{notice.message}</span>
+            <button onClick={() => setNotice(null)} className="opacity-75 hover:opacity-100 font-bold ml-4 cursor-pointer">✕</button>
+          </div>
+        )}
+
+        {/* Global Quick Paste Banner */}
+        <div className="glass p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 border border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[#8C97FF] shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="text-xs text-[#C9C6BE]">
+              <span className="font-semibold text-[#F3EFE7]">Instant Screenshot OCR Ready:</span> Copied a hiring alert, JD screenshot, or email snippet? Press{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-white/10 border border-white/20 text-[#F3EFE7] font-mono text-[11px] font-bold">Ctrl+V</kbd>{' '}
+              anywhere on this screen to instantly load and parse it.
+            </div>
+          </div>
+          <button 
+            type="button"
+            onClick={handleClipboardRead}
+            className="h-8 px-3.5 rounded-full bg-white/10 hover:bg-white/15 text-xs font-semibold text-[#F3EFE7] border border-white/20 transition flex items-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <span>Paste from Clipboard</span>
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button 
+            onClick={() => setActiveTab('manual')}
+            className={`h-9 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer border ${
+              activeTab === 'manual'
+                ? 'bg-[#F3EFE7] text-[#0A0A0C] border-[#F3EFE7] shadow-sm font-semibold'
+                : 'bg-white/[0.05] text-[#C9C6BE] border-white/[0.12] hover:bg-white/[0.1]'
+            }`}
+          >
+            Paste Job / URL
+          </button>
+          <button 
+            onClick={() => setActiveTab('screenshot')}
+            className={`h-9 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer border flex items-center gap-1.5 ${
+              activeTab === 'screenshot'
+                ? 'bg-[#F3EFE7] text-[#0A0A0C] border-[#F3EFE7] shadow-sm font-semibold'
+                : 'bg-white/[0.05] text-[#C9C6BE] border-white/[0.12] hover:bg-white/[0.1]'
+            }`}
+          >
+            <span>Screenshot OCR</span>
+            {selectedFile && <span className="w-2 h-2 rounded-full bg-[#5EEAA8]"></span>}
+          </button>
+          <button 
+            onClick={() => setActiveTab('deep-dive')}
+            className={`h-9 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer border ${
+              activeTab === 'deep-dive'
+                ? 'bg-[#F3EFE7] text-[#0A0A0C] border-[#F3EFE7] shadow-sm font-semibold'
+                : 'bg-white/[0.05] text-[#C9C6BE] border-white/[0.12] hover:bg-white/[0.1]'
+            }`}
+          >
+            Company Deep Dive
+          </button>
+          <button 
+            onClick={() => setActiveTab('ats')}
+            className={`h-9 px-4 rounded-full text-xs sm:text-sm font-medium transition cursor-pointer border ${
+              activeTab === 'ats'
+                ? 'bg-[#F3EFE7] text-[#0A0A0C] border-[#F3EFE7] shadow-sm font-semibold'
+                : 'bg-white/[0.05] text-[#C9C6BE] border-white/[0.12] hover:bg-white/[0.1]'
+            }`}
+          >
+            ATS Board Sync
+          </button>
+        </div>
+
+        <div className="glass p-6 sm:p-8 rounded-2xl border border-white/10 flex flex-col gap-6">
+          
+          {/* TAB 1: MANUAL PASTE / URL */}
+          {activeTab === 'manual' && (
+            <form onSubmit={handleManualSubmit} className="space-y-6">
+              <div>
+                <h2 className="font-serif text-2xl sm:text-3xl text-[#F3EFE7] mb-1">Analyze a Single Job</h2>
+                <p className="text-xs text-[#A8A59D]">Provide an official application link or paste the raw description text.</p>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Source Portal</label>
+                  <select 
+                    className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 text-sm focus:outline-none focus:border-[#8C97FF] transition-all cursor-pointer"
+                    value={source}
+                    onChange={(e) => setSource(e.target.value)}
+                  >
+                    <option value="manual" className="bg-[#0A0B0F]">Manual Paste</option>
+                    <option value="linkedin" className="bg-[#0A0B0F]">LinkedIn</option>
+                    <option value="indeed" className="bg-[#0A0B0F]">Indeed</option>
+                    <option value="glassdoor" className="bg-[#0A0B0F]">Glassdoor</option>
+                    <option value="naukri" className="bg-[#0A0B0F]">Naukri</option>
+                    <option value="wellfound" className="bg-[#0A0B0F]">Wellfound</option>
+                    <option value="instahyre" className="bg-[#0A0B0F]">Instahyre</option>
+                    <option value="himalayas" className="bg-[#0A0B0F]">Himalayas</option>
+                    <option value="remote.co" className="bg-[#0A0B0F]">Remote.co</option>
+                    <option value="ycombinator" className="bg-[#0A0B0F]">Y Combinator</option>
+                    <option value="other" className="bg-[#0A0B0F]">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Company Name (Optional)</label>
+                  <input 
+                    type="text" 
+                    className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="e.g. Barclays, Google, HSBC"
+                  />
+                </div>
+              </div>
+              
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-semibold text-zinc-400 uppercase tracking-wide">Job or Creator Apply URL</label>
-                  <span className="text-xs text-zinc-500">Auto-resolves shortened lnkd.in links</span>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D]">Job or Careers Apply URL</label>
+                  <span className="text-[11px] text-[#A8A59D]">Auto-resolves shortened lnkd.in links</span>
                 </div>
                 <div className="flex gap-2">
                   <input 
                     type="url" 
-                    className="flex-1 bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    className="flex-1 bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="https://lnkd.in/... or company careers URL"
@@ -849,230 +888,238 @@ export default function AddJobPage() {
                     type="button" 
                     onClick={handleUrlFetch} 
                     disabled={isUrlFetching}
-                    className="bg-zinc-800 text-white px-5 rounded-lg font-bold hover:bg-zinc-700 transition-colors text-sm disabled:opacity-50"
+                    className="h-11 px-5 rounded-xl font-medium bg-white/10 hover:bg-white/15 text-white transition text-xs font-mono uppercase tracking-wider disabled:opacity-50 cursor-pointer"
                   >
-                    {isUrlFetching ? 'Resolving...' : 'Fetch'}
+                    {isUrlFetching ? 'Resolving...' : 'Fetch & Scrape'}
                   </button>
                 </div>
               </div>
-            </div>
 
-            {promoWarning && (
-              <div className="bg-amber-500/10 border border-amber-500/40 text-amber-300 p-4 rounded-xl text-sm space-y-2">
-                <div className="font-semibold flex items-center gap-2">
-                  <span>⚠️</span> Influencer / Course Link Detected
-                </div>
-                <p className="text-xs text-amber-200/90 leading-relaxed">{promoWarning}</p>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setActiveTab('deep-dive')
-                    if (companyName) setDeepDiveCompany(companyName)
-                  }}
-                  className="text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 px-3 py-1.5 rounded transition-colors inline-block"
-                >
-                  Use Company Deep Dive for Official Openings →
-                </button>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Job Description Text</label>
-              <textarea 
-                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 rounded-lg p-4 font-mono text-sm leading-relaxed placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all" 
-                rows={10}
-                required
-                value={rawJd}
-                onChange={(e) => setRawJd(e.target.value)}
-                placeholder="Paste the full job description or creator hiring alert text here..."
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={parseMutation.isPending || !rawJd}
-              className="w-full bg-blue-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(37,99,235,0.2)] text-lg"
-            >
-              {parseMutation.isPending ? 'Analyzing with AI...' : 'Analyze Job Fit'}
-            </button>
-          </form>
-        )}
-
-        {/* TAB 2: SCREENSHOT (CLIPBOARD PASTE + DRAG/DROP + FILE PICKER) */}
-        {activeTab === 'screenshot' && (
-          <form onSubmit={handleScreenshotSubmit} className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h1 className="text-2xl font-bold text-white tracking-tight">Screenshot Analysis</h1>
-                <span className="text-xs bg-blue-500/20 text-blue-400 px-2.5 py-1 rounded-full border border-blue-500/30 font-medium">
-                  Ctrl+V Supported
-                </span>
-              </div>
-              <p className="text-zinc-400 text-sm mb-3">
-                Paste any copied screenshot directly (<kbd className="bg-zinc-800 border border-zinc-700 px-1 py-0.5 rounded text-white font-mono text-xs">Ctrl+V</kbd>), drag & drop, or browse your files. Works on LinkedIn infographics, hiring alerts, and compensation tables!
-              </p>
-            </div>
-
-            {/* Paste Notification Banner */}
-            {pastedFromClipboard && (
-              <div className="bg-green-500/10 border border-green-500/30 text-green-300 p-3 rounded-xl text-sm flex items-center justify-between animate-in fade-in duration-300">
-                <div className="flex items-center gap-2">
-                  <span>✅</span>
-                  <span><strong>Screenshot Pasted from Clipboard!</strong> Ready for AI vision extraction.</span>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={() => { setSelectedFile(null); setPastedFromClipboard(false); }}
-                  className="text-xs text-zinc-400 hover:text-white"
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-
-            {/* Live Image Preview OR Dropzone */}
-            {imagePreviewUrl ? (
-              <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-center space-y-4">
-                <div className="relative inline-block max-w-full">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img 
-                    src={imagePreviewUrl} 
-                    alt="Screenshot Preview" 
-                    className="max-h-80 mx-auto rounded-xl object-contain shadow-2xl border border-zinc-800"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedFile(null); setImagePreviewUrl(null); }}
-                    className="absolute top-2 right-2 bg-zinc-900/90 text-white rounded-full p-2 hover:bg-red-600 transition-colors shadow-lg text-xs"
-                    title="Remove Screenshot"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="text-xs text-zinc-400 flex items-center justify-center gap-4">
-                  <span>📁 {selectedFile?.name || 'clipboard_screenshot.png'}</span>
-                  <span>•</span>
-                  <span>{selectedFile ? (selectedFile.size / 1024).toFixed(1) + ' KB' : ''}</span>
-                  <span>•</span>
+              {promoWarning && (
+                <div className="bg-amber-500/10 border border-amber-500/40 text-amber-300 p-4 rounded-xl text-xs space-y-2">
+                  <div className="font-semibold flex items-center gap-2">
+                    <span>⚠️</span> Influencer / Course Link Detected
+                  </div>
+                  <p className="text-xs text-amber-200/90 leading-relaxed">{promoWarning}</p>
                   <button 
-                    type="button"
-                    onClick={() => { setSelectedFile(null); setImagePreviewUrl(null); }}
-                    className="text-blue-400 hover:underline"
+                    type="button" 
+                    onClick={() => {
+                      setActiveTab('deep-dive')
+                      if (companyName) setDeepDiveCompany(companyName)
+                    }}
+                    className="text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 px-3 py-1.5 rounded transition-colors inline-block cursor-pointer"
                   >
-                    Replace Image
+                    Use Company Deep Dive for Official Openings →
                   </button>
                 </div>
-              </div>
-            ) : (
-              <div 
-                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  setIsDragOver(false)
-                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                    const f = e.dataTransfer.files[0]
-                    if (f.type.startsWith('image/')) {
-                      setSelectedFile(f)
-                    } else {
-                      setError('Please drop an image file (PNG, JPG).')
-                    }
-                  }
-                }}
-                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
-                  isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-zinc-700 bg-zinc-950/50 hover:border-blue-500/50'
-                }`}
-              >
-                <input 
-                  type="file" 
-                  accept="image/png, image/jpeg, image/jpg"
-                  className="hidden" 
-                  id="file-upload"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      setSelectedFile(e.target.files[0])
-                    }
-                  }}
-                />
-                <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                  <span className="text-5xl mb-4">📋</span>
-                  <span className="text-white text-lg font-bold mb-1">
-                    Press <kbd className="bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded text-white font-mono">Ctrl+V</kbd> to Paste Screenshot
-                  </span>
-                  <span className="text-zinc-400 text-sm mt-1 mb-4">
-                    Or drag and drop an image file here, or click to browse
-                  </span>
-                  <button 
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleClipboardRead(); }}
-                    className="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-4 py-2 rounded-lg transition-colors border border-zinc-700"
-                  >
-                    Click to Paste from Clipboard
-                  </button>
-                  <span className="text-zinc-600 text-xs mt-3">Supports PNG, JPG, WebP up to 10MB</span>
-                </label>
-              </div>
-            )}
-
-            <button 
-              type="submit" 
-              disabled={isUploading || !selectedFile}
-              className="w-full bg-blue-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(37,99,235,0.2)] text-lg flex items-center justify-center gap-2"
-            >
-              {isUploading ? (
-                <>
-                  <span className="animate-spin text-lg leading-none">⚙️</span>
-                  Extracting Text & Analyzing Job Fit...
-                </>
-              ) : (
-                'Analyze Screenshot'
               )}
-            </button>
-          </form>
-        )}
+
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Job Description Text</label>
+                <textarea 
+                  className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-4 font-mono text-xs leading-relaxed placeholder-[#6A6863] focus:outline-none focus:border-[#8C97FF] transition-all" 
+                  rows={9}
+                  required
+                  value={rawJd}
+                  onChange={(e) => setRawJd(e.target.value)}
+                  placeholder="Paste the full job description or hiring alert text here..."
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={parseMutation.isPending || !rawJd}
+                className="w-full h-12 rounded-full bg-[#F3EFE7] text-[#0A0A0C] hover:bg-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {parseMutation.isPending ? 'Analyzing with AI Fit Engine...' : 'Analyze Job Fit'}
+              </button>
+            </form>
+          )}
+
+          {/* TAB 2: SCREENSHOT (CLIPBOARD PASTE + DRAG/DROP + FILE PICKER) */}
+          {activeTab === 'screenshot' && (
+            <form onSubmit={handleScreenshotSubmit} className="space-y-6">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="font-serif text-2xl sm:text-3xl text-[#F3EFE7]">Screenshot OCR Analysis</h2>
+                  <span className="text-[11px] font-mono uppercase tracking-wider bg-white/5 text-[#A8A59D] px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#5EEAA8]"></span>
+                    Ctrl+V Supported
+                  </span>
+                </div>
+                <p className="text-xs text-[#A8A59D]">
+                  Paste any copied screenshot directly (<kbd className="bg-white/10 border border-white/20 px-1.5 py-0.5 rounded text-[#F3EFE7] font-mono text-[10px]">Ctrl+V</kbd>), drag & drop, or browse image files. Perfect for LinkedIn infographics, hiring alerts, and role specs.
+                </p>
+              </div>
+
+              {/* Paste Notification Banner */}
+              {pastedFromClipboard && (
+                <div className="bg-[#5EEAA8]/10 border border-[#5EEAA8]/30 text-[#5EEAA8] p-3 rounded-xl text-xs flex items-center justify-between animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2">
+                    <span>✅</span>
+                    <span><strong>Screenshot Pasted from Clipboard!</strong> Ready for AI vision extraction.</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => { setSelectedFile(null); setPastedFromClipboard(false); }}
+                    className="text-xs text-[#A8A59D] hover:text-white cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
+              {/* Live Image Preview OR Dropzone */}
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">
+                  Dropzone / Clipboard
+                </label>
+                {imagePreviewUrl ? (
+                  <div className="bg-black/40 border border-white/15 rounded-2xl p-6 text-center space-y-4">
+                    <div className="relative inline-block max-w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img 
+                        src={imagePreviewUrl} 
+                        alt="Screenshot Preview" 
+                        className="max-h-80 mx-auto rounded-xl object-contain shadow-2xl border border-white/10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedFile(null); setImagePreviewUrl(null); }}
+                        className="absolute top-2 right-2 bg-black/80 hover:bg-rose-500/80 text-white rounded-full p-2 transition-colors shadow-lg text-xs cursor-pointer border border-white/20"
+                        title="Remove Screenshot"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="text-xs text-[#A8A59D] flex items-center justify-center gap-3 font-mono">
+                      <span>📁 {selectedFile?.name || 'clipboard_screenshot.png'}</span>
+                      <span className="text-white/20">•</span>
+                      <span>{selectedFile ? (selectedFile.size / 1024).toFixed(1) + ' KB' : ''}</span>
+                      <span className="text-white/20">•</span>
+                      <button 
+                        type="button"
+                        onClick={() => { setSelectedFile(null); setImagePreviewUrl(null); }}
+                        className="text-[#8C97FF] hover:underline cursor-pointer"
+                      >
+                        Replace Image
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setIsDragOver(false)
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      const f = e.dataTransfer.files[0]
+                      if (f.type.startsWith('image/')) {
+                        setSelectedFile(f)
+                      } else {
+                        setError('Please drop an image file (PNG, JPG, WebP).')
+                      }
+                    }
+                  }}
+                  className={`border border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${
+                    isDragOver ? 'border-[#8C97FF] bg-[#8C97FF]/10' : 'border-white/15 bg-black/40 hover:border-white/30'
+                  }`}
+                >
+                  <input 
+                    type="file" 
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    className="hidden" 
+                    id="file-upload"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setSelectedFile(e.target.files[0])
+                      }
+                    }}
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                    <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white mb-3">
+                      <Upload className="w-5 h-5 text-[#A8A59D]" />
+                    </div>
+                    <span className="text-[#F3EFE7] text-sm font-semibold mb-1">
+                      Press <kbd className="bg-white/10 border border-white/20 px-1.5 py-0.5 rounded text-[#F3EFE7] font-mono text-xs">Ctrl+V</kbd> to Paste Screenshot
+                    </span>
+                    <span className="text-[#A8A59D] text-xs mt-1 mb-4">
+                      or drag and drop an image file here, or click to browse
+                    </span>
+                    <button 
+                      type="button" 
+                      onClick={(e) => { e.stopPropagation(); handleClipboardRead(); }}
+                      className="h-9 px-4 rounded-full bg-white/10 hover:bg-white/15 text-[#F3EFE7] text-xs font-mono uppercase tracking-wider transition border border-white/15 cursor-pointer flex items-center gap-2"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-[#A8A59D]" />
+                      Paste from Clipboard
+                    </button>
+                    <span className="text-[#6A6863] text-[11px] mt-4 font-mono">Supports PNG, JPG, WebP up to 10MB</span>
+                  </label>
+                </div>
+              )}
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isUploading || !selectedFile}
+                className="w-full h-12 rounded-full bg-[#F3EFE7] text-[#0A0A0C] hover:bg-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isUploading ? (
+                  <>
+                    <span className="animate-spin text-base leading-none">⚙️</span>
+                    <span>Extracting Text & Analyzing Job Fit...</span>
+                  </>
+                ) : (
+                  'Analyze Screenshot Fit'
+                )}
+              </button>
+            </form>
+          )}
 
         {/* TAB 3: COMPANY DEEP DIVE */}
         {activeTab === 'deep-dive' && (
           <div className="space-y-6">
             <form onSubmit={handleDeepDiveSubmit} className="space-y-6">
               <div>
-                <h1 className="text-2xl font-bold mb-2 text-white tracking-tight">Company Deep Dive & Live Roles</h1>
-                <p className="text-zinc-400 text-sm">
+                <h2 className="font-serif text-2xl sm:text-3xl text-[#F3EFE7] mb-1">Company Deep Dive & Live Roles</h2>
+                <p className="text-xs text-[#A8A59D]">
                   Research enterprise culture, verified salary brackets (Analyst/Associate/SDE), and discover live openings across official career portals.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Company Name</label>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Company Name</label>
                   <input 
                     type="text" 
-                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                     value={deepDiveCompany}
                     onChange={(e) => setDeepDiveCompany(e.target.value)}
-                    placeholder="e.g. Barclays, HSBC, Google, HCLTech"
+                    placeholder="e.g. Barclays, Google, HSBC, Microsoft"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Target Role Keywords (Optional)</label>
+                  <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Target Role Keywords (Optional)</label>
                   <input 
                     type="text" 
-                    className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                     value={deepDiveKeywords}
                     onChange={(e) => setDeepDiveKeywords(e.target.value)}
-                    placeholder="e.g. Analyst, Associate, Engineer"
+                    placeholder="e.g. Analyst, Associate, Engineer, SDE"
                   />
                 </div>
               </div>
               <button 
                 type="submit" 
                 disabled={researchMutation.isPending || !deepDiveCompany}
-                className="w-full bg-purple-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(147,51,234,0.2)] text-lg flex items-center justify-center gap-2"
+                className="w-full h-12 rounded-full bg-[#F3EFE7] text-[#0A0A0C] hover:bg-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 {researchMutation.isPending ? (
                   <>
-                    <span className="animate-spin text-lg leading-none">⚙️</span>
-                    Discovering Live Roles & Intelligence for {deepDiveCompany}...
+                    <span className="animate-spin text-base leading-none">⚙️</span>
+                    <span>Discovering Live Roles & Intelligence for {deepDiveCompany}...</span>
                   </>
                 ) : (
                   `Deep Dive ${deepDiveCompany || 'Company'} & Find Roles`
@@ -1085,29 +1132,29 @@ export default function AddJobPage() {
                 
                 {/* Verified Compensation Table if available */}
                 {researchData.company_info?.compensation_levels && researchData.company_info.compensation_levels.length > 0 && (
-                  <div className="bg-zinc-950/80 p-6 rounded-2xl border border-zinc-800 shadow-sm">
-                    <h2 className="text-lg font-bold text-white tracking-tight mb-4 flex items-center gap-2">
-                      <span>💰</span> Verified Compensation Breakdown
-                    </h2>
+                  <div className="bg-black/40 p-6 rounded-2xl border border-white/15 shadow-sm">
+                    <h3 className="font-mono text-xs uppercase tracking-wider text-[#A8A59D] mb-4 flex items-center gap-2">
+                      <span className="text-[#5EEAA8]">💰</span> Verified Compensation Breakdown
+                    </h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-sm">
                         <thead>
-                          <tr className="border-b border-zinc-800 text-zinc-400 text-xs uppercase tracking-wider">
+                          <tr className="border-b border-white/10 text-[#A8A59D] text-xs font-mono uppercase tracking-wider">
                             <th className="py-3 px-4 font-semibold">Level / Role</th>
                             <th className="py-3 px-4 font-semibold">Base Pay</th>
                             <th className="py-3 px-4 font-semibold">Bonus</th>
                             <th className="py-3 px-4 font-semibold">Stock</th>
-                            <th className="py-3 px-4 font-semibold text-right text-purple-400">Total CTC</th>
+                            <th className="py-3 px-4 font-semibold text-right text-[#5EEAA8]">Total CTC</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
+                        <tbody className="divide-y divide-white/5 text-[#F3EFE7]">
                           {researchData.company_info.compensation_levels.map((lvl: any, i: number) => (
-                            <tr key={i} className="hover:bg-zinc-900/40">
-                              <td className="py-3 px-4 font-medium text-white">{lvl.level_name}</td>
+                            <tr key={i} className="hover:bg-white/[0.02]">
+                              <td className="py-3 px-4 font-medium text-[#F3EFE7]">{lvl.level_name}</td>
                               <td className="py-3 px-4 font-mono">{lvl.base_pay}</td>
-                              <td className="py-3 px-4 font-mono text-zinc-400">{lvl.bonus || '—'}</td>
-                              <td className="py-3 px-4 font-mono text-zinc-400">{lvl.stock || '—'}</td>
-                              <td className="py-3 px-4 font-mono font-bold text-right text-green-400">{lvl.total_comp}</td>
+                              <td className="py-3 px-4 font-mono text-[#A8A59D]">{lvl.bonus || '—'}</td>
+                              <td className="py-3 px-4 font-mono text-[#A8A59D]">{lvl.stock || '—'}</td>
+                              <td className="py-3 px-4 font-mono font-bold text-right text-[#5EEAA8]">{lvl.total_comp}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1117,56 +1164,108 @@ export default function AddJobPage() {
                 )}
 
                 {/* Intelligence Report */}
-                <div className="bg-zinc-950/50 p-8 rounded-2xl border border-zinc-800/50 shadow-sm backdrop-blur-sm">
-                  <h2 className="text-xl font-bold text-white tracking-tight mb-6 flex items-center gap-2">
-                    <span>🏢</span> Company Intelligence Report
-                  </h2>
-                  <div className="grid grid-cols-2 gap-6">
+                <div className="bg-black/40 p-6 sm:p-8 rounded-2xl border border-white/15 shadow-sm backdrop-blur-sm">
+                  <h3 className="font-mono text-xs uppercase tracking-wider text-[#A8A59D] mb-6 flex items-center gap-2">
+                    <span className="text-[#8C97FF]">🏢</span> Company Intelligence Report
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Work Culture</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.work_culture}</p>
+                        <strong className="text-[#A8A59D] font-mono uppercase tracking-widest text-[11px] block mb-1">Work Culture</strong>
+                        <p className="text-[#F3EFE7] text-xs leading-relaxed">{researchData.company_info.work_culture}</p>
                       </div>
                       <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Work / Life Balance</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.work_life_balance}</p>
+                        <strong className="text-[#A8A59D] font-mono uppercase tracking-widest text-[11px] block mb-1">Work / Life Balance</strong>
+                        <p className="text-[#F3EFE7] text-xs leading-relaxed">{researchData.company_info.work_life_balance}</p>
                       </div>
                     </div>
                     <div className="space-y-4">
                       <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Compensation Overview</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.compensation_estimates}</p>
+                        <strong className="text-[#A8A59D] font-mono uppercase tracking-widest text-[11px] block mb-1">Compensation Overview</strong>
+                        <p className="text-[#F3EFE7] text-xs leading-relaxed">{researchData.company_info.compensation_estimates}</p>
                       </div>
                       <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Perks & Benefits</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.perks}</p>
+                        <strong className="text-[#A8A59D] font-mono uppercase tracking-widest text-[11px] block mb-1">Perks & Benefits</strong>
+                        <p className="text-[#F3EFE7] text-xs leading-relaxed">{researchData.company_info.perks}</p>
                       </div>
                       <div>
-                        <strong className="text-zinc-500 uppercase tracking-widest text-xs block mb-1">Bonds / Contracts</strong>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{researchData.company_info.bonds_or_contracts}</p>
+                        <strong className="text-[#A8A59D] font-mono uppercase tracking-widest text-[11px] block mb-1">Bonds / Contracts</strong>
+                        <p className="text-[#F3EFE7] text-xs leading-relaxed">{researchData.company_info.bonds_or_contracts}</p>
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Tech Stack if available */}
+                {researchData.company_info?.tech_stack && researchData.company_info.tech_stack.length > 0 && (
+                  <div className="bg-black/40 p-6 rounded-2xl border border-white/15 shadow-sm space-y-3">
+                    <h3 className="text-xs font-mono uppercase tracking-wider text-[#A8A59D] flex items-center gap-2">
+                      <span className="text-[#8C97FF]">⚡</span> Verified Engineering & Production Tech Stack
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {researchData.company_info.tech_stack.map((tech: string, idx: number) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1 rounded-lg text-xs font-mono bg-white/5 text-[#F3EFE7] border border-white/10"
+                        >
+                          {tech}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Interview Process if available */}
+                {researchData.company_info?.interview_process && (
+                  <div className="bg-black/40 p-6 rounded-2xl border border-white/15 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-mono uppercase tracking-wider text-[#A8A59D] flex items-center gap-2">
+                        <span>🎯</span> Interview Process & Assessment Bar
+                      </h3>
+                      {researchData.company_info.interview_process.difficulty && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                          Bar: {researchData.company_info.interview_process.difficulty}
+                        </span>
+                      )}
+                    </div>
+                    {researchData.company_info.interview_process.rounds && (
+                      <div className="space-y-2">
+                        {researchData.company_info.interview_process.rounds.map((round: string, idx: number) => (
+                          <div key={idx} className="flex items-start gap-2.5 text-xs text-[#F3EFE7]">
+                            <span className="w-5 h-5 rounded-full bg-white/10 text-white font-mono text-[11px] flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span>{round}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {researchData.company_info.interview_process.tips && (
+                      <div className="p-3 bg-white/5 rounded-xl border border-white/10 text-xs text-[#F3EFE7]">
+                        <strong className="text-[#A8A59D] font-mono uppercase text-[11px] mr-1">Pro-Tip:</strong> {researchData.company_info.interview_process.tips}
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {/* Auto-Discovered Roles with Location Filter */}
                 <div>
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                     <div>
-                      <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                      <h3 className="font-serif text-2xl text-[#F3EFE7] flex items-center gap-2">
                         <span>🎯</span> Open Roles Discovered ({filteredDeepDiveJobs.length})
-                      </h2>
+                      </h3>
                       {researchData.careers_url ? (
                         <a 
                           href={researchData.careers_url} 
                           target="_blank" 
                           rel="noopener noreferrer" 
-                          className="text-xs text-blue-400 hover:underline inline-block mt-1"
+                          className="text-xs text-[#8C97FF] hover:underline font-mono inline-block mt-1"
                         >
                           Official Careers Portal: {researchData.careers_url} ↗
                         </a>
                       ) : (
-                        <p className="text-xs text-zinc-500 mt-1">
+                        <p className="text-xs text-[#A8A59D] mt-1">
                           No verified official careers page found for this company — we only show links on the company&apos;s own domain or its ATS.
                         </p>
                       )}
@@ -1176,52 +1275,52 @@ export default function AddJobPage() {
                     <div className="flex flex-wrap items-center gap-3">
                       {/* Location Filter */}
                       <div className="flex items-center gap-1.5">
-                        <label className="text-xs text-zinc-400 font-semibold uppercase">Place:</label>
+                        <label className="text-[11px] text-[#A8A59D] font-mono uppercase">Place:</label>
                         <select
                           value={deepDiveLocFilter}
                           onChange={(e) => setDeepDiveLocFilter(e.target.value)}
-                          className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          className="bg-black/40 border border-white/15 text-[#F3EFE7] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#8C97FF]"
                         >
-                          <option value="india_remote_reloc">🇮🇳 India, Remote & Abroad with Relocation (Fresher Focus)</option>
-                          <option value="india">🇮🇳 India (Any)</option>
-                          <option value="bengaluru">Bengaluru / Bangalore</option>
-                          <option value="mumbai">Mumbai</option>
-                          <option value="pune">Pune</option>
-                          <option value="hyderabad">Hyderabad</option>
-                          <option value="delhi">Delhi / NCR</option>
-                          <option value="chennai">Chennai</option>
-                          <option value="remote">Remote Only</option>
-                          <option value="relocation">✈️ Abroad with Relocation Covered</option>
-                          <option value="all">🌍 All Locations (Including Unsponsored Abroad)</option>
+                          <option value="india_remote_reloc" className="bg-[#0A0A0C] text-[#F3EFE7]">🇮🇳 India, Remote & Abroad with Relocation (Fresher Focus)</option>
+                          <option value="india" className="bg-[#0A0A0C] text-[#F3EFE7]">🇮🇳 India (Any)</option>
+                          <option value="bengaluru" className="bg-[#0A0A0C] text-[#F3EFE7]">Bengaluru / Bangalore</option>
+                          <option value="mumbai" className="bg-[#0A0A0C] text-[#F3EFE7]">Mumbai</option>
+                          <option value="pune" className="bg-[#0A0A0C] text-[#F3EFE7]">Pune</option>
+                          <option value="hyderabad" className="bg-[#0A0A0C] text-[#F3EFE7]">Hyderabad</option>
+                          <option value="delhi" className="bg-[#0A0A0C] text-[#F3EFE7]">Delhi / NCR</option>
+                          <option value="chennai" className="bg-[#0A0A0C] text-[#F3EFE7]">Chennai</option>
+                          <option value="remote" className="bg-[#0A0A0C] text-[#F3EFE7]">Remote Only</option>
+                          <option value="relocation" className="bg-[#0A0A0C] text-[#F3EFE7]">✈️ Abroad with Relocation Covered</option>
+                          <option value="all" className="bg-[#0A0A0C] text-[#F3EFE7]">🌍 All Locations (Including Unsponsored Abroad)</option>
                         </select>
                       </div>
 
                       {/* Experience Filter */}
                       <div className="flex items-center gap-1.5">
-                        <label className="text-xs text-zinc-400 font-semibold uppercase">Experience:</label>
+                        <label className="text-[11px] text-[#A8A59D] font-mono uppercase">Experience:</label>
                         <select
                           value={deepDiveExpFilter}
                           onChange={(e) => setDeepDiveExpFilter(e.target.value)}
-                          className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          className="bg-black/40 border border-white/15 text-[#F3EFE7] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#8C97FF]"
                         >
-                          <option value="fresher">🎓 Freshers / 0-2 Yrs (Entry Level & Interns)</option>
-                          <option value="all">All Experience Levels</option>
-                          <option value="mid">💼 2-5 Yrs (Mid-Level)</option>
-                          <option value="senior">⭐ 5+ Yrs (Senior & Lead)</option>
+                          <option value="fresher" className="bg-[#0A0A0C] text-[#F3EFE7]">🎓 Freshers / 0-2 Yrs (Entry Level & Interns)</option>
+                          <option value="all" className="bg-[#0A0A0C] text-[#F3EFE7]">All Experience Levels</option>
+                          <option value="mid" className="bg-[#0A0A0C] text-[#F3EFE7]">💼 2-5 Yrs (Mid-Level)</option>
+                          <option value="senior" className="bg-[#0A0A0C] text-[#F3EFE7]">⭐ 5+ Yrs (Senior & Lead)</option>
                         </select>
                       </div>
 
                       {/* Salary Filter */}
                       <div className="flex items-center gap-1.5">
-                        <label className="text-xs text-zinc-400 font-semibold uppercase">Salary:</label>
+                        <label className="text-[11px] text-[#A8A59D] font-mono uppercase">Salary:</label>
                         <select
                           value={deepDiveSalaryFilter}
                           onChange={(e) => setDeepDiveSalaryFilter(e.target.value)}
-                          className="bg-zinc-950 border border-zinc-800 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          className="bg-black/40 border border-white/15 text-[#F3EFE7] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#8C97FF]"
                         >
-                          <option value="all">All Salaries</option>
-                          <option value="high">₹15.0L+ CTC</option>
-                          <option value="top">₹30.0L+ CTC</option>
+                          <option value="all" className="bg-[#0A0A0C] text-[#F3EFE7]">All Salaries</option>
+                          <option value="high" className="bg-[#0A0A0C] text-[#F3EFE7]">₹15.0L+ CTC</option>
+                          <option value="top" className="bg-[#0A0A0C] text-[#F3EFE7]">₹30.0L+ CTC</option>
                         </select>
                       </div>
 
@@ -1232,7 +1331,7 @@ export default function AddJobPage() {
                             setDeepDiveExpFilter('fresher')
                             setDeepDiveSalaryFilter('all')
                           }}
-                          className="text-xs text-purple-400 hover:underline"
+                          className="text-xs text-[#8C97FF] hover:underline font-mono"
                         >
                           Reset to Fresher Filters
                         </button>
@@ -1249,54 +1348,54 @@ export default function AddJobPage() {
                         const isAnalyzingThis = analyzingRoleIdx === i
 
                         return (
-                          <div key={i} className="bg-zinc-950 p-5 rounded-xl border border-zinc-800 space-y-4 hover:border-purple-500/50 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(168,85,247,0.15)] transition-all duration-300">
+                          <div key={i} className="bg-black/40 p-5 rounded-2xl border border-white/15 space-y-4 hover:border-white/30 transition-all duration-300">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <h3 
                                     onClick={() => handleFullAnalysis(j, i)}
-                                    className="font-bold text-white text-lg hover:text-purple-300 cursor-pointer transition-colors flex items-center gap-1.5"
+                                    className="font-serif text-lg text-[#F3EFE7] hover:text-[#8C97FF] cursor-pointer transition-colors flex items-center gap-1.5"
                                     title="Click to view full analysis and tailored materials"
                                   >
                                     <span>{j.role_title}</span>
-                                    <span className="text-xs text-zinc-500 hover:text-purple-400">↗</span>
+                                    <span className="text-xs text-[#A8A59D] hover:text-white">↗</span>
                                   </h3>
                                   {j.experience_level && (
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                    <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border ${
                                       j.experience_level.includes('0-2') || j.experience_level.includes('Freshers')
-                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                        ? 'bg-[#5EEAA8]/10 text-[#5EEAA8] border-[#5EEAA8]/25'
                                         : j.experience_level.includes('5+')
-                                        ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                        ? 'bg-[#8C97FF]/10 text-[#8C97FF] border-[#8C97FF]/25'
+                                        : 'bg-white/10 text-white/90 border-white/15'
                                     }`}>
                                       {j.experience_level}
                                     </span>
                                   )}
                                   {j.covers_relocation && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-blue-500/20 text-blue-300 border-blue-500/30 flex items-center gap-1">
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-[#8C97FF]/10 text-[#8C97FF] border-[#8C97FF]/25 flex items-center gap-1">
                                       <span>✈️</span> Relocation Covered
                                     </span>
                                   )}
                                   {j.is_fresher_role && !j.experience_level?.includes('0-2') && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-1">
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-[#5EEAA8]/10 text-[#5EEAA8] border-[#5EEAA8]/25 flex items-center gap-1">
                                       <span>🎓</span> Fresher Friendly
                                     </span>
                                   )}
                                   {j.is_abroad && !j.covers_relocation && (
-                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border bg-zinc-800/90 text-zinc-400 border-zinc-700 flex items-center gap-1">
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-white/5 text-[#A8A59D] border-white/10 flex items-center gap-1">
                                       <span>⚠️</span> Overseas (No Relocation)
                                     </span>
                                   )}
                                   {j.compensation_range && (
-                                    <span className="text-[10px] text-green-400 font-mono bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                                    <span className="text-[10px] text-[#5EEAA8] font-mono bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10">
                                       💰 {j.compensation_range}
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-xs text-zinc-400 mt-1.5 flex flex-wrap items-center gap-2">
+                                <div className="text-xs text-[#A8A59D] font-mono mt-1.5 flex flex-wrap items-center gap-2">
                                   <span>📍 {j.location || "India"}</span>
-                                  <span className="text-zinc-700">•</span>
-                                  <span className="capitalize text-zinc-500">
+                                  <span className="text-white/20">•</span>
+                                  <span className="capitalize text-[#A8A59D]">
                                     {j.source === 'live_search' 
                                       ? '🌐 Live Job Portal' 
                                       : j.source === 'careers_page' 
@@ -1307,8 +1406,8 @@ export default function AddJobPage() {
                                   </span>
                                   {j.required_skills && j.required_skills.length > 0 && (
                                     <>
-                                      <span className="text-zinc-700">•</span>
-                                      <span className="text-zinc-500">Skills: {j.required_skills.slice(0, 4).join(', ')}</span>
+                                      <span className="text-white/20">•</span>
+                                      <span className="text-[#6A6863]">Skills: {j.required_skills.slice(0, 4).join(', ')}</span>
                                     </>
                                   )}
                                 </div>
@@ -1317,22 +1416,22 @@ export default function AddJobPage() {
                               {/* Top Fit Score Badge if scored */}
                               {score && (
                                 <div className="flex items-center gap-3 shrink-0">
-                                  <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider ${
+                                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider ${
                                     score.verdict === 'apply'
-                                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                      ? 'bg-[#5EEAA8]/15 text-[#5EEAA8] border border-[#5EEAA8]/30'
                                       : score.verdict === 'stretch'
-                                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                      ? 'bg-[#8C97FF]/15 text-[#8C97FF] border border-[#8C97FF]/30'
+                                      : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                                   }`}>
-                                    {score.verdict === 'apply' ? '✅ APPLY' : score.verdict === 'stretch' ? '🟣 STRETCH' : '⚠️ SKIP'}
+                                    {score.verdict === 'apply' ? '✓ APPLY' : score.verdict === 'stretch' ? '⚡ STRETCH' : '✕ SKIP'}
                                   </span>
                                   <div className="text-right">
-                                    <div className={`text-2xl font-black ${
-                                      score.match_score >= 80 ? 'text-green-400' : score.match_score >= 50 ? 'text-amber-400' : 'text-zinc-500'
+                                    <div className={`text-2xl font-serif font-bold ${
+                                      score.match_score >= 80 ? 'text-[#5EEAA8]' : score.match_score >= 50 ? 'text-amber-400' : 'text-[#6A6863]'
                                     }`}>
                                       {score.match_score}
                                     </div>
-                                    <div className="text-[9px] text-zinc-500 uppercase font-bold tracking-widest">Fit Score</div>
+                                    <div className="text-[9px] text-[#A8A59D] uppercase font-mono tracking-widest">Fit Score</div>
                                   </div>
                                 </div>
                               )}
@@ -1340,25 +1439,25 @@ export default function AddJobPage() {
 
                             {/* Inline Scoring Report if evaluated */}
                             {score && (
-                              <div className="bg-zinc-900/60 p-3.5 rounded-xl border border-zinc-800/80 text-xs space-y-2 animate-in fade-in duration-300">
-                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                                  <span className="text-zinc-300 font-medium">
+                              <div className="bg-black/60 p-4 rounded-xl border border-white/10 text-xs space-y-2 animate-in fade-in duration-300">
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                                  <span className="text-[#F3EFE7]">
                                     🎯 <strong>Experience Fit:</strong> {score.seniority_fit === 'good_fit' || score.seniority_fit === 'ideal' ? 'Direct Match for your background' : score.seniority_fit}
                                   </span>
                                   {score.matched_keywords && score.matched_keywords.length > 0 && (
-                                    <span className="text-green-400">
+                                    <span className="text-[#5EEAA8]">
                                       Matched: {score.matched_keywords.slice(0, 4).join(', ')}
                                     </span>
                                   )}
                                 </div>
                                 {score.reasoning && (
-                                  <p className="text-zinc-400 text-xs leading-relaxed">
+                                  <p className="text-[#A8A59D] text-xs leading-relaxed">
                                     {score.reasoning}
                                   </p>
                                 )}
-                                <div className="pt-1 flex justify-end">
+                                <div className="pt-1 flex justify-end font-mono">
                                   {score.job_id ? (
-                                    <Link href={`/jobs/${score.job_id}`} className="text-purple-400 hover:text-purple-300 font-semibold hover:underline flex items-center gap-1">
+                                    <Link href={`/jobs/${score.job_id}`} className="text-[#8C97FF] hover:text-white font-medium hover:underline flex items-center gap-1">
                                       <span>View Deep Breakdown & Cover Letter</span>
                                       <span>→</span>
                                     </Link>
@@ -1367,7 +1466,7 @@ export default function AddJobPage() {
                                       type="button"
                                       onClick={() => handleFullAnalysis(j, i)}
                                       disabled={isAnalyzingThis}
-                                      className="text-purple-400 hover:text-purple-300 font-semibold hover:underline flex items-center gap-1 disabled:opacity-50"
+                                      className="text-[#8C97FF] hover:text-white font-medium hover:underline flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                                     >
                                       <span>{isAnalyzingThis ? '⚙️ Opening Analysis...' : 'View Deep Breakdown & Cover Letter →'}</span>
                                     </button>
@@ -1377,14 +1476,14 @@ export default function AddJobPage() {
                             )}
 
                             {/* Action Buttons */}
-                            <div className="pt-2 border-t border-zinc-900 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
                               {/* Direct Apply Option */}
                               {(j.url || researchData.careers_url) && (
                                 <a 
                                   href={j.url || researchData.careers_url} 
                                   target="_blank" 
                                   rel="noopener noreferrer" 
-                                  className="bg-white text-zinc-950 font-bold px-3.5 py-1.5 rounded-lg text-xs hover:bg-zinc-200 transition-colors flex items-center gap-1.5 shadow-sm"
+                                  className="bg-[#F3EFE7] text-[#0A0A0C] font-semibold px-3.5 py-1.5 rounded-full text-xs hover:bg-white transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                                   title="Open official job application in a new tab"
                                 >
                                   <span>🚀</span>
@@ -1395,22 +1494,22 @@ export default function AddJobPage() {
                               <div className="flex items-center gap-2 ml-auto">
                                 {/* Score Fit (Apply or Skip) */}
                                 <button 
-                                  type="button"
+                                  type="button" 
                                   onClick={() => handleScoreRole(j, i)}
                                   disabled={isScoringThis}
-                                  className="bg-purple-950/60 hover:bg-purple-900 text-purple-300 border border-purple-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                  className="bg-white/10 hover:bg-white/15 text-[#F3EFE7] border border-white/15 px-3 py-1.5 rounded-full text-xs font-mono uppercase tracking-wider transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                                   title="Scores this role against your resume and tells whether to apply or skip"
                                 >
                                   <span>{isScoringThis ? '⚙️' : '📊'}</span>
-                                  <span>{isScoringThis ? 'Scoring...' : (score ? 'Re-Score' : 'Score Fit (Apply/Skip)')}</span>
+                                  <span>{isScoringThis ? 'Scoring...' : (score ? 'Re-Score' : 'Score Fit')}</span>
                                 </button>
 
                                 {/* Track Button */}
                                 <button 
-                                  type="button"
+                                  type="button" 
                                   onClick={() => handleTrackDiscoveredJob(j, i)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 ${
-                                    isTracked ? 'bg-green-600/20 text-green-400 border border-green-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                  className={`px-3 py-1.5 rounded-full text-xs font-mono uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                                    isTracked ? 'bg-[#5EEAA8]/15 text-[#5EEAA8] border border-[#5EEAA8]/30' : 'bg-white/5 hover:bg-white/10 text-[#A8A59D] border border-white/10'
                                   }`}
                                 >
                                   {isTracked ? '✓ In Tracker' : '+ Track'}
@@ -1418,10 +1517,10 @@ export default function AddJobPage() {
 
                                 {/* Full Analysis */}
                                 <button 
-                                  type="button"
+                                  type="button" 
                                   onClick={() => handleFullAnalysis(j, i)}
                                   disabled={isAnalyzingThis}
-                                  className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                                  className="bg-white/10 hover:bg-white/15 text-[#F3EFE7] border border-white/15 px-3.5 py-1.5 rounded-full text-xs font-mono uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                                   title="Analyze full JD, view match score breakdown, and generate tailored cover letter"
                                 >
                                   {isAnalyzingThis ? (
@@ -1443,14 +1542,14 @@ export default function AddJobPage() {
                       })}
                     </div>
                   ) : (
-                    <div className="text-center py-12 bg-zinc-950/50 rounded-xl border border-zinc-800/50">
-                      <p className="text-zinc-400">No jobs matching your filters.</p>
+                    <div className="text-center py-12 bg-black/40 rounded-2xl border border-white/15">
+                      <p className="text-[#A8A59D] text-sm">No jobs matching your filters.</p>
                       <button 
                         onClick={() => {
                           setDeepDiveLocFilter('all')
                           setDeepDiveExpFilter('all')
                         }} 
-                        className="mt-2 text-xs text-purple-400 hover:underline"
+                        className="mt-2 text-xs text-[#8C97FF] hover:underline font-mono"
                       >
                         Reset filters
                       </button>
@@ -1466,21 +1565,21 @@ export default function AddJobPage() {
         {activeTab === 'ats' && (
           <form onSubmit={handleAtsSubmit} className="space-y-6">
             <div>
-              <h1 className="text-2xl font-bold mb-2 text-white tracking-tight">Bulk ATS Search</h1>
-              <p className="text-zinc-400 text-sm">Automatically scrape a company's career page for open roles.</p>
-              <div className="mt-3 p-3 bg-blue-900/20 border border-blue-800/50 rounded-lg text-blue-200 text-xs leading-relaxed">
-                <strong className="text-blue-400 uppercase tracking-wider block mb-1">Supported Platforms</strong>
+              <h2 className="font-serif text-2xl sm:text-3xl text-[#F3EFE7] mb-1">Bulk ATS Sync & Search</h2>
+              <p className="text-xs text-[#A8A59D]">Automatically scrape a company&apos;s career page for open roles.</p>
+              <div className="mt-3 p-3 bg-white/5 border border-white/10 rounded-xl text-xs text-[#A8A59D] leading-relaxed">
+                <strong className="text-[#F3EFE7] font-mono uppercase tracking-wider text-[11px] block mb-1">Supported Platforms</strong>
                 Greenhouse, Lever, Ashby, and SmartRecruiters provide open APIs allowing safe bulk-fetching. For Workday, Taleo, or iCIMS, use Company Deep Dive.
               </div>
             </div>
             
-            <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 mb-6">
-              <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Auto-Detect ATS (Magic ✨)</label>
+            <div className="bg-black/40 p-5 rounded-2xl border border-white/15 mb-6">
+              <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Auto-Detect ATS (Magic ✨)</label>
               <div className="flex gap-3">
                 <input 
                   type="text"
-                  placeholder="Enter Company Name (e.g. Stripe)"
-                  className="flex-1 bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  placeholder="Enter Company Name (e.g. Stripe, Figma, Airbnb)"
+                  className="flex-1 bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                   id="autoDetectInput"
                 />
                 <button
@@ -1492,35 +1591,35 @@ export default function AddJobPage() {
                     }
                   }}
                   disabled={discoverAtsMutation.isPending}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                  className="h-11 px-5 rounded-xl font-medium bg-white/10 hover:bg-white/15 text-white transition text-xs font-mono uppercase tracking-wider flex items-center justify-center cursor-pointer border border-white/10 shrink-0"
                 >
                   {discoverAtsMutation.isPending ? 'Detecting...' : 'Detect'}
                 </button>
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">ATS System</label>
+                <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">ATS System</label>
                 <select 
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                   value={atsSystem}
                   onChange={(e) => setAtsSystem(e.target.value)}
                 >
-                  <option value="greenhouse">Greenhouse</option>
-                  <option value="lever">Lever</option>
-                  <option value="ashby">Ashby</option>
-                  <option value="smartrecruiters">SmartRecruiters</option>
-                  <option value="generic">Generic Fallback (Workday/Taleo)</option>
+                  <option value="greenhouse" className="bg-[#0A0A0C] text-[#F3EFE7]">Greenhouse</option>
+                  <option value="lever" className="bg-[#0A0A0C] text-[#F3EFE7]">Lever</option>
+                  <option value="ashby" className="bg-[#0A0A0C] text-[#F3EFE7]">Ashby</option>
+                  <option value="smartrecruiters" className="bg-[#0A0A0C] text-[#F3EFE7]">SmartRecruiters</option>
+                  <option value="generic" className="bg-[#0A0A0C] text-[#F3EFE7]">Generic Fallback (Workday/Taleo)</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">
+                <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">
                   {atsSystem === 'generic' ? 'Full URL' : 'Company Token'}
                 </label>
                 <input 
                   type="text" 
-                  className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                   value={companyToken}
                   onChange={(e) => setCompanyToken(e.target.value)}
                   placeholder={atsSystem === 'generic' ? "https://company.wd1.myworkdayjobs.com/..." : "e.g. 'stripe' for Lever, 'airbnb' for Greenhouse"}
@@ -1530,25 +1629,25 @@ export default function AddJobPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-zinc-400 mb-2 uppercase tracking-wide">Target Keywords (Optional, Comma separated)</label>
+              <label className="block text-xs font-mono uppercase tracking-wider text-[#A8A59D] mb-2">Target Keywords (Optional, Comma separated)</label>
               <input 
                 type="text" 
-                className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-lg p-3 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                className="w-full bg-black/40 border border-white/15 text-[#F3EFE7] rounded-xl p-3 placeholder-[#6A6863] text-sm focus:outline-none focus:border-[#8C97FF] transition-all"
                 value={targetKeywords}
                 onChange={(e) => setTargetKeywords(e.target.value)}
-                placeholder="e.g. engineer, developer, backend"
+                placeholder="e.g. engineer, developer, backend, frontend"
               />
             </div>
 
-            <div className="flex items-center gap-3 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
+            <div className="flex items-center gap-3 bg-black/40 p-4 rounded-xl border border-white/15">
               <input 
                 type="checkbox" 
                 id="atsSubscribe"
                 checked={atsSubscribe}
                 onChange={(e) => setAtsSubscribe(e.target.checked)}
-                className="w-5 h-5 bg-zinc-950 border-zinc-700 rounded focus:ring-blue-500"
+                className="w-4 h-4 bg-black/60 border border-white/20 rounded accent-[#8C97FF] cursor-pointer"
               />
-              <label htmlFor="atsSubscribe" className="text-sm font-medium text-zinc-300 cursor-pointer">
+              <label htmlFor="atsSubscribe" className="text-xs font-medium text-[#A8A59D] cursor-pointer">
                 Subscribe to updates (automatically fetch new roles for these keywords every 12 hours)
               </label>
             </div>
@@ -1556,31 +1655,38 @@ export default function AddJobPage() {
             <button 
               type="submit" 
               disabled={atsMutation.isPending || !companyToken}
-              className="w-full bg-blue-600 text-white px-6 py-4 rounded-xl font-bold hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(37,99,235,0.2)] text-lg"
+              className="w-full h-12 rounded-full bg-[#F3EFE7] text-[#0A0A0C] hover:bg-white font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              {atsMutation.isPending ? 'Starting Scrape...' : 'Scrape Company Jobs'}
+              {atsMutation.isPending ? (
+                <>
+                  <span className="animate-spin text-base leading-none">⚙️</span>
+                  <span>Starting Scrape...</span>
+                </>
+              ) : (
+                'Scrape Company Jobs'
+              )}
             </button>
           </form>
         )}
 
         {activeTab === 'ats' && subscriptions && subscriptions.length > 0 && (
           <div className="mt-12 space-y-4">
-            <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+            <h3 className="font-serif text-2xl text-[#F3EFE7] flex items-center gap-2">
               <span>🔄</span> Active Auto-Scrape Subscriptions
-            </h2>
+            </h3>
             <div className="grid gap-3">
               {subscriptions.map((sub: any) => (
-                <div key={sub.id} className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex justify-between items-center group">
+                <div key={sub.id} className="bg-black/40 p-4 rounded-xl border border-white/15 flex justify-between items-center group">
                   <div>
-                    <h3 className="font-bold text-white text-lg">{sub.company_token} <span className="text-zinc-500 text-sm font-normal ml-2 capitalize">({sub.ats_system})</span></h3>
-                    <div className="text-sm text-zinc-400 mt-1">
-                      Keywords: {sub.target_keywords ? <span className="text-blue-400">{sub.target_keywords}</span> : 'All Jobs'}
+                    <h4 className="font-semibold text-[#F3EFE7] text-base">{sub.company_token} <span className="text-[#A8A59D] text-xs font-mono ml-2 capitalize">({sub.ats_system})</span></h4>
+                    <div className="text-xs text-[#A8A59D] font-mono mt-1">
+                      Keywords: {sub.target_keywords ? <span className="text-[#8C97FF]">{sub.target_keywords}</span> : 'All Jobs'}
                     </div>
                   </div>
                   <button 
                     onClick={() => deleteSubMutation.mutate(sub.id)}
                     disabled={deleteSubMutation.isPending}
-                    className="text-red-400 hover:text-red-300 font-semibold text-sm px-3 py-1.5 bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                    className="text-rose-400 hover:text-rose-300 font-mono uppercase tracking-wider text-xs px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-full transition-all disabled:opacity-50 cursor-pointer"
                   >
                     Unsubscribe
                   </button>
@@ -1589,8 +1695,8 @@ export default function AddJobPage() {
             </div>
           </div>
         )}
-
-      </div>
+        </div>
+      </main>
     </div>
   )
 }

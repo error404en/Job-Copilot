@@ -2,80 +2,276 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JobCopilot Analyzer</title>
+  <title>JobCopilot Intelligent Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    body {
-      width: 310px;
-      padding: 16px;
-      font-family: -apple-system, system-ui, sans-serif;
-      background: #09090b;
-      color: #f4f4f5;
+    * {
+      box-sizing: border-box;
       margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 360px;
+      padding: 20px 18px 18px;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #050507;
+      color: #F3EFE7;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      line-height: 1.45;
+    }
+    .serif {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-weight: 400;
+      letter-spacing: -0.015em;
+    }
+    .serif i {
+      font-style: italic;
+      color: #A9A59C;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 11px;
+    }
+    .glass {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
     }
     .header {
-      font-weight: 700;
-      font-size: 16px;
-      color: #fafafa;
-      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
       display: flex;
       align-items: center;
       gap: 8px;
     }
+    .monogram {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: #F3EFE7;
+      color: #0A0A0C;
+      font-weight: 800;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: -0.04em;
+    }
+    .brand-name {
+      font-weight: 700;
+      font-size: 14px;
+      color: #F3EFE7;
+      letter-spacing: -0.02em;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(140, 151, 255, 0.1);
+      color: #8C97FF;
+      border: 1px solid rgba(140, 151, 255, 0.25);
+    }
+    .headline {
+      font-size: 25px;
+      line-height: 1.08;
+      color: #F3EFE7;
+      margin-top: 2px;
+    }
+    .status-card {
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .status-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #5EEAA8;
+      font-weight: 500;
+    }
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: #5EEAA8;
+      box-shadow: 0 0 8px #5EEAA8;
+    }
     .status {
+      font-size: 12px;
+      color: #C9C6BE;
+      line-height: 1.45;
+    }
+    .resume-pill {
+      display: none;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      border-color: rgba(140, 151, 255, 0.3);
+      background: rgba(140, 151, 255, 0.06);
+    }
+    .resume-pill-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .resume-pill strong {
+      display: block;
+      color: #8C97FF;
+      font-size: 10px;
+    }
+    #resumeTitle {
       font-size: 13px;
-      color: #a1a1aa;
-      margin-bottom: 16px;
-      line-height: 1.4;
+      font-weight: 600;
+      color: #F3EFE7;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     button {
       width: 100%;
-      padding: 10px;
-      background: #2563eb;
-      color: white;
+      height: 42px;
       border: none;
-      border-radius: 6px;
+      border-radius: 999px;
+      font-family: inherit;
       font-weight: 600;
+      font-size: 13px;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      margin-bottom: 8px;
     }
-    button:hover {
-      background: #1d4ed8;
+    .btn-primary {
+      background: #F3EFE7;
+      color: #0A0A0C;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
     }
-    button:disabled {
-      background: #3f3f46;
-      color: #71717a;
-      cursor: not-allowed;
+    .btn-primary:hover:not(:disabled) {
+      background: #FFFFFF;
+      transform: translateY(-1px);
+    }
+    .btn-ai {
+      background: rgba(140, 151, 255, 0.12);
+      color: #C9CCFF;
+      border: 1px solid rgba(140, 151, 255, 0.35);
+      display: none;
+    }
+    .btn-ai:hover:not(:disabled) {
+      background: rgba(140, 151, 255, 0.22);
+      transform: translateY(-1px);
     }
     .btn-secondary {
-      background: #27272a;
-      color: #e4e4e7;
-      margin-top: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      color: #F3EFE7;
+      border: 1px solid rgba(255, 255, 255, 0.12);
     }
-    .btn-secondary:hover {
-      background: #3f3f46;
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-1px);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none !important;
     }
     #error {
-      color: #f87171;
-      font-size: 12px;
-      margin-top: 10px;
+      color: #FCA5A5;
+      font-size: 11px;
+      margin-top: 8px;
       display: none;
       white-space: pre-wrap;
       word-break: break-word;
-      line-height: 1.4;
+      line-height: 1.45;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      padding: 10px 12px;
+      border-radius: 12px;
+    }
+    .footer-note {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #A8A59D;
+      font-size: 10px;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <span>🤖</span> JobCopilot
+    <div class="brand-row">
+      <div class="brand">
+        <div class="monogram">JC</div>
+        <span class="brand-name">jobcopilot</span>
+      </div>
+      <span class="badge mono">v2.4 Fleet</span>
+    </div>
+    <h1 class="headline serif">One-click <i>auto-fill.</i></h1>
   </div>
-  <div class="status" id="status">
-    Auto-fill this application form or analyze the job posting against your resume.
+
+  <div class="status-card glass">
+    <div class="status-top">
+      <span class="mono" style="color: #8C97FF; font-size: 10px;">/ ATS RADAR</span>
+      <span class="status-indicator">
+        <span class="pulse-dot"></span>
+        Active Requisition
+      </span>
+    </div>
+    <div class="status" id="status">
+      Reads the active application page and intelligently populates all standard inputs, dropdowns, radio groups, and custom screening questions.
+    </div>
   </div>
-  <button id="autofillBtn" style="background: linear-gradient(135deg, #4f46e5, #0d9488); margin-bottom: 8px;">⚡ Auto-Fill Application Form</button>
-  <button id="analyzeBtn" class="btn-secondary" style="margin-top: 0;">🔍 Analyze Job Fit</button>
+
+  <div id="resumePill" class="resume-pill glass">
+    <div class="resume-pill-top">
+      <span class="mono">RECOMMENDED RESUME VARIANT</span>
+      <span style="font-size: 10px; font-weight: 600; color: #5EEAA8;">● Top Fit</span>
+    </div>
+    <span id="resumeTitle">Loading...</span>
+  </div>
+
+  <button id="autofillBtn" class="btn-primary">⚡ Smart Auto-Fill Form</button>
+  <button id="aiSolveBtn" class="btn-ai">✨ AI Answer Custom Questions</button>
+  <button id="analyzeBtn" class="btn-secondary">🔍 Analyze Job Fit & Save</button>
   <button id="dashboardBtn" class="btn-secondary" style="display: none;">Open JobCopilot Dashboard ↗</button>
+  
   <div id="error"></div>
+
+  <div class="footer-note mono">
+    <span>GREENHOUSE · LEVER · ASHBY · WORKDAY</span>
+    <span>20+ ATS</span>
+  </div>
+
   <script src="auth_helper.js"></script>
   <script src="popup.js"></script>
 </body>

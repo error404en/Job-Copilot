@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "JobCopilot Auto-Fill & AI Job Analyzer",
-  "version": "1.2",
-  "description": "1-Click ATS Auto-Fill and AI Job Fit Analysis for Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Keka, and enterprise career portals.",
+  "name": "JobCopilot Intelligent Auto-Apply & Job Analyzer",
+  "version": "2.0",
+  "description": "Intelligent Full-Page ATS Auto-Fill and AI Job Fit Analysis for Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Keka, Jobvite, BambooHR, and enterprise portals.",
   "permissions": ["activeTab", "scripting", "tabs", "cookies"],
   "host_permissions": [
     "https://job-copilot-ci8e.onrender.com/*",
@@ -23,7 +23,17 @@
     "*://*.pwc.com/*",
     "*://*.hackerrank.com/*",
     "*://*.cisco.com/*",
-    "*://*.linkedin.com/*"
+    "*://*.linkedin.com/*",
+    "*://*.jobvite.com/*",
+    "*://*.bamboohr.com/*",
+    "*://*.taleo.net/*",
+    "*://*.workable.com/*",
+    "*://*.icims.com/*",
+    "*://*.darwinbox.com/*",
+    "*://*.rippling.com/*",
+    "*://*.breezy.hr/*",
+    "*://*.recruitee.com/*",
+    "*://*.eightfold.ai/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -47,7 +57,17 @@
         "*://*.gem.com/*",
         "*://*.pwc.com/*",
         "*://*.hackerrank.com/*",
-        "*://*.cisco.com/*"
+        "*://*.cisco.com/*",
+        "*://*.jobvite.com/*",
+        "*://*.bamboohr.com/*",
+        "*://*.taleo.net/*",
+        "*://*.workable.com/*",
+        "*://*.icims.com/*",
+        "*://*.darwinbox.com/*",
+        "*://*.rippling.com/*",
+        "*://*.breezy.hr/*",
+        "*://*.recruitee.com/*",
+        "*://*.eightfold.ai/*"
       ],
       "js": ["content-scripts/auto_apply.js"],
       "run_at": "document_idle"

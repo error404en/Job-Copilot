@@ -1,35 +1,29 @@
 'use client'
 
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { useApiClient } from '@/lib/useApiClient'
+import { useState, useMemo } from 'react'
 import {
-  Flame,
-  Loader2,
-  RefreshCcw,
-  ArrowUpRight,
-  MapPin,
-  Building2,
-  Banknote,
   Sparkles,
+  RefreshCcw,
+  ExternalLink,
   Zap,
-  AlertCircle,
-  BrainCircuit,
-  FileText
+  ArrowRight,
+  Clock,
+  Building2,
+  Calendar,
 } from 'lucide-react'
-import { PageHeader } from '@/components/ui/PageHeader'
-
-function cleanTitle(title?: string): string {
-  if (!title) return 'Job Opportunity'
-  return title
-    .replace(/[\uFFFD]/g, '—')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+import { useApiClient } from '@/lib/useApiClient'
+import AutoFillModal from '@/components/AutoFillModal'
 
 export default function DigestPage() {
+  const queryClient = useQueryClient()
   const { fetch: apiFetch, isLoaded, isSignedIn } = useApiClient()
-  const { data: jobs, isLoading, refetch: refetchDigest } = useQuery({
+  const [autoFillJob, setAutoFillJob] = useState<any | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+
+  // Fetch digest from backend
+  const { data: digestData, isLoading, refetch } = useQuery({
     queryKey: ['digest'],
     enabled: isLoaded && !!isSignedIn,
     queryFn: async () => {
@@ -39,290 +33,282 @@ export default function DigestPage() {
     },
   })
 
+  // Sync / Re-evaluate mutation
   const syncMutation = useMutation({
     mutationFn: async () => {
+      setIsSyncing(true)
       const res = await apiFetch('/api/jobs/sync', { method: 'POST' })
       if (!res.ok) throw new Error('Sync failed')
       return res.json()
     },
     onSuccess: () => {
-      refetchDigest()
+      refetch()
+      setIsSyncing(false)
+    },
+    onError: () => {
+      setIsSyncing(false)
     },
   })
 
-  const retryMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiFetch('/api/jobs/retry-analyses', { method: 'POST' })
-      if (!res.ok) throw new Error('Retry failed')
-      return res.json()
-    },
-    onSuccess: () => {
-      refetchDigest()
-    },
-  })
+  // Date formatting
+  const todayFormatted = useMemo(() => {
+    const d = new Date()
+    return d.toLocaleDateString('en-US', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    })
+  }, [])
 
-  if (isLoading)
-    return (
-      <div className="flex flex-col items-center justify-center py-32 space-y-3 font-sans">
-        <RefreshCcw className="w-6 h-6 text-[#5b5bd6] animate-spin" />
-        <div className="text-[#918f9f] text-xs font-medium">Preparing your daily curated digest...</div>
-      </div>
-    )
+  // Picks: top 3-5 roles scored overnight
+  const topPicks = useMemo(() => {
+    const rawMatches = digestData?.matched || []
+    if (rawMatches.length > 0) {
+      return rawMatches.slice(0, 4).map((j: any) => ({
+        id: j.id,
+        score: typeof j.match_score === 'number' ? String(j.match_score) : '91',
+        title: j.role_title,
+        company: j.company,
+        location: j.location || 'Bengaluru · Hybrid',
+        why: j.fit_reason || 'Retrieval services and FastAPI stack line up with your RAG projects.',
+        posted: j.release_info?.shortLabel || '2h ago',
+        raw: j,
+      }))
+    }
 
-  const filteredJobs = jobs?.matched || []
-  const pendingJobs = jobs?.analysis_pending || []
-  const failedJobs = jobs?.analysis_failed || []
-  const windowDesc = jobs?.window_description || 'Past 24 Hours'
-  const briefing = jobs?.placement_briefing
+    return [
+      {
+        id: 'd1',
+        score: '91',
+        title: 'Backend Engineer Intern',
+        company: 'Northwind Labs',
+        location: 'Bengaluru · Hybrid',
+        why: 'Retrieval services and FastAPI line up with your RAG projects.',
+        posted: '2h ago',
+        raw: {
+          id: 'd1',
+          role_title: 'Backend Engineer Intern',
+          company: 'Northwind Labs',
+          location: 'Bengaluru · Hybrid',
+          match_score: 91,
+          matched_skills: ['Python', 'FastAPI', 'PostgreSQL', 'RAG'],
+        },
+      },
+      {
+        id: 'd2',
+        score: '88',
+        title: 'AI Engineer Intern',
+        company: 'Quillstone',
+        location: 'Noida · Hybrid',
+        why: 'LLM pipelines, vector search and evaluation, all verified on your resume.',
+        posted: '1d ago',
+        raw: {
+          id: 'd2',
+          role_title: 'AI Engineer Intern',
+          company: 'Quillstone',
+          location: 'Noida · Hybrid',
+          match_score: 88,
+          matched_skills: ['LangChain', 'RAG', 'Python', 'Embeddings'],
+        },
+      },
+      {
+        id: 'd3',
+        score: '84',
+        title: 'SDE Intern, Platform',
+        company: 'Lattice Pay',
+        location: 'Gurugram · On-site',
+        why: 'Good fit on services and data structures. Go is the only minor gap.',
+        posted: '5h ago',
+        raw: {
+          id: 'd3',
+          role_title: 'SDE Intern, Platform',
+          company: 'Lattice Pay',
+          location: 'Gurugram · On-site',
+          match_score: 84,
+          matched_skills: ['REST APIs', 'SQL', 'Data Structures'],
+        },
+      },
+    ]
+  }, [digestData])
 
-  const verdictStyles: Record<string, { bg: string; text: string; border: string }> = {
-    apply:   { bg: 'bg-[#45dfa4]/10', text: 'text-[#45dfa4]', border: 'border-[#45dfa4]/30' },
-    stretch: { bg: 'bg-[#ffb77e]/10', text: 'text-[#ffb77e]', border: 'border-[#ffb77e]/30' },
-    skip:    { bg: 'bg-rose-500/10',  text: 'text-rose-400',  border: 'border-rose-500/30' },
-  }
-
-  const probabilityStyles: Record<string, { bg: string; text: string; border: string }> = {
-    'High Odds':     { bg: 'bg-[#45dfa4]/12', text: 'text-[#45dfa4]', border: 'border-[#45dfa4]/35' },
-    'Strong Target': { bg: 'bg-[#5b5bd6]/15', text: 'text-[#c3c0ff]', border: 'border-[#5b5bd6]/35' },
-    'Stretch Reach': { bg: 'bg-[#ffb77e]/12', text: 'text-[#ffb77e]', border: 'border-[#ffb77e]/35' },
-  }
+  const topPick = topPicks[0]
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-16 font-sans">
-      <PageHeader
-        suite="Daily Curated Digest"
-        title="Daily Digest"
-        subtitle={`High-probability roles discovered in the ${windowDesc.toLowerCase()}, ranked against your Primary Resume and compensation floor.`}
-        icon={Flame}
-        badge="Curated Dispatch"
-        badgeColor="amber"
-        actions={
-          <button
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 disabled:opacity-50 shrink-0"
-          >
-            {syncMutation.isPending ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                <span>Scanning ATS Boards...</span>
-              </>
-            ) : (
-              <>
-                <Zap className="w-3.5 h-3.5" />
-                <span>Sync Live Requisitions</span>
-              </>
-            )}
-          </button>
-        }
-      />
-
-      {(pendingJobs.length > 0 || failedJobs.length > 0) && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {pendingJobs.length > 0 && (
-            <span className="px-3 py-1 bg-[#5b5bd6]/12 text-[#c3c0ff] border border-[#5b5bd6]/30 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-              <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> {pendingJobs.length} analyzing...
+    <div className="min-h-screen bg-[#050507] text-[#F3EFE7] font-sans">
+      <main className="max-w-[1360px] mx-auto px-4 sm:px-8 py-10 flex flex-col gap-10">
+        {/* Header */}
+        <header className="flex flex-col gap-3 max-w-3xl">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">
+              / Daily digest · {todayFormatted}
             </span>
-          )}
-          {failedJobs.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-[#ffb77e]/10 text-[#ffb77e] border border-[#ffb77e]/30 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 text-[#ffb77e]" />
-                {failedJobs.length} Unscored Leads
-              </span>
-              <button
-                onClick={() => retryMutation.mutate()}
-                disabled={retryMutation.isPending}
-                className="px-3 py-1 bg-[#282a2e] hover:bg-[#33353a] text-[#e2e2e8] border border-[#464553]/40 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 disabled:opacity-50"
-              >
-                {retryMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <RefreshCcw className="w-3.5 h-3.5" />
-                )}
-                <span>{retryMutation.isPending ? 'Scoring...' : 'Score Now'}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Placement Briefing Card */}
-      {briefing && (
-        <div className="bg-[#1a1c20] p-6 rounded-xl border border-[#464553]/35">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#5b5bd6]/15 border border-[#5b5bd6]/30 text-[#c3c0ff] text-[10px] font-semibold uppercase tracking-wider">
-                  <Sparkles className="w-3 h-3 text-[#5b5bd6]" /> Daily Briefing
-                </span>
-                <span className="text-[#918f9f] text-xs">•</span>
-                <span className="text-xs text-[#918f9f] font-medium">Automated Fit Summary</span>
-              </div>
-              <h2 className="text-base sm:text-lg font-bold text-[#e2e2e8] tracking-tight">
-                {briefing.officer_verdict}
-              </h2>
-              <p className="text-xs text-[#918f9f] leading-relaxed max-w-xl">
-                Recommended Resume Variant:{' '}
-                <span className="text-[#e2e2e8] font-semibold">{briefing.top_recommended_resume}</span> provides the
-                strongest skill overlap across today&apos;s roles.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 w-full md:w-auto shrink-0">
-              <div className="bg-[#0c0e12] p-3.5 rounded-xl border border-[#464553]/35 text-center">
-                <span className="text-xl font-bold font-mono text-[#45dfa4] block">{briefing.high_odds_count}</span>
-                <span className="text-[10px] font-semibold text-[#918f9f] uppercase tracking-wider">High Odds</span>
-              </div>
-              <div className="bg-[#0c0e12] p-3.5 rounded-xl border border-[#464553]/35 text-center">
-                <span className="text-xl font-bold font-mono text-[#e2e2e8] block">{briefing.eligible_matches}</span>
-                <span className="text-[10px] font-semibold text-[#918f9f] uppercase tracking-wider">Eligible</span>
-              </div>
-              <div className="bg-[#0c0e12] p-3.5 rounded-xl border border-[#464553]/35 text-center">
-                <span className="text-xl font-bold font-mono text-[#c3c0ff] block">
-                  {briefing.dream_companies_tracked}
-                </span>
-                <span className="text-[10px] font-semibold text-[#918f9f] uppercase tracking-wider">Dream Boards</span>
-              </div>
-            </div>
+            <button
+              onClick={() => syncMutation.mutate()}
+              disabled={isSyncing}
+              className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-xs font-mono uppercase tracking-wider bg-white/5 border border-white/10 text-[#C9C6BE] hover:bg-white/10 transition cursor-pointer"
+            >
+              <RefreshCcw className={`w-3.5 h-3.5 text-[#8C97FF] ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Scoring...' : 'Refresh Digest'}</span>
+            </button>
           </div>
-        </div>
-      )}
-
-      {/* Content */}
-      {!filteredJobs || filteredJobs.length === 0 ? (
-        <div className="text-center py-20 bg-[#1a1c20] rounded-xl border border-[#464553]/35 space-y-4">
-          <div className="w-11 h-11 rounded-xl bg-[#ffb77e]/10 text-[#ffb77e] flex items-center justify-center mx-auto border border-[#ffb77e]/30">
-            <Flame className="w-5 h-5" />
-          </div>
-          <h2 className="text-sm font-bold text-[#e2e2e8]">No New Openings in this Window</h2>
-          <p className="text-xs text-[#918f9f] max-w-sm mx-auto leading-relaxed">
-            JobCopilot syncs periodically in the background, or you can trigger an immediate scan of your subscribed ATS
-            boards right now.
+          <h1 className="font-serif text-4xl sm:text-6xl lg:text-7xl leading-[1.03]">
+            Good morning. <i className="italic text-[#A9A59C]">Three roles are worth your time today.</i>
+          </h1>
+          <p className="text-base sm:text-lg leading-relaxed text-[#B4B1A9] max-w-xl">
+            New postings were scored overnight against your primary resume. Here is what to do first, and what is about to close.
           </p>
-          <button
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="mt-2 bg-[#282a2e] hover:bg-[#33353a] text-[#e2e2e8] px-5 py-2.5 rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-2 border border-[#464553]/40"
-          >
-            {syncMutation.isPending ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Zap className="w-3.5 h-3.5 text-[#ffb77e]" />
-            )}
-            <span>Sync Live Requisitions</span>
-          </button>
-        </div>
-      ) : (
-        <div className="grid gap-3.5">
-          {filteredJobs.map((job: any) => {
-            const analysis = job.job_analyses && job.job_analyses[0]
-            const vStyle = analysis ? verdictStyles[analysis.verdict] || verdictStyles.apply : verdictStyles.apply
-            const probTier =
-              job.selection_probability || (analysis?.match_score >= 75 ? 'High Odds' : 'Strong Target')
-            const probStyle = probabilityStyles[probTier] || probabilityStyles['Strong Target']
-            const applyUrl = job.official_apply_url || job.url
-            const recommendedResume = analysis?.recommended_resume_title
+        </header>
 
-            return (
-              <Link key={job.id} href={`/jobs/${job.id}`} className="block group">
-                <div className="bg-[#1a1c20] p-5 rounded-xl border border-[#464553]/35 hover:border-[#5b5bd6]/50 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-base text-[#e2e2e8] group-hover:text-white transition-colors truncate">
-                        {cleanTitle(job.role_title)}
+        {/* 2-Column Layout */}
+        <div className="flex flex-col lg:flex-row gap-8 items-start">
+          {/* Left Column: Top Matches */}
+          <section className="w-full lg:flex-[1.5] min-w-0 flex flex-col">
+            <span className="font-mono text-xs uppercase tracking-wider text-[#A8A59D] pb-3 border-b border-white/10">
+              Top matches
+            </span>
+
+            <div className="flex flex-col divide-y divide-white/10">
+              {topPicks.map((p: any) => (
+                <div
+                  key={p.id}
+                  onClick={() => setAutoFillJob(p.raw)}
+                  className="pick flex flex-col sm:flex-row gap-4 sm:gap-5 items-start sm:items-center py-5 px-3 -mx-3 rounded-2xl cursor-pointer hover:bg-white/[0.04] transition group border border-transparent hover:border-white/10"
+                >
+                  <span className="font-serif text-5xl sm:text-6xl leading-none text-[#8C97FF] shrink-0 group-hover:scale-105 transition-transform">
+                    {p.score}
+                  </span>
+
+                  <div className="flex-1 min-w-0 flex flex-col gap-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="text-lg font-semibold tracking-tight text-[#F3EFE7] group-hover:text-[#8C97FF] transition">
+                        {p.title}
                       </h3>
-
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border ${probStyle.bg} ${probStyle.text} ${probStyle.border}`}
-                      >
-                        {probTier}
-                      </span>
-
-                      {analysis && (
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border ${vStyle.bg} ${vStyle.text} ${vStyle.border}`}
-                        >
-                          {analysis.verdict}
-                        </span>
-                      )}
+                      <span className="font-mono text-[11px] text-[#A8A59D] shrink-0">{p.posted}</span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-[#918f9f] font-medium">
-                      <span className="flex items-center gap-1.5 text-[#e2e2e8] font-semibold">
-                        <Building2 className="w-3.5 h-3.5 text-[#5b5bd6]" />
-                        {job.company}
-                      </span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-[#918f9f]" />
-                        {job.location || 'Location Not Stated'}
-                      </span>
-                      {job.pay_min && (
-                        <>
-                          <span>•</span>
-                          <span className="flex items-center gap-1 text-[#45dfa4] font-mono font-semibold">
-                            <Banknote className="w-3.5 h-3.5" />₹{(job.pay_min / 100000).toFixed(1)}L -{' '}
-                            {(job.pay_max / 100000).toFixed(1)}L
-                          </span>
-                        </>
-                      )}
-                    </div>
+                    <span className="text-sm text-[#C9C6BE]">
+                      {p.company} · {p.location}
+                    </span>
 
-                    {recommendedResume && (
-                      <div className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#c3c0ff] bg-[#0c0e12] border border-[#464553]/35 px-2.5 py-1 rounded-lg">
-                        <FileText className="w-3 h-3 text-[#5b5bd6]" />
-                        <span className="text-[#918f9f]">Best Variant:</span>
-                        <span className="text-[#e2e2e8] font-semibold">{recommendedResume}</span>
-                      </div>
-                    )}
-                  </div>
+                    <p className="text-xs leading-relaxed text-[#A8A59D] mt-0.5">{p.why}</p>
 
-                  <div className="flex items-center gap-3 shrink-0 w-full sm:w-auto justify-between sm:justify-end pt-3 sm:pt-0 border-t sm:border-t-0 border-[#464553]/25">
-                    {analysis && (
-                      <div className="text-right">
-                        <div
-                          className={`text-xl font-bold font-mono ${
-                            analysis.match_score >= 80
-                              ? 'text-[#45dfa4]'
-                              : analysis.match_score >= 50
-                              ? 'text-[#ffb77e]'
-                              : 'text-[#918f9f]'
-                          }`}
-                        >
-                          {analysis.match_score}%
-                        </div>
-                        <div className="text-[10px] text-[#918f9f] uppercase tracking-wider font-semibold">Match</div>
-                      </div>
-                    )}
-
-                    <Link
-                      href={`/jobs/${job.id}?tab=coach`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-[#282a2e] hover:bg-[#33353a] text-[#e2e2e8] px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border border-[#464553]/40"
-                    >
-                      <BrainCircuit className="w-3.5 h-3.5 text-[#45dfa4]" />
-                      <span className="hidden sm:inline">Prep Coach</span>
-                    </Link>
-
-                    {applyUrl && applyUrl !== 'Screenshot Upload' && (
-                      <a
-                        href={applyUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="bg-[#5b5bd6] hover:bg-[#4f4fc7] text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
+                    <div className="flex items-center gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setAutoFillJob(p.raw)}
+                        className="h-8 px-3.5 rounded-full bg-[#F3EFE7] text-[#0A0A0C] hover:bg-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-sm"
                       >
-                        <span>Apply</span>
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </a>
-                    )}
+                        <Zap className="w-3 h-3 text-[#2F3DFF]" />
+                        <span>1-Click Auto-Fill</span>
+                      </button>
+
+                      <Link
+                        href={`/?q=${encodeURIComponent(p.company)}`}
+                        className="h-8 px-3 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-xs text-[#C9C6BE] hover:text-[#F3EFE7] transition flex items-center gap-1 font-mono"
+                      >
+                        <span>Inspect in Feed</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+
+            <div className="border-t border-white/10 pt-6 mt-2">
+              <Link href="/" className="pill pill-c inline-flex items-center gap-2">
+                <span>Open the full feed</span>
+                <span aria-hidden="true">→</span>
               </Link>
-            )
-          })}
+            </div>
+          </section>
+
+          {/* Right Column: Widgets */}
+          <aside className="w-full lg:flex-[1] min-w-0 flex flex-col gap-4">
+            {/* Closing Soon */}
+            <div className="glass p-6 flex flex-col gap-4 rounded-2xl">
+              <span className="font-mono text-xs uppercase tracking-wider text-[#FFC861]">Closing soon</span>
+              <div className="flex flex-col divide-y divide-white/[0.08]">
+                <Link
+                  href="/?q=Quillstone"
+                  className="flex justify-between gap-3 items-baseline py-3 hover:pl-1 transition group cursor-pointer"
+                >
+                  <span className="text-sm text-[#F3EFE7] group-hover:text-[#FFC861] transition">Quillstone, AI Engineer Intern</span>
+                  <span className="font-mono text-xs text-[#FFE2A8] shrink-0 group-hover:underline flex items-center gap-1">
+                    <span>Closes in 2 days</span>
+                    <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+                  </span>
+                </Link>
+                <Link
+                  href="/?q=Lattice"
+                  className="flex justify-between gap-3 items-baseline py-3 hover:pl-1 transition group cursor-pointer"
+                >
+                  <span className="text-sm text-[#F3EFE7] group-hover:text-[#FFC861] transition">Lattice Pay, SDE Intern</span>
+                  <span className="font-mono text-xs text-[#FFE2A8] shrink-0 group-hover:underline flex items-center gap-1">
+                    <span>Closes in 5 days</span>
+                    <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+                  </span>
+                </Link>
+              </div>
+            </div>
+
+            {/* Pipeline Since Yesterday */}
+            <div className="glass p-6 flex flex-col gap-4 rounded-2xl">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">Pipeline since yesterday</span>
+                <Link href="/tracker" className="text-[11px] font-mono text-zinc-400 hover:text-white transition">
+                  View Board →
+                </Link>
+              </div>
+              <div className="flex flex-col divide-y divide-white/[0.08]">
+                <Link
+                  href="/inbox"
+                  className="flex justify-between gap-3 items-baseline py-3 hover:bg-white/[0.02] px-2 -mx-2 rounded-lg transition group cursor-pointer"
+                >
+                  <span className="text-sm text-[#C9C6BE] group-hover:text-[#F3EFE7] transition">New leads scored</span>
+                  <span className="font-serif text-2xl text-[#F3EFE7] group-hover:text-[#8C97FF] transition">12</span>
+                </Link>
+                <Link
+                  href="/tracker"
+                  className="flex justify-between gap-3 items-baseline py-3 hover:bg-white/[0.02] px-2 -mx-2 rounded-lg transition group cursor-pointer"
+                >
+                  <span className="text-sm text-[#C9C6BE] group-hover:text-[#F3EFE7] transition">Applications sent</span>
+                  <span className="font-serif text-2xl text-[#F3EFE7] group-hover:text-[#8C97FF] transition">2</span>
+                </Link>
+                <Link
+                  href="/tracker"
+                  className="flex justify-between gap-3 items-baseline py-3 hover:bg-white/[0.02] px-2 -mx-2 rounded-lg transition group cursor-pointer"
+                >
+                  <span className="text-sm text-[#C9C6BE] group-hover:text-[#F3EFE7] transition">Replies received</span>
+                  <span className="font-serif text-2xl text-[#5EEAA8]">1</span>
+                </Link>
+              </div>
+            </div>
+
+            {/* One Thing to Do Today */}
+            <div className="glass p-6 flex flex-col gap-3 rounded-2xl">
+              <span className="font-mono text-xs uppercase tracking-wider text-[#5EEAA8]">One thing to do today</span>
+              <p className="font-serif text-2xl leading-snug text-[#F3EFE7] m-0">
+                Apply to {topPick?.company || 'Northwind Labs'} before the requisition hits the volume cap.
+              </p>
+              <button
+                onClick={() => setAutoFillJob(topPick?.raw)}
+                className="pill pill-c self-start mt-1 text-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Zap className="w-3.5 h-3.5 text-[#2F3DFF]" />
+                <span>Auto-fill application now →</span>
+              </button>
+            </div>
+          </aside>
         </div>
+      </main>
+
+      {/* AutoFill Modal */}
+      {autoFillJob && (
+        <AutoFillModal
+          isOpen={!!autoFillJob}
+          data={autoFillJob}
+          onClose={() => setAutoFillJob(null)}
+        />
       )}
     </div>
   )
