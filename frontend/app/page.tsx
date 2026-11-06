@@ -1233,7 +1233,7 @@ function JobsFeedDashboard() {
         </section>
 
         {/* Workspace: 2-column Grid Layout (Guarantees non-squished 420px inspector) */}
-        <div className={`grid grid-cols-1 ${isInspectorOpen ? 'lg:grid-cols-[1fr_420px] xl:grid-cols-[1fr_450px]' : ''} gap-6 items-start w-full`}>
+        <div className={`grid grid-cols-1 ${isInspectorOpen ? 'lg:grid-cols-[1fr_460px] xl:grid-cols-[1fr_490px]' : ''} gap-6 items-start w-full`}>
           {/* Left Column: Matched Jobs List */}
           <section aria-label="Matched jobs" className="min-w-0 flex flex-col gap-3 w-full">
             {/* Empty State */}
@@ -1485,24 +1485,9 @@ function JobsFeedDashboard() {
               aria-label="Fit analysis"
               className="w-full glass p-6 sm:p-7 flex flex-col gap-4 sticky top-20 rounded-2xl max-h-[calc(100vh-6rem)] overflow-y-auto pr-2 custom-scrollbar shadow-xl"
             >
-              {/* Header with Title & Controls */}
-              <div className="flex items-start justify-between gap-3 pb-3 border-b border-white/10">
-                <div className="flex flex-col gap-1 min-w-0">
-                  <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">Fit analysis</span>
-                  <Link
-                    href={`/jobs/${activeJob.id}`}
-                    className="font-serif text-2xl sm:text-3xl lg:text-[34px] text-[#F3EFE7] hover:text-[#8C97FF] leading-[1.08] flex items-center gap-2 group/insp"
-                    title="Open Full Analysis Studio"
-                  >
-                    <span>{activeJob.role_title}</span>
-                    <ArrowUpRight className="w-5 h-5 text-[#8C97FF] opacity-70 group-hover/insp:opacity-100 group-hover/insp:translate-x-0.5 group-hover/insp:-translate-y-0.5 transition" />
-                  </Link>
-                  <div className="flex items-center gap-2 text-xs text-[#C9C6BE]">
-                    <span className="font-medium text-[#F3EFE7]">{activeJob.company}</span>
-                    <span>·</span>
-                    <span>{activeJob.location || 'India'}</span>
-                  </div>
-                </div>
+              {/* Header Top Utility Bar */}
+              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/[0.08]">
+                <span className="font-mono text-xs uppercase tracking-wider text-[#8C97FF]">Fit analysis</span>
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {/* Read / Unread Toggle in Inspector */}
@@ -1540,7 +1525,7 @@ function JobsFeedDashboard() {
                     className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 border border-white/10 text-[#C9C6BE] hover:text-[#F3EFE7] hover:bg-white/10 transition"
                     title="Open Full Studio View"
                   >
-                    <ArrowUpRight className="w-4 h-4" />
+                    <ArrowUpRight className="w-4 h-4 text-[#8C97FF]" />
                   </Link>
 
                   <button
@@ -1550,6 +1535,23 @@ function JobsFeedDashboard() {
                   >
                     <PanelRightClose className="w-4 h-4" />
                   </button>
+                </div>
+              </div>
+
+              {/* Title & Metadata (Full 100% Width Uncompressed) */}
+              <div className="flex flex-col gap-1.5 pt-1">
+                <Link
+                  href={`/jobs/${activeJob.id}`}
+                  className="font-serif text-2xl sm:text-[28px] text-[#F3EFE7] hover:text-[#8C97FF] leading-[1.15] flex items-start justify-between gap-2 group/insp"
+                  title="Open Full Analysis Studio"
+                >
+                  <span className="break-words">{activeJob.role_title}</span>
+                  <ArrowUpRight className="w-5 h-5 text-[#8C97FF] opacity-60 group-hover/insp:opacity-100 group-hover/insp:translate-x-0.5 group-hover/insp:-translate-y-0.5 transition shrink-0 mt-0.5" />
+                </Link>
+                <div className="flex items-center gap-2 text-xs text-[#C9C6BE]">
+                  <span className="font-medium text-[#F3EFE7]">{activeJob.company}</span>
+                  <span>·</span>
+                  <span>{activeJob.location || 'India'}</span>
                 </div>
               </div>
 
